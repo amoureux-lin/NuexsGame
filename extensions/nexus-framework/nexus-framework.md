@@ -23,7 +23,7 @@
 
 ### 1.1 是什么
 
-**Nexus** 是一个基于 CocosCreator 3.8 的全能游戏开发框架，以 **Editor Extension** 的形式交付，框架代码通过 Extension 自动同步到项目中，无需手动复制。
+**Nexus** 是一个基于 CocosCreator 3.8 的全能游戏开发框架，以 **Editor Extension** 的形式交付。
 
 ### 1.2 核心特性
 
@@ -96,7 +96,7 @@ nexus-extension/
 ├── src/
 │   ├── main.ts                   # 主进程入口
 │   │
-│   ├── framework/                # ⭐ 框架母本（唯一权威来源）
+│   ├── assets/                # ⭐ 框架母本（唯一权威来源）
 │   │   ├── core/
 │   │   │   ├── Nexus.ts          # 全局门面入口
 │   │   │   ├── NexusConfig.ts    # 配置类型定义
@@ -131,25 +131,6 @@ nexus-extension/
 │   │   │       └── World.ts
 │   │   ├── bootstrap.ts          # 服务注册入口
 │   │   └── index.ts              # 统一导出
-│   │
-│   ├── panels/                   # 编辑器面板（Vue3）
-│   │   ├── bundle-manager/       # Bundle 配置面板
-│   │   ├── code-generator/       # 代码生成面板
-│   │   ├── settings/             # 框架设置面板
-│   │   └── asset-checker/        # 资源检查面板
-│   │
-│   ├── hooks/
-│   │   ├── build-hook.ts         # 构建前后处理
-│   │   └── preview-hook.ts       # 预览注入
-│   │
-│   └── tools/
-│       ├── FileSyncEngine.ts     # ⭐ 文件同步引擎
-│       ├── FileWatcher.ts        # 实时文件监听
-│       └── CodeGenerator.ts      # 代码生成器
-│
-└── i18n/
-    ├── zh.json
-    └── en.json
 ```
 
 ### 3.2 项目目录（同步后）

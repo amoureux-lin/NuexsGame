@@ -1,4 +1,4 @@
-import { instantiate, Label, Node, Prefab, UITransform, Vec3, Widget } from 'cc';
+import { director, instantiate, Label, Node, Prefab, UITransform, Vec3, Widget } from 'cc';
 import { Nexus } from '../core/Nexus';
 import { IUIService, UILayer } from '../services/contracts';
 
@@ -40,8 +40,10 @@ export class UIServiceImpl extends IUIService {
     private _loadingLabel: Label | null = null;
 
     /** 设置 UI 挂载根节点，并初始化各层级容器。 */
-    setRoot(root: object): void {
+    setRoot(root: Node): void {
         this._root = root as Node;
+        // 添加到持久化根节点
+        director.addPersistRootNode(root);
         this.buildLayers();
     }
 

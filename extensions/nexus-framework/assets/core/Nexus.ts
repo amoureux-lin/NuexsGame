@@ -1,5 +1,6 @@
-import type { NexusConfig } from './NexusConfig';
+import type { BundleConfig, NexusConfig } from './NexusConfig';
 import { ServiceRegistry } from './ServiceRegistry';
+import { getQueryParam } from '../utils/url';
 import {
     IAssetService,
     IAudioService,
@@ -22,10 +23,36 @@ export class Nexus {
         Nexus._initialized = true;
     }
 
-    /** 进入配置中的入口 Bundle。 */
+    /** 进入配置中的入口 Bundle（未配置时根据 enableLobby 与 bundles 自动推导）。 */
     static async start(): Promise<void> {
         Nexus.ensureInitialized();
-        await Nexus.bundle.enter(Nexus._config!.entryBundle);
+        const entry = Nexus.resolveEntryBundle();
+        await Nexus.bundle.enter(entry);
+    }
+
+    /** 解析入口 Bundle：显式 > enableLobby ? lobby : 按 URL game_id 找 subgame。 */
+    private static resolveEntryBundle(): string {
+        const cfg = Nexus._config!;
+        if (cfg.entryBundle) return cfg.entryBundle;
+        if (cfg.enableLobby) return 'lobby';
+        const gameIdStr = getQueryParam('game_id');
+        const sub = Nexus.findSubgameByGameId(cfg.bundles, gameIdStr);
+        if (sub) return sub.name;
+        throw new Error('[Nexus] enableLobby is false but no subgame in bundles. Add a bundle with type: "subgame".');
+    }
+
+    /** 根据 URL game_id 查找对应 subgame，未配置 game_id 或未匹配时返回第一个 subgame。 */
+    private static findSubgameByGameId(bundles: BundleConfig[], gameIdStr: string | undefined): BundleConfig | undefined {
+        const subs = bundles.filter((b) => b.type === 'subgame');
+        if (subs.length === 0) return undefined;
+        if (gameIdStr !== undefined && gameIdStr !== '') {
+            const id = Number(gameIdStr);
+            if (!Number.isNaN(id)) {
+                const match = subs.find((b) => b.gameId !== undefined && b.gameId === id);
+                if (match) return match;
+            }
+        }
+        return subs[0];
     }
 
     /** 销毁框架并释放全部服务。 */
