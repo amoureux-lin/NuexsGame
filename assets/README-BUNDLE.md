@@ -10,7 +10,7 @@ assets/
 ├── lobby/                  # 大厅 Bundle
 │   ├── Main.scene          # 大厅入口场景（框架约定名称）
 │   └── script/
-│       └── LobbyEntry.ts   # 大厅入口逻辑，继承 SubGameBase
+│       └── LobbyEntry.ts   # 大厅入口逻辑，继承 BaseEntry
 ├── games/
 │   └── slotGame/           # 子游戏 Bundle（示例）
 └── lunch.scene             # 游戏首场景（仅负责跑 GameLauncher）
@@ -44,3 +44,7 @@ enableLobby: false,
 ```
 
 首屏将直接进入子游戏 Bundle。
+
+## 5. 更多说明
+
+- **完整流程与脚本结构**（进入 → Loading → 游玩 → 退出、事件配置、连接重连、View-Model-网络）：见 [README-FLOW.md](./README-FLOW.md)。

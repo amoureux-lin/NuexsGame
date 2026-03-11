@@ -1,4 +1,4 @@
-import { _decorator, Camera, Component, Node } from 'cc';
+import { _decorator, Component, Node } from 'cc';
 import { bootstrapNexus, getCurrentSearch, getQueryParams, Nexus } from 'db://nexus-framework/index';
 import type { NexusConfig } from 'db://nexus-framework/index';
 import { bundles } from './config/GameConfig';
@@ -24,6 +24,15 @@ export class GameLauncher extends Component {
         const search = getCurrentSearch();
         console.log(search);
 
+        await this.gameInit();
+
+        Nexus.ui.setRoot(this.canvasRoot);
+
+        await Nexus.start();
+
+    }
+
+    async gameInit(): Promise<void> {
         const config: NexusConfig = {
             version: '1.0.0',
             debug: true,
@@ -35,9 +44,5 @@ export class GameLauncher extends Component {
         };
 
         await Nexus.init(config);
-
-        Nexus.ui.setRoot(this.canvasRoot);
-
-        await Nexus.start();
     }
 }

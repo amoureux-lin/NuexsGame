@@ -47,14 +47,14 @@ export class UIServiceImpl extends IUIService {
         this.buildLayers();
     }
 
-    /** 显示面板；如果已存在则仅重新激活并分发 onShow。 */
-    async show(name: string, params?: unknown, layer: UILayer = UILayer.PANEL): Promise<void> {
+    /** 显示面板；如果已存在则仅重新激活并分发 onShow。返回面板根节点。 */
+    async show(name: string, params?: unknown, layer: UILayer = UILayer.PANEL): Promise<Node> {
         // 已存在：直接显示并透传参数
         const existing = this._panels.get(name);
         if (existing) {
             existing.node.active = true;
             this.dispatch(existing.node, 'onShow', params);
-            return;
+            return existing.node;
         }
 
         const prefab = await this.loadPrefab(name);
@@ -63,6 +63,7 @@ export class UIServiceImpl extends IUIService {
         this.getLayerNode(layer).addChild(node);
         this._panels.set(name, { node, layer });
         this.dispatch(node, 'onShow', params);
+        return node;
     }
 
     /** 隐藏已创建的面板，并分发 onHide。 */

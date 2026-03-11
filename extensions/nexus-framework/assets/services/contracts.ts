@@ -1,4 +1,4 @@
-import type { Asset } from 'cc';
+import type { Asset, Node } from 'cc';
 import { ServiceBase } from '../core/ServiceBase';
 
 export enum UILayer {
@@ -55,8 +55,8 @@ export abstract class IBundleService extends ServiceBase {
 }
 
 export abstract class IUIService extends ServiceBase {
-    /** 显示一个 UI 面板。 */
-    abstract show(name: string, params?: unknown, layer?: UILayer): Promise<void>;
+    /** 显示一个 UI 面板，返回面板根节点。 */
+    abstract show(name: string, params?: unknown, layer?: UILayer): Promise<Node>;
     /** 隐藏一个已显示的 UI 面板。 */
     abstract hide(name: string): void;
     /** 销毁一个已创建的 UI 面板。 */

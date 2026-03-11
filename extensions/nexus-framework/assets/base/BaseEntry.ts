@@ -1,14 +1,15 @@
 import { Component, _decorator } from 'cc';
-import { Nexus } from './core/Nexus';
+import { Nexus } from '../core/Nexus';
 
 const { ccclass } = _decorator;
 
 /**
- * 子游戏入口基类，每个子游戏的入口场景根节点挂载继承此类的脚本。
+ * Bundle 入口基类，每个 Bundle 的主场景根节点挂载继承此类的脚本。
+ * 适用于大厅、子游戏等所有有独立主场景的 Bundle。
  *
  * @example
  * \@ccclass('SlotGameEntry')
- * export class SlotGameEntry extends SubGameBase {
+ * export class SlotGameEntry extends BaseEntry {
  *     async onEnter(params?: Record<string, unknown>): Promise<void> {
  *         await super.onEnter(params);
  *         // 子游戏初始化逻辑
@@ -20,8 +21,8 @@ const { ccclass } = _decorator;
  *     }
  * }
  */
-@ccclass('SubGameBase')
-export abstract class SubGameBase extends Component {
+@ccclass('BaseEntry')
+export abstract class BaseEntry extends Component {
 
     /**
      * Bundle 切换进入时由 BundleService 调用。

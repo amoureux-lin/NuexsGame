@@ -33,6 +33,6 @@ export function bootstrapNexus(): void {
     ServiceRegistry.register(IBundleService, new BundleServiceImpl());
     ServiceRegistry.register(IUIService, new UIServiceImpl());
     ServiceRegistry.register(IAudioService, new AudioServiceImpl());
-    ServiceRegistry.register(II18nService, new I18nServiceImpl());
+    // ServiceRegistry.register(II18nService, new I18nServiceImpl());
     ServiceRegistry.register(INetService, new NetServiceImpl());
 }

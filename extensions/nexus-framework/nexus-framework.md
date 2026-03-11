@@ -204,7 +204,8 @@ export class Nexus {
     }
 
     static async start(): Promise<void> {
-        await Nexus.bundle.enter(Nexus._config.entryBundle);
+        const entry = Nexus.resolveEntryBundle();  // 显式 entryBundle > enableLobby ? lobby : URL game_id 对应 subgame
+        await Nexus.bundle.enter(entry);
     }
 
     static async destroy(): Promise<void> {
@@ -357,10 +358,13 @@ abstract class IBundleService extends ServiceBase {
     abstract unload(bundleName: string): void;
     abstract isLoaded(bundleName: string): boolean;
     readonly current: string;
+    /** 关闭当前 Bundle 的 Loading 面板；若有待切换场景则先 runScene → BaseEntry.onEnter，再关面板。 */
+    abstract hideLoading(): Promise<void>;
 }
 
 // 用法
 await Nexus.bundle.enter('slotGame', { userId: 123, minBet: 10 });
+await Nexus.bundle.hideLoading();   // Loading 内预加载/请求完成后调用，完成场景切换
 await Nexus.bundle.exit('slotGame');
 ```
 
@@ -485,8 +489,8 @@ const frames = await Nexus.asset.loadDir('common', 'textures/icons', SpriteFrame
 interface NexusConfig {
     version: string;
     debug: boolean;
-    entryBundle: string;             // 入口 Bundle（无大厅时直接填子游戏名）
-    enableLobby: boolean;            // 是否有大厅
+    entryBundle?: string;            // 可选。不填时根据 enableLobby 与 URL game_id 自动解析
+    enableLobby: boolean;            // 为 true 时首进 lobby；为 false 时按 URL game_id 或首个子游戏
     hotUpdateUrl?: string;           // 热更新地址（原生平台）
     defaultLanguage: string;
     languages: string[];
@@ -497,6 +501,7 @@ interface NexusConfig {
 interface BundleConfig {
     name: string;
     type: 'common' | 'lobby' | 'subgame';
+    gameId?: number;                 // 子游戏时可选，与 URL 参数 game_id 对应，用于 H5 直进子游戏
     remoteUrl?: string;              // 远程加载地址（不填则本地）
     pattern?: 'mvc' | 'mvvm' | 'ecs' | 'component'; // 子游戏开发模式
     preload?: boolean;               // 是否预加载
@@ -505,24 +510,29 @@ interface BundleConfig {
 
 ### 6.3 Bundle 切换流程
 
+**场景与 Loading 约定**：入口场景名为 `bundleName + 'Main'`（如 `lobbyMain`、`slotGameMain`）；各 Bundle 的 Loading 面板名为 `bundleName + 'Loading'`（如 `slotGameLoading`）。业务在 Loading 内完成预加载/请求后调用 `Nexus.bundle.hideLoading()`，框架再执行场景切换并调用 `BaseEntry.onEnter`。
+
 ```
 enter('slotGame', params)
     │
-    ├─ 1. notifyBundleExit('lobby')      → 所有 Service 收到退出通知
-    ├─ 2. unload('lobby')                → 释放大厅资源（common 保留）
-    ├─ 3. load('slotGame')               → 加载子游戏 Bundle
-    ├─ 4. loadEntryScene('Main')         → 加载入口场景
-    ├─ 5. SubGameBase.onEnter(params)    → 子游戏初始化
-    └─ 6. notifyBundleEnter('slotGame') → 所有 Service 收到进入通知
+    ├─ 1. notifyBundleExit(prev) / unload(prev)   → 退出旧 Bundle
+    ├─ 2. load('slotGame')                        → 加载子游戏 Bundle
+    ├─ 3. show('slotGameLoading')                 → 显示该 Bundle 的 Loading 面板
+    ├─ 4. loadScene('slotGameMain') 仅加载到内存，不 runScene；enter() 的 Promise 挂起
+    │
+    │   【业务在 Loading 内：预加载、发 joinGame 等，完成后调用 Nexus.bundle.hideLoading()】
+    │
+    ├─ 5. hideLoading() 内：runScene → BaseEntry.onEnter(params) → notifyBundleEnter('slotGame')
+    └─ 6. 关闭 Loading 面板
 ```
 
-### 6.4 SubGameBase 入口基类
+### 6.4 BaseEntry 入口基类
 
-每个子游戏的入口场景根节点挂载继承 `SubGameBase` 的脚本：
+每个 Bundle 的主场景根节点挂载继承 `BaseEntry` 的脚本（大厅、子游戏通用）：
 
 ```typescript
 @ccclass('SlotGameEntry')
-export class SlotGameEntry extends SubGameBase {
+export class SlotGameEntry extends BaseEntry {
 
     async onEnter(params?: Record<string, any>): Promise<void> {
         await super.onEnter(params);
@@ -675,7 +685,7 @@ class MovementSystem extends ECSSystem {
 
 // World：ECS 运行时
 @ccclass('RPGGameEntry')
-class RPGGameEntry extends SubGameBase {
+class RPGGameEntry extends BaseEntry {
     private _world = new World();
 
     async onEnter(params?: any): Promise<void> {
@@ -866,7 +876,7 @@ await Nexus.bundle.enter('lobby');
 
 ```typescript
 Nexus.init(config)          // 初始化框架
-Nexus.start()               // 启动（进入 entryBundle）
+Nexus.start()               // 启动（解析 entryBundle 后进入，见 6.2）
 Nexus.destroy()             // 销毁框架
 
 Nexus.on(evt, fn, target)   // 监听事件（快捷）
@@ -877,7 +887,8 @@ Nexus.offTarget(target)     // 批量移除监听（快捷）
 ### Nexus.bundle
 
 ```typescript
-Nexus.bundle.enter(name, params?)   // 加载并进入 Bundle
+Nexus.bundle.enter(name, params?)   // 加载并进入 Bundle（先显示 Loading，场景在 hideLoading 时切换）
+Nexus.bundle.hideLoading()          // 关闭当前 Loading；若有待切换场景则执行 runScene → onEnter
 Nexus.bundle.exit(name)             // 退出 Bundle
 Nexus.bundle.load(name)             // 仅加载，不进入
 Nexus.bundle.unload(name)           // 卸载并释放
