@@ -29,6 +29,8 @@ export class BundleServiceImpl extends IBundleService {
     private _current = '';
     /** 当前正在显示的 Loading 面板名，用于并发取消时销毁 */
     private _currentBundleLoadingName = '';
+    /** 当前 Loading 组件引用，用于取消时调用 onCancel() */
+    private _currentLoadingComp: BaseLoading | null = null;
     /** 并发 enter() 控制：每次 enter 递增，异步步骤间检测是否已被新 enter 取代 */
     private _enterGeneration = 0;
 
@@ -106,6 +108,7 @@ export class BundleServiceImpl extends IBundleService {
 
         // 并行：从磁盘加载场景文件 + 执行业务加载逻辑（建连/预加载/join 等）
         const loadingComp = loadingNode?.getComponent(BaseLoading) ?? null;
+        this._currentLoadingComp = loadingComp;
         const [scene] = await Promise.all([
             this.tryLoadScene(bundleName, entrySceneName),
             loadingComp?.execute(params) ?? Promise.resolve(),
@@ -129,6 +132,7 @@ export class BundleServiceImpl extends IBundleService {
         }
 
         // 销毁 Loading 面板
+        this._currentLoadingComp = null;
         if (this._currentBundleLoadingName) {
             Nexus.ui.destroy(this._currentBundleLoadingName);
             this._currentBundleLoadingName = '';
@@ -183,6 +187,10 @@ export class BundleServiceImpl extends IBundleService {
      * generation 计数器负责让旧 enter() 的后续逻辑自动放弃执行。
      */
     private _cancelPendingEnter(): void {
+        if (this._currentLoadingComp) {
+            this._currentLoadingComp.onCancel();
+            this._currentLoadingComp = null;
+        }
         if (this._currentBundleLoadingName) {
             Nexus.ui.destroy(this._currentBundleLoadingName);
             this._currentBundleLoadingName = '';
