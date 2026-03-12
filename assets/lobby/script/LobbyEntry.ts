@@ -1,5 +1,6 @@
 import { _decorator } from 'cc';
-import { BaseEntry } from 'db://nexus-framework/index';
+import { BaseEntry, Nexus } from 'db://nexus-framework/index';
+import { lobbyUI, LobbyUIPanelConfig } from './config/LobbyUIConfig';
 
 const { ccclass } = _decorator;
 
@@ -13,10 +14,11 @@ export class LobbyEntry extends BaseEntry {
         await super.onEnter(params);
         // 大厅初始化：如请求游戏列表、刷新用户信息等
         console.log('LobbyEntry onEnter');
+        Nexus.ui.registerPanels(LobbyUIPanelConfig);
     }
 
     async onExit(): Promise<void> {
-        // 大厅清理
         await super.onExit();
+        Nexus.ui.unregisterPanels(lobbyUI);
     }
 }

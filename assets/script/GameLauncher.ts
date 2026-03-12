@@ -1,7 +1,8 @@
 import { _decorator, Component, Node } from 'cc';
 import { bootstrapNexus, getCurrentSearch, getQueryParams, Nexus } from 'db://nexus-framework/index';
 import type { NexusConfig } from 'db://nexus-framework/index';
-import { bundles } from './config/GameConfig';
+import { bundles } from './config/BundleConfig';
+import { UIPanelConfig } from './config/UIConfig';
 
 const { ccclass, property } = _decorator;
 
@@ -27,6 +28,8 @@ export class GameLauncher extends Component {
         await this.gameInit();
 
         Nexus.ui.setRoot(this.canvasRoot);
+
+        Nexus.ui.registerPanels(UIPanelConfig);
 
         await Nexus.start();
 

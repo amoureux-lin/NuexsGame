@@ -9,6 +9,8 @@ export const NexusEvents = {
     LANGUAGE_CHANGED: 'LANGUAGE_CHANGED', // 语言切换
     LOGIN_SUCCESS:    'LOGIN_SUCCESS',    // 登录成功
     LOGOUT:           'LOGOUT',           // 登出
+    UI_OPEN:          'UI_OPEN',          // 通过事件打开 UI 面板 { id, params?, layer? }
+    UI_CLOSE:         'UI_CLOSE',         // 通过事件关闭 UI 面板 { id, destroy? }
 } as const;
 
 export type NexusEventKey = typeof NexusEvents[keyof typeof NexusEvents];

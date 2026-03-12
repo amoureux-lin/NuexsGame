@@ -1,6 +1,7 @@
 import { director, instantiate, Label, Node, Prefab, UITransform, Vec3, Widget } from 'cc';
 import { Nexus } from '../core/Nexus';
-import { IUIService, UILayer } from '../services/contracts';
+import { IUIService, UILayer, type UIPanelConfigMap, type UIPanelOptions } from '../services/contracts';
+import { NexusEvents } from '../NexusEvents';
 
 interface PanelRecord {
     node:  Node;
@@ -34,10 +35,60 @@ const LAYER_DEFS: UILayer[] = [
 export class UIServiceImpl extends IUIService {
 
     private _root: Node | null = null;
-    private readonly _layers  = new Map<UILayer, Node>();
-    private readonly _panels  = new Map<string, PanelRecord>();
+    private readonly _layers        = new Map<UILayer, Node>();
+    private readonly _panels        = new Map<string, PanelRecord>();
+    /** 已注册的面板配置表：id -> 预制体路径、默认层级等。 */
+    private readonly _panelConfigs  = new Map<string, UIPanelOptions>();
     private _loadingNode: Node | null = null;
     private _loadingLabel: Label | null = null;
+
+    /** 框架启动时注册事件驱动的 UI 打开/关闭处理。 */
+    async onBoot(): Promise<void> {
+        // 事件驱动：Nexus.emit(NexusEvents.UI_OPEN, { id, params?, layer? })
+        Nexus.on<{ id: string; params?: unknown; layer?: UILayer }>(
+            NexusEvents.UI_OPEN,
+            async ({ id, params, layer }) => {
+                await this.show(id, params, layer);
+            },
+            this,
+        );
+        // 事件驱动：Nexus.emit(NexusEvents.UI_CLOSE, { id, destroy? })
+        Nexus.on<{ id: string; destroy?: boolean }>(
+            NexusEvents.UI_CLOSE,
+            ({ id, destroy }) => {
+                if (destroy) this.destroy(id);
+                else this.hide(id);
+            },
+            this,
+        );
+    }
+
+    /** 注册一批 UI 面板配置。后注册的同名 id 会覆盖旧配置。 */
+    registerPanels(config: UIPanelConfigMap): void {
+        for (const id in config) {
+            if (Object.prototype.hasOwnProperty.call(config, id)) {
+                this._panelConfigs.set(id, config[id]);
+            }
+        }
+    }
+
+    /** 按 id 反注册；若传入 key 对象（如 lobbyUI），则取其 value 作为 id 列表。 */
+    unregisterPanels(ids: string[] | Record<string, string>): void {
+        const list: string[] = Array.isArray(ids)
+            ? ids
+            : (() => {
+                const a: string[] = [];
+                for (const k in ids) {
+                    if (Object.prototype.hasOwnProperty.call(ids, k)) {
+                        a.push(ids[k]);
+                    }
+                }
+                return a;
+            })();
+        for (let i = 0; i < list.length; i++) {
+            this._panelConfigs.delete(list[i]);
+        }
+    }
 
     /** 设置 UI 挂载根节点，并初始化各层级容器。 */
     setRoot(root: Node): void {
@@ -48,7 +99,10 @@ export class UIServiceImpl extends IUIService {
     }
 
     /** 显示面板；如果已存在则仅重新激活并分发 onShow。返回面板根节点。 */
-    async show(name: string, params?: unknown, layer: UILayer = UILayer.PANEL): Promise<Node> {
+    async show(name: string, params?: unknown, layer?: UILayer): Promise<Node> {
+        const cfg = this._panelConfigs.get(name);
+        const targetLayer: UILayer = layer ?? cfg?.layer ?? UILayer.PANEL;
+
         // 已存在：直接显示并透传参数
         const existing = this._panels.get(name);
         if (existing) {
@@ -57,11 +111,13 @@ export class UIServiceImpl extends IUIService {
             return existing.node;
         }
 
-        const prefab = await this.loadPrefab(name);
+        const prefabNameOrPath = cfg?.prefab ?? name;
+        const bundleOverride   = cfg?.bundle;
+        const prefab = await this.loadPrefab(prefabNameOrPath, bundleOverride);
         const node   = instantiate(prefab);
 
-        this.getLayerNode(layer).addChild(node);
-        this._panels.set(name, { node, layer });
+        this.getLayerNode(targetLayer).addChild(node);
+        this._panels.set(name, { node, layer: targetLayer });
         this.dispatch(node, 'onShow', params);
         return node;
     }
@@ -111,9 +167,11 @@ export class UIServiceImpl extends IUIService {
     async onDestroy(): Promise<void> {
         this._panels.clear();
         this._layers.clear();
+        this._panelConfigs.clear();
         this._loadingNode = null;
         this._loadingLabel = null;
         this._root = null;
+        Nexus.offTarget(this);
     }
 
     // ── 私有工具 ─────────────────────────────────────
@@ -177,11 +235,15 @@ export class UIServiceImpl extends IUIService {
         return loading;
     }
 
-    /** 优先从当前 Bundle 加载，失败则 fallback 到 common */
-    private async loadPrefab(name: string): Promise<Prefab> {
-        const path = `prefabs/${name}`;
+    /**
+     * 优先从当前 Bundle（或配置指定的 Bundle）加载，失败则 fallback 到 common。
+     * nameOrPath 中包含 '/' 时视为完整路径，否则按 prefabs/<name> 规则拼接。
+     */
+    private async loadPrefab(nameOrPath: string, bundleOverride?: string): Promise<Prefab> {
+        const path = nameOrPath.includes('/') ? nameOrPath : `prefabs/${nameOrPath}`;
+        const primaryBundle = bundleOverride ?? Nexus.bundle.current;
         try {
-            return await Nexus.asset.load<Prefab>(Nexus.bundle.current, path, Prefab);
+            return await Nexus.asset.load<Prefab>(primaryBundle, path, Prefab);
         } catch {
             return await Nexus.asset.load<Prefab>('common', path, Prefab);
         }

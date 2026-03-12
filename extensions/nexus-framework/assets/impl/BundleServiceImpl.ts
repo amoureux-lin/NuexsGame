@@ -11,6 +11,8 @@ import { NexusEvents } from '../NexusEvents';
 const ENTRY_SCENE_SUFFIX = 'Main';
 /** Loading 面板名约定：bundleName + 'Loading'，如 lobbyLoading、slotGameLoading */
 const LOADING_PANEL_SUFFIX = 'Loading';
+/** Cocos Creator 内置 Bundle，不可卸载，避免破坏引擎 */
+const BUILTIN_BUNDLES = new Set<string>(['internal', 'main', 'resources']);
 
 /**
  * 基于 assetManager.loadBundle + director.loadScene 的 Bundle 管理实现。
@@ -79,7 +81,9 @@ export class BundleServiceImpl extends IBundleService {
             await ServiceRegistry.notifyBundleExit(previous);
             Nexus.event.emit(NexusEvents.BUNDLE_EXIT, previous);
             const prevCfg = this._configs.get(previous);
-            if (prevCfg?.type !== 'common') {
+            const isCommon = prevCfg?.type === 'common';
+            const isBuiltin = BUILTIN_BUNDLES.has(previous);
+            if (!isCommon && !isBuiltin) {
                 this.unload(previous);
             }
         }

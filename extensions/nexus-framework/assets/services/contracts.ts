@@ -24,6 +24,22 @@ export interface HttpResponse<T> {
 
 export type AssetCtor<T extends Asset> = abstract new (...args: any[]) => T;
 
+/** UI 面板注册配置项：用于通过 registerPanels 向 UI 服务注册可用面板。 */
+export interface UIPanelOptions {
+    /** 预制体路径，相对于 Bundle 根目录；不含则默认使用 prefabs/<id> 规则。 */
+    prefab: string;
+    /** 默认层级；show() 未显式传 layer 时使用。 */
+    layer?: UILayer;
+    /** 覆盖加载所用的 Bundle 名；不填则使用当前 Bundle，并在失败时回退到 common。 */
+    bundle?: string;
+    /** 是否需要遮罩等附加语义（由业务自定义解释）。 */
+    mask?: boolean;
+    /** 是否单实例 / 可复用等语义（由业务自定义解释）。 */
+    vacancy?: boolean;
+}
+
+export type UIPanelConfigMap = Record<string, UIPanelOptions>;
+
 export abstract class IEventService extends ServiceBase {
     /** 注册事件监听。 */
     abstract on<T>(event: string, fn: (data: T) => void, target?: object): void;
@@ -55,6 +71,10 @@ export abstract class IBundleService extends ServiceBase {
 }
 
 export abstract class IUIService extends ServiceBase {
+    /** 注册一批 UI 面板配置，后续 show(name) / hide(name) 可直接使用 id。 */
+    abstract registerPanels(config: UIPanelConfigMap): void;
+    /** 反注册一批 UI 面板配置（一般在 Bundle 退出时按需调用）。可传 id 数组或 key 对象（如 lobbyUI），内部会取 value 作为 id。 */
+    abstract unregisterPanels(ids: string[] | Record<string, string>): void;
     /** 显示一个 UI 面板，返回面板根节点。 */
     abstract show(name: string, params?: unknown, layer?: UILayer): Promise<Node>;
     /** 隐藏一个已显示的 UI 面板。 */
