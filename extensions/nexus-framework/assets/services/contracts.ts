@@ -3,10 +3,10 @@ import { ServiceBase } from '../core/ServiceBase';
 
 export enum UILayer {
     SCENE = 0,
-    PANEL = 100,
-    POPUP = 200,
-    TIPS = 300,
-    LOADING = 400,
+    LOADING = 100,
+    PANEL = 200,
+    POPUP = 300,
+    TIPS = 400,
     TOP = 500,
 }
 

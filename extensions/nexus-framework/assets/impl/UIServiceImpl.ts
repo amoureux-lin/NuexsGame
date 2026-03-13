@@ -8,14 +8,17 @@ interface PanelRecord {
     layer: UILayer;
 }
 
-/** 按 UILayer 值排列的层定义（顺序即 z 序） */
+/**
+ * 按 UILayer 枚举值从小到大排列的层定义（顺序即 z 序，前面在下，后面在上）。
+ * 注意：必须与 UILayer 数值大小保持一致，否则 setSiblingIndex(layer) 会导致层级混乱。
+ */
 const LAYER_DEFS: UILayer[] = [
-    UILayer.SCENE,
-    UILayer.PANEL,
-    UILayer.POPUP,
-    UILayer.TIPS,
-    UILayer.LOADING,
-    UILayer.TOP,
+    UILayer.SCENE,   // 0
+    UILayer.LOADING, // 100
+    UILayer.PANEL,   // 200
+    UILayer.POPUP,   // 300
+    UILayer.TIPS,    // 400
+    UILayer.TOP,     // 500
 ];
 
 /**
@@ -23,10 +26,10 @@ const LAYER_DEFS: UILayer[] = [
  *
  * 层级结构（挂在 canvasRoot 下）：
  *   [Layer:SCENE]   z=0
- *   [Layer:PANEL]   z=100
- *   [Layer:POPUP]   z=200
- *   [Layer:TIPS]    z=300
- *   [Layer:LOADING] z=400
+ *   [Layer:LOADING] z=100
+ *   [Layer:PANEL]   z=200
+ *   [Layer:POPUP]   z=300
+ *   [Layer:TIPS]    z=400
  *   [Layer:TOP]     z=500
  *
  * Prefab 查找规则：优先从当前 Bundle 的 prefabs/<name> 加载，

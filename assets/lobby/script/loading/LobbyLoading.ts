@@ -1,5 +1,7 @@
 import { _decorator } from 'cc';
 import { BaseLoading } from 'db://assets/script/base/BaseLoading';
+import { CommonUI } from 'db://assets/script/config/UIConfig';
+import { Nexus } from 'db://nexus-framework/index';
 
 const { ccclass } = _decorator;
 
@@ -27,6 +29,7 @@ export class LobbyLoading extends BaseLoading {
         //await Nexus.audio.playMusic('lobby', 'xxx');
         // await Promise.resolve();
         //模拟暂停 resolve不返回结果，防止进度条直接到100%
+        Nexus.ui.show(CommonUI.ALERT)
         await new Promise<void>(resolve => setTimeout(resolve, 10000));
     }
 
