@@ -1,11 +1,11 @@
 import { _decorator } from 'cc';
-import { BaseEntry } from 'db://nexus-framework/index';
+import { NexusBaseEntry } from 'db://nexus-framework/index';
 
 const { ccclass } = _decorator;
 
 
 @ccclass('SlotGameEntry')
-export class SlotGameEntry extends BaseEntry {
+export class SlotGameEntry extends NexusBaseEntry {
 
     async onEnter(params?: Record<string, unknown>): Promise<void> {
         await super.onEnter(params);

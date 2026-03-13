@@ -1,0 +1,426 @@
+
+Teasing.png
+size: 1842,263
+format: RGBA8888
+filter: Linear,Linear
+repeat: none
+emote_17_00
+  rotate: true
+  xy: 94, 176
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_01
+  rotate: true
+  xy: 186, 176
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_02
+  rotate: true
+  xy: 278, 176
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_03
+  rotate: true
+  xy: 370, 176
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_04
+  rotate: true
+  xy: 462, 176
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_05
+  rotate: true
+  xy: 554, 176
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_06
+  rotate: true
+  xy: 646, 176
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_07
+  rotate: true
+  xy: 738, 176
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_08
+  rotate: true
+  xy: 830, 176
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_09
+  rotate: true
+  xy: 922, 176
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_10
+  rotate: true
+  xy: 1014, 176
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_11
+  rotate: true
+  xy: 1106, 176
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_12
+  rotate: true
+  xy: 1198, 176
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_13
+  rotate: true
+  xy: 1290, 176
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_14
+  rotate: true
+  xy: 1382, 176
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_15
+  rotate: true
+  xy: 1474, 176
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_16
+  rotate: true
+  xy: 1566, 176
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_17
+  rotate: true
+  xy: 1658, 176
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_18
+  rotate: true
+  xy: 1750, 176
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_19
+  rotate: true
+  xy: 2, 89
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_20
+  rotate: true
+  xy: 94, 89
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_21
+  rotate: true
+  xy: 186, 89
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_22
+  rotate: true
+  xy: 278, 89
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_23
+  rotate: true
+  xy: 370, 89
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_24
+  rotate: true
+  xy: 462, 89
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_25
+  rotate: true
+  xy: 554, 89
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_26
+  rotate: true
+  xy: 646, 89
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_27
+  rotate: true
+  xy: 738, 89
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_28
+  rotate: true
+  xy: 830, 89
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_29
+  rotate: true
+  xy: 922, 89
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_30
+  rotate: true
+  xy: 1014, 89
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_31
+  rotate: true
+  xy: 1106, 89
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_32
+  rotate: true
+  xy: 1198, 89
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_33
+  rotate: true
+  xy: 1290, 89
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_34
+  rotate: true
+  xy: 1382, 89
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_35
+  rotate: true
+  xy: 1474, 89
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_36
+  rotate: true
+  xy: 1566, 89
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_37
+  rotate: true
+  xy: 1658, 89
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_38
+  rotate: true
+  xy: 1750, 89
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_39
+  rotate: true
+  xy: 2, 2
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_40
+  rotate: true
+  xy: 94, 2
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_41
+  rotate: true
+  xy: 186, 2
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_42
+  rotate: true
+  xy: 278, 2
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_43
+  rotate: true
+  xy: 370, 2
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_44
+  rotate: true
+  xy: 462, 2
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_45
+  rotate: true
+  xy: 554, 2
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_46
+  rotate: true
+  xy: 646, 2
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_47
+  rotate: true
+  xy: 738, 2
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_48
+  rotate: true
+  xy: 830, 2
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_49
+  rotate: true
+  xy: 922, 2
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_50
+  rotate: true
+  xy: 1014, 2
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_51
+  rotate: true
+  xy: 1106, 2
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_52
+  rotate: true
+  xy: 1198, 2
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_53
+  rotate: true
+  xy: 1290, 2
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_54
+  rotate: true
+  xy: 1382, 2
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_55
+  rotate: true
+  xy: 1474, 2
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_56
+  rotate: true
+  xy: 1566, 2
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_57
+  rotate: true
+  xy: 1658, 2
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_58
+  rotate: true
+  xy: 1750, 2
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1
+emote_17_59
+  rotate: true
+  xy: 2, 176
+  size: 85, 90
+  orig: 85, 90
+  offset: 0, 0
+  index: -1

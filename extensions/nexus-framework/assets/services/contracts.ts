@@ -60,6 +60,8 @@ export abstract class IBundleService extends ServiceBase {
     abstract load(bundleName: string): Promise<void>;
     /** 进入指定 Bundle，并执行切换流程。 */
     abstract enter(bundleName: string, params?: Record<string, unknown>): Promise<void>;
+    /** 由 Loading 在“加载完成、进度到 100%”后调用，触发场景切换并关闭 Loading；不依赖 execute() 的 resolve。 */
+    abstract loadFinish(): void;
     /** 退出当前 Bundle。 */
     abstract exit(bundleName: string): Promise<void>;
     /** 卸载指定 Bundle 并释放资源。 */
@@ -152,8 +154,16 @@ export abstract class II18nService extends ServiceBase {
 export abstract class IAssetService extends ServiceBase {
     /** 加载单个资源。 */
     abstract load<T extends Asset>(bundle: string, path: string, type?: AssetCtor<T>): Promise<T>;
-    /** 加载目录下的同类资源。 */
-    abstract loadDir<T extends Asset>(bundle: string, dir: string, type?: AssetCtor<T>): Promise<T[]>;
+    /**
+     * 加载目录下的同类资源。
+     * 可选 onProgress 回调，签名与 Cocos loadDir 一致：(finished, total, item)。
+     */
+    abstract loadDir<T extends Asset>(
+        bundle: string,
+        dir: string,
+        type?: AssetCtor<T>,
+        onProgress?: (finished: number, total: number, item: unknown) => void,
+    ): Promise<T[]>;
     /** 释放单个资源。 */
     abstract release(bundle: string, path: string): void;
     /** 释放整个 Bundle 的资源。 */

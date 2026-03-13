@@ -1,7 +1,7 @@
-import { AssetManager, assetManager, director, Node, Scene } from 'cc';
+import { AssetManager, assetManager, director, error, Node, Scene } from 'cc';
 import { Nexus } from '../core/Nexus';
-import { BaseEntry } from '../base/BaseEntry';
-import { BaseLoading } from '../base/BaseLoading';
+import { NexusBaseEntry } from '../base/NexusBaseEntry';
+import { NexusBaseLoading } from '../base/NexusBaseLoading';
 import type { BundleConfig, NexusConfig } from '../core/NexusConfig';
 import { ServiceRegistry } from '../core/ServiceRegistry';
 import { IBundleService, UILayer } from '../services/contracts';
@@ -20,21 +20,23 @@ const BUILTIN_BUNDLES = new Set<string>(['internal', 'main', 'resources']);
  * 切换流程：
  *   1. notifyBundleExit(prev) → 卸载非 common Bundle
  *   2. loadBundle(next) → show(bundleName+'Loading') 拿到节点引用
- *   3. 并行：loadScene(bundleName+'Main') + BaseLoading.execute(params)
- *   4. 两者均完成后：runScene → BaseEntry.onEnter → notifyBundleEnter → destroy Loading
+ *   3. 并行：loadScene(bundleName+'Main') + Loading.onShow(params) 启动流程，等待 loadFinish()
+ *   4. loadFinish() 后：runScene → NexusBaseEntry.onEnter → notifyBundleEnter → destroy Loading
  */
 export class BundleServiceImpl extends IBundleService {
 
     private readonly _configs  = new Map<string, BundleConfig>();
     private readonly _bundles  = new Map<string, AssetManager.Bundle>();
-    private _activeEntries: BaseEntry[] = [];
+    private _activeEntries: NexusBaseEntry[] = [];
     private _current = '';
     /** 当前正在显示的 Loading 面板名，用于并发取消时销毁 */
     private _currentBundleLoadingName = '';
     /** 当前 Loading 组件引用，用于取消时调用 onCancel() */
-    private _currentLoadingComp: BaseLoading | null = null;
+    private _currentLoadingComp: NexusBaseLoading | null = null;
     /** 并发 enter() 控制：每次 enter 递增，异步步骤间检测是否已被新 enter 取代 */
     private _enterGeneration = 0;
+    /** Loading 调用 loadFinish() 时 resolve，用于 enter() 中“等待完成”而非仅等 execute()。 */
+    private _resolveLoading: (() => void) | null = null;
 
     /** 缓存 Bundle 配置并预加载标记为 preload 的包。 */
     async onBoot(config: NexusConfig): Promise<void> {
@@ -96,29 +98,39 @@ export class BundleServiceImpl extends IBundleService {
 
         if (cancelled()) return;
 
-        const entrySceneName   = bundleName + ENTRY_SCENE_SUFFIX;
-        const loadingPanelName = bundleName + LOADING_PANEL_SUFFIX;
+        // 约定：场景放在 scene/ 目录下，命名为 bundleName + 'Main'，如 lobby/scene/lobbyMain。
+        const entrySceneName   = `scene/${bundleName + ENTRY_SCENE_SUFFIX}`;
+        // 约定：Bundle 专用 Loading 预制体放在 loading/ 目录下，命名为 bundleName + 'Loading'。
+        const loadingPanelName = `loading/${bundleName + LOADING_PANEL_SUFFIX}`;
 
         // 显示 Loading 面板并拿到节点引用
         let loadingNode: Node | null = null;
         try {
-            loadingNode = await Nexus.ui.show(loadingPanelName, undefined, UILayer.LOADING);
+            loadingNode = await Nexus.ui.show(loadingPanelName, params, UILayer.LOADING);
             this._currentBundleLoadingName = loadingPanelName;
-        } catch {
-            // 无该 Loading 预制体时静默跳过
+        } catch (e) {
+            // 无该 Loading 预制体或加载失败时打印错误日志，方便排查路径/配置问题
+            error('[Nexus][BundleService] Failed to show loading panel:', loadingPanelName, e);
         }
 
         if (cancelled()) return;
 
-        // 并行：从磁盘加载场景文件 + 执行业务加载逻辑（建连/预加载/join 等）
-        const loadingComp = loadingNode?.getComponent(BaseLoading) ?? null;
+        // 并行：加载场景到内存 + 等待 loadFinish()（由 Loading 内进度到 100% 时自动触发）
+        const loadingComp = loadingNode?.getComponent(NexusBaseLoading) ?? null;
         this._currentLoadingComp = loadingComp;
-        const [scene] = await Promise.all([
-            this.tryLoadScene(bundleName, entrySceneName),
-            loadingComp?.execute(params) ?? Promise.resolve(),
-        ]);
+        const scenePromise = this.tryLoadScene(bundleName, entrySceneName);
+        let scene: Scene | null;
+        if (loadingComp) {
+            const finishPromise = new Promise<void>(r => { this._resolveLoading = r; });
+            scene = (await Promise.all([scenePromise, finishPromise]))[0] as Scene | null;
+        } else {
+            this._resolveLoading = null;
+            scene = await scenePromise;
+        }
 
         if (cancelled()) return;
+
+        this._resolveLoading = null;
 
         // 两者均完成 → 切换场景
         if (scene) {
@@ -174,6 +186,14 @@ export class BundleServiceImpl extends IBundleService {
         return this._current;
     }
 
+    /** Loading 在进度到 100% 后调用，触发当前 enter 的“完成”并执行场景切换、关闭 Loading。 */
+    loadFinish(): void {
+        if (this._resolveLoading) {
+            this._resolveLoading();
+            this._resolveLoading = null;
+        }
+    }
+
     /** 销毁时执行退出钩子并清空缓存。 */
     async onDestroy(): Promise<void> {
         await this.invokeExitHooks();
@@ -191,6 +211,10 @@ export class BundleServiceImpl extends IBundleService {
      * generation 计数器负责让旧 enter() 的后续逻辑自动放弃执行。
      */
     private _cancelPendingEnter(): void {
+        if (this._resolveLoading) {
+            this._resolveLoading();
+            this._resolveLoading = null;
+        }
         if (this._currentLoadingComp) {
             this._currentLoadingComp.onCancel();
             this._currentLoadingComp = null;
@@ -216,6 +240,7 @@ export class BundleServiceImpl extends IBundleService {
         return new Promise<Scene | null>((resolve) => {
             bundle.loadScene(sceneName, (err: Error | null, scene: Scene) => {
                 if (err) {
+                    error('[Nexus][BundleService] Failed to load scene:', `${bundleName}/${sceneName}`, err);
                     this._activeEntries = [];
                     resolve(null);
                     return;
@@ -225,10 +250,10 @@ export class BundleServiceImpl extends IBundleService {
         });
     }
 
-    /** 收集当前场景中的 BaseEntry，并依次调用 onEnter。 */
+    /** 收集当前场景中的 NexusBaseEntry，并依次调用 onEnter。 */
     private async invokeEnterHooks(params?: Record<string, unknown>): Promise<void> {
         const scene = director.getScene();
-        this._activeEntries = scene?.getComponentsInChildren(BaseEntry) ?? [];
+        this._activeEntries = scene?.getComponentsInChildren(NexusBaseEntry) ?? [];
 
         for (const entry of this._activeEntries) {
             await entry.onEnter(params);

@@ -358,7 +358,7 @@ abstract class IBundleService extends ServiceBase {
     abstract unload(bundleName: string): void;
     abstract isLoaded(bundleName: string): boolean;
     readonly current: string;
-    /** 关闭当前 Bundle 的 Loading 面板；若有待切换场景则先 runScene → BaseEntry.onEnter，再关面板。 */
+    /** 关闭当前 Bundle 的 Loading 面板；若有待切换场景则先 runScene → NexusBaseEntry.onEnter，再关面板。 */
     abstract hideLoading(): Promise<void>;
 }
 
@@ -510,7 +510,7 @@ interface BundleConfig {
 
 ### 6.3 Bundle 切换流程
 
-**场景与 Loading 约定**：入口场景名为 `bundleName + 'Main'`（如 `lobbyMain`、`slotGameMain`）；各 Bundle 的 Loading 面板名为 `bundleName + 'Loading'`（如 `slotGameLoading`）。业务在 Loading 内完成预加载/请求后调用 `Nexus.bundle.hideLoading()`，框架再执行场景切换并调用 `BaseEntry.onEnter`。
+**场景与 Loading 约定**：入口场景名为 `bundleName + 'Main'`（如 `lobbyMain`、`slotGameMain`）；各 Bundle 的 Loading 面板名为 `bundleName + 'Loading'`（如 `slotGameLoading`）。业务在 Loading 内完成预加载/请求后调用 `Nexus.bundle.hideLoading()`，框架再执行场景切换并调用 `NexusBaseEntry.onEnter`。
 
 ```
 enter('slotGame', params)
@@ -522,17 +522,17 @@ enter('slotGame', params)
     │
     │   【业务在 Loading 内：预加载、发 joinGame 等，完成后调用 Nexus.bundle.hideLoading()】
     │
-    ├─ 5. hideLoading() 内：runScene → BaseEntry.onEnter(params) → notifyBundleEnter('slotGame')
+    ├─ 5. hideLoading() 内：runScene → NexusBaseEntry.onEnter(params) → notifyBundleEnter('slotGame')
     └─ 6. 关闭 Loading 面板
 ```
 
-### 6.4 BaseEntry 入口基类
+### 6.4 NexusBaseEntry 入口基类
 
-每个 Bundle 的主场景根节点挂载继承 `BaseEntry` 的脚本（大厅、子游戏通用）：
+每个 Bundle 的主场景根节点挂载继承 `NexusBaseEntry` 的脚本（大厅、子游戏通用）：
 
 ```typescript
 @ccclass('SlotGameEntry')
-export class SlotGameEntry extends BaseEntry {
+export class SlotGameEntry extends NexusBaseEntry {
 
     async onEnter(params?: Record<string, any>): Promise<void> {
         await super.onEnter(params);
@@ -685,7 +685,7 @@ class MovementSystem extends ECSSystem {
 
 // World：ECS 运行时
 @ccclass('RPGGameEntry')
-class RPGGameEntry extends BaseEntry {
+class RPGGameEntry extends NexusBaseEntry {
     private _world = new World();
 
     async onEnter(params?: any): Promise<void> {

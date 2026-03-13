@@ -1,0 +1,426 @@
+
+Happy.png
+size: 1676,303
+format: RGBA8888
+filter: Linear,Linear
+repeat: none
+images/emote_00
+  rotate: false
+  xy: 2, 238
+  size: 65, 63
+  orig: 210, 115
+  offset: 72, 26
+  index: -1
+images/emote_01
+  rotate: false
+  xy: 2, 238
+  size: 65, 63
+  orig: 210, 115
+  offset: 72, 26
+  index: -1
+images/emote_02
+  rotate: false
+  xy: 69, 229
+  size: 74, 72
+  orig: 210, 115
+  offset: 68, 22
+  index: -1
+images/emote_03
+  rotate: false
+  xy: 145, 218
+  size: 84, 83
+  orig: 210, 115
+  offset: 63, 16
+  index: -1
+images/emote_04
+  rotate: true
+  xy: 231, 209
+  size: 92, 93
+  orig: 210, 115
+  offset: 59, 11
+  index: -1
+images/emote_05
+  rotate: false
+  xy: 531, 105
+  size: 98, 98
+  orig: 210, 115
+  offset: 56, 8
+  index: -1
+images/emote_06
+  rotate: false
+  xy: 531, 105
+  size: 98, 98
+  orig: 210, 115
+  offset: 56, 8
+  index: -1
+images/emote_07
+  rotate: false
+  xy: 631, 105
+  size: 98, 98
+  orig: 210, 115
+  offset: 56, 9
+  index: -1
+images/emote_08
+  rotate: false
+  xy: 731, 105
+  size: 99, 98
+  orig: 210, 115
+  offset: 56, 7
+  index: -1
+images/emote_09
+  rotate: false
+  xy: 832, 105
+  size: 100, 98
+  orig: 210, 115
+  offset: 56, 7
+  index: -1
+images/emote_10
+  rotate: false
+  xy: 934, 104
+  size: 100, 98
+  orig: 210, 115
+  offset: 56, 9
+  index: -1
+images/emote_11
+  rotate: false
+  xy: 934, 104
+  size: 100, 98
+  orig: 210, 115
+  offset: 56, 9
+  index: -1
+images/emote_12
+  rotate: false
+  xy: 1036, 104
+  size: 100, 98
+  orig: 210, 115
+  offset: 56, 8
+  index: -1
+images/emote_13
+  rotate: false
+  xy: 1371, 3
+  size: 100, 99
+  orig: 210, 115
+  offset: 56, 9
+  index: -1
+images/emote_14
+  rotate: false
+  xy: 1138, 104
+  size: 100, 98
+  orig: 210, 115
+  offset: 56, 8
+  index: -1
+images/emote_15
+  rotate: false
+  xy: 1473, 3
+  size: 100, 99
+  orig: 210, 115
+  offset: 56, 9
+  index: -1
+images/emote_16
+  rotate: false
+  xy: 1473, 3
+  size: 100, 99
+  orig: 210, 115
+  offset: 56, 9
+  index: -1
+images/emote_17
+  rotate: true
+  xy: 1575, 2
+  size: 100, 99
+  orig: 210, 115
+  offset: 56, 7
+  index: -1
+images/emote_18
+  rotate: true
+  xy: 1240, 104
+  size: 98, 105
+  orig: 210, 115
+  offset: 57, 2
+  index: -1
+images/emote_19
+  rotate: true
+  xy: 958, 204
+  size: 97, 107
+  orig: 210, 115
+  offset: 57, 0
+  index: -1
+images/emote_20
+  rotate: true
+  xy: 326, 205
+  size: 96, 109
+  orig: 210, 115
+  offset: 58, 0
+  index: -1
+images/emote_21
+  rotate: true
+  xy: 326, 205
+  size: 96, 109
+  orig: 210, 115
+  offset: 58, 0
+  index: -1
+images/emote_22
+  rotate: true
+  xy: 1067, 204
+  size: 97, 107
+  orig: 210, 115
+  offset: 57, 0
+  index: -1
+images/emote_23
+  rotate: true
+  xy: 1176, 204
+  size: 97, 106
+  orig: 210, 115
+  offset: 56, 0
+  index: -1
+images/emote_24
+  rotate: true
+  xy: 437, 205
+  size: 96, 107
+  orig: 210, 115
+  offset: 56, 0
+  index: -1
+images/emote_25
+  rotate: true
+  xy: 546, 205
+  size: 96, 99
+  orig: 210, 115
+  offset: 57, 7
+  index: -1
+images/emote_26
+  rotate: true
+  xy: 546, 205
+  size: 96, 99
+  orig: 210, 115
+  offset: 57, 7
+  index: -1
+images/emote_27
+  rotate: true
+  xy: 647, 205
+  size: 96, 99
+  orig: 210, 115
+  offset: 57, 9
+  index: -1
+images/emote_28
+  rotate: true
+  xy: 748, 205
+  size: 96, 99
+  orig: 210, 115
+  offset: 57, 8
+  index: -1
+images/emote_29
+  rotate: true
+  xy: 1284, 204
+  size: 97, 104
+  orig: 210, 115
+  offset: 56, 4
+  index: -1
+images/emote_30
+  rotate: true
+  xy: 849, 205
+  size: 96, 107
+  orig: 210, 115
+  offset: 56, 0
+  index: -1
+images/emote_31
+  rotate: true
+  xy: 849, 205
+  size: 96, 107
+  orig: 210, 115
+  offset: 56, 0
+  index: -1
+images/emote_32
+  rotate: true
+  xy: 1390, 204
+  size: 97, 107
+  orig: 210, 115
+  offset: 56, 2
+  index: -1
+images/emote_33
+  rotate: true
+  xy: 1347, 104
+  size: 98, 107
+  orig: 210, 115
+  offset: 56, 0
+  index: -1
+images/emote_34
+  rotate: true
+  xy: 1499, 204
+  size: 97, 100
+  orig: 210, 115
+  offset: 57, 8
+  index: -1
+images/emote_35
+  rotate: true
+  xy: 1456, 104
+  size: 98, 100
+  orig: 210, 115
+  offset: 56, 6
+  index: -1
+images/emote_36
+  rotate: true
+  xy: 1456, 104
+  size: 98, 100
+  orig: 210, 115
+  offset: 56, 6
+  index: -1
+images/emote_37
+  rotate: true
+  xy: 1558, 104
+  size: 98, 99
+  orig: 210, 115
+  offset: 56, 7
+  index: -1
+images/emote_38
+  rotate: true
+  xy: 2, 30
+  size: 98, 99
+  orig: 210, 115
+  offset: 55, 8
+  index: -1
+images/emote_39
+  rotate: true
+  xy: 103, 19
+  size: 98, 99
+  orig: 210, 115
+  offset: 55, 8
+  index: -1
+images/emote_40
+  rotate: true
+  xy: 204, 10
+  size: 98, 101
+  orig: 210, 115
+  offset: 55, 9
+  index: -1
+images/emote_41
+  rotate: true
+  xy: 204, 10
+  size: 98, 101
+  orig: 210, 115
+  offset: 55, 9
+  index: -1
+images/emote_42
+  rotate: true
+  xy: 2, 130
+  size: 97, 100
+  orig: 210, 115
+  offset: 57, 8
+  index: -1
+images/emote_43
+  rotate: true
+  xy: 104, 119
+  size: 97, 105
+  orig: 210, 115
+  offset: 57, 4
+  index: -1
+images/emote_44
+  rotate: true
+  xy: 307, 6
+  size: 98, 107
+  orig: 210, 115
+  offset: 56, 0
+  index: -1
+images/emote_45
+  rotate: true
+  xy: 416, 5
+  size: 98, 109
+  orig: 210, 115
+  offset: 56, 0
+  index: -1
+images/emote_46
+  rotate: true
+  xy: 416, 5
+  size: 98, 109
+  orig: 210, 115
+  offset: 56, 0
+  index: -1
+images/emote_47
+  rotate: true
+  xy: 211, 110
+  size: 97, 107
+  orig: 210, 115
+  offset: 55, 0
+  index: -1
+images/emote_48
+  rotate: true
+  xy: 527, 5
+  size: 98, 108
+  orig: 210, 115
+  offset: 55, 0
+  index: -1
+images/emote_49
+  rotate: true
+  xy: 637, 5
+  size: 98, 107
+  orig: 210, 115
+  offset: 56, 0
+  index: -1
+images/emote_50
+  rotate: true
+  xy: 746, 5
+  size: 98, 99
+  orig: 210, 115
+  offset: 57, 8
+  index: -1
+images/emote_51
+  rotate: true
+  xy: 746, 5
+  size: 98, 99
+  orig: 210, 115
+  offset: 57, 8
+  index: -1
+images/emote_52
+  rotate: true
+  xy: 847, 4
+  size: 98, 100
+  orig: 210, 115
+  offset: 56, 8
+  index: -1
+images/emote_53
+  rotate: true
+  xy: 949, 4
+  size: 98, 105
+  orig: 210, 115
+  offset: 56, 3
+  index: -1
+images/emote_54
+  rotate: true
+  xy: 1056, 4
+  size: 98, 100
+  orig: 210, 115
+  offset: 56, 8
+  index: -1
+images/emote_55
+  rotate: true
+  xy: 320, 106
+  size: 97, 100
+  orig: 210, 115
+  offset: 56, 7
+  index: -1
+images/emote_56
+  rotate: true
+  xy: 320, 106
+  size: 97, 100
+  orig: 210, 115
+  offset: 56, 7
+  index: -1
+images/emote_57
+  rotate: true
+  xy: 1158, 4
+  size: 98, 102
+  orig: 210, 115
+  offset: 56, 6
+  index: -1
+images/emote_58
+  rotate: true
+  xy: 1262, 4
+  size: 98, 107
+  orig: 210, 115
+  offset: 56, 0
+  index: -1
+images/emote_59
+  rotate: true
+  xy: 422, 105
+  size: 98, 107
+  orig: 210, 115
+  offset: 56, 0
+  index: -1

@@ -16,12 +16,32 @@ export class AssetServiceImpl extends IAssetService {
         });
     }
 
-    /** 加载目录下的同类资源集合。 */
-    async loadDir<T extends Asset>(bundle: string, dir: string, type?: AssetCtor<T>): Promise<T[]> {
+    /**
+     * 加载目录下的同类资源集合。
+     * 支持可选进度回调 onProgress，签名与 Cocos loadDir 一致：(finished, total, item)。
+     */
+    async loadDir<T extends Asset>(
+        bundle: string,
+        dir: string,
+        type?: AssetCtor<T>,
+        onProgress?: (finished: number, total: number, item: AssetManager.RequestItem) => void,
+    ): Promise<T[]> {
         const b = await this.resolveBundle(bundle);
         return new Promise<T[]>((resolve, reject) => {
             const cb = (err: Error | null, assets: T[]) => err ? reject(err) : resolve(assets);
-            type ? b.loadDir(dir, type as any, cb) : b.loadDir(dir, cb);
+            if (onProgress) {
+                if (type) {
+                    b.loadDir(dir, type as any, (finished, total, item) => {
+                        onProgress(finished, total, item);
+                    }, cb);
+                } else {
+                    b.loadDir(dir, (finished, total, item) => {
+                        onProgress(finished, total, item);
+                    }, cb);
+                }
+            } else {
+                type ? b.loadDir(dir, type as any, cb) : b.loadDir(dir, cb);
+            }
         });
     }
 

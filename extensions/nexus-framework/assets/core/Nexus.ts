@@ -24,10 +24,10 @@ export class Nexus {
     }
 
     /** 进入配置中的入口 Bundle（未配置时根据 enableLobby 与 bundles 自动推导）。 */
-    static async start(): Promise<void> {
+    static async start(params?: Record<string, unknown>): Promise<void> {
         Nexus.ensureInitialized();
         const entry = Nexus.resolveEntryBundle();
-        await Nexus.bundle.enter(entry);
+        await Nexus.bundle.enter(entry, params);
     }
 
     /** 解析入口 Bundle：显式 > enableLobby ? lobby : 按 URL game_id 找 subgame。 */

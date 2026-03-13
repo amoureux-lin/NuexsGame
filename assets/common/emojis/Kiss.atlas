@@ -1,0 +1,356 @@
+
+Kiss.png
+size: 1877,176
+format: RGBA8888
+filter: Linear,Linear
+repeat: none
+emote_3_00
+  rotate: false
+  xy: 2, 2
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_01
+  rotate: false
+  xy: 77, 89
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_02
+  rotate: false
+  xy: 77, 2
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_03
+  rotate: false
+  xy: 152, 89
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_04
+  rotate: false
+  xy: 152, 2
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_05
+  rotate: false
+  xy: 227, 89
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_06
+  rotate: false
+  xy: 227, 2
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_07
+  rotate: false
+  xy: 302, 89
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_08
+  rotate: false
+  xy: 302, 2
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_09
+  rotate: false
+  xy: 377, 89
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_10
+  rotate: false
+  xy: 377, 2
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_11
+  rotate: false
+  xy: 452, 89
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_12
+  rotate: false
+  xy: 452, 2
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_13
+  rotate: false
+  xy: 527, 89
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_14
+  rotate: false
+  xy: 527, 2
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_15
+  rotate: false
+  xy: 602, 89
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_16
+  rotate: false
+  xy: 602, 2
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_17
+  rotate: false
+  xy: 677, 89
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_18
+  rotate: false
+  xy: 677, 2
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_19
+  rotate: false
+  xy: 752, 89
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_20
+  rotate: false
+  xy: 752, 2
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_21
+  rotate: false
+  xy: 827, 89
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_22
+  rotate: false
+  xy: 827, 2
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_23
+  rotate: false
+  xy: 902, 89
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_24
+  rotate: false
+  xy: 902, 2
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_25
+  rotate: false
+  xy: 977, 89
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_26
+  rotate: false
+  xy: 977, 2
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_27
+  rotate: false
+  xy: 1052, 89
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_28
+  rotate: false
+  xy: 1052, 2
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_29
+  rotate: false
+  xy: 1127, 89
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_30
+  rotate: false
+  xy: 1127, 2
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_31
+  rotate: false
+  xy: 1202, 89
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_32
+  rotate: false
+  xy: 1202, 2
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_33
+  rotate: false
+  xy: 1277, 89
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_34
+  rotate: false
+  xy: 1277, 2
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_35
+  rotate: false
+  xy: 1352, 89
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_36
+  rotate: false
+  xy: 1352, 2
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_37
+  rotate: false
+  xy: 1427, 89
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_38
+  rotate: false
+  xy: 1427, 2
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_39
+  rotate: false
+  xy: 1502, 89
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_40
+  rotate: false
+  xy: 1502, 2
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_41
+  rotate: false
+  xy: 1577, 89
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_42
+  rotate: false
+  xy: 1577, 2
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_43
+  rotate: false
+  xy: 1652, 89
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_44
+  rotate: false
+  xy: 1652, 2
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_45
+  rotate: false
+  xy: 1727, 89
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_46
+  rotate: false
+  xy: 1727, 2
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_47
+  rotate: false
+  xy: 1802, 89
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_48
+  rotate: false
+  xy: 1802, 2
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
+emote_3_49
+  rotate: false
+  xy: 2, 89
+  size: 73, 85
+  orig: 73, 85
+  offset: 0, 0
+  index: -1
