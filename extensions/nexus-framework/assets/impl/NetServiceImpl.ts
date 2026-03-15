@@ -1,6 +1,6 @@
 import type { NexusConfig } from '../core/NexusConfig';
 import { Nexus } from '../core/Nexus';
-import { HttpOptions, HttpResponse, INetService } from '../services/contracts';
+import { HttpOptions, INetService } from '../services/contracts';
 import { NexusEvents } from '../NexusEvents';
 
 type WsHandler = (msg: unknown) => void;
@@ -37,13 +37,13 @@ export class NetServiceImpl extends INetService {
 
     // ── HTTP ─────────────────────────────────────────
 
-    /** 发起 GET 请求。 */
-    async get<T>(path: string, options?: HttpOptions): Promise<HttpResponse<T>> {
+    /** 发起 GET 请求，成功时仅返回响应体 data。 */
+    async get<T>(path: string, options?: HttpOptions): Promise<T> {
         return this.request<T>('GET', path, undefined, options);
     }
 
-    /** 发起 POST 请求。 */
-    async post<T>(path: string, body?: unknown): Promise<HttpResponse<T>> {
+    /** 发起 POST 请求，成功时仅返回响应体 data。 */
+    async post<T>(path: string, body?: unknown): Promise<T> {
         return this.request<T>('POST', path, body);
     }
 
@@ -146,13 +146,13 @@ export class NetServiceImpl extends INetService {
 
     // ── 私有工具 ─────────────────────────────────────
 
-    /** 统一执行 HTTP 请求并返回标准响应结构。 */
+    /** 统一执行 HTTP 请求，成功时 resolve 仅返回响应体 data，非 2xx 时 reject。 */
     private request<T>(
         method: string,
         path: string,
         body?: unknown,
         options?: HttpOptions,
-    ): Promise<HttpResponse<T>> {
+    ): Promise<T> {
         return new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
             const url = /^https?:\/\//.test(path) ? path : `${this._baseUrl}${path}`;
@@ -183,12 +183,11 @@ export class NetServiceImpl extends INetService {
                 } catch {
                     data = xhr.responseText as unknown as T;
                 }
-                resolve({
-                    ok:     xhr.status >= 200 && xhr.status < 300,
-                    status: xhr.status,
-                    data,
-                    raw:    xhr.responseText,
-                });
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    resolve(data);
+                } else {
+                    reject(new Error(`[Nexus] HTTP ${xhr.status}: ${url}`));
+                }
             };
 
             xhr.onerror   = () => reject(new Error(`[Nexus] Network error: ${url}`));

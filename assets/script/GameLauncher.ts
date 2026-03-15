@@ -3,6 +3,7 @@ import { bootstrapNexus, getCurrentSearch, getQueryParams, Nexus } from 'db://ne
 import type { NexusConfig } from 'db://nexus-framework/index';
 import { bundles } from './config/BundleConfig';
 import { UIPanelConfig } from './config/UIConfig';
+import { COMMON_MSG_REGISTRY } from './proto/msg_registry_common';
 
 const { ccclass, property } = _decorator;
 
@@ -38,5 +39,7 @@ export class GameLauncher extends Component {
         };
 
         await Nexus.init(config);
+        // 注册公共 Proto 消息映射，供 WS 收发时 getDecoder/getEncoder 查表
+        Nexus.proto.registerCommon(COMMON_MSG_REGISTRY);
     }
 }

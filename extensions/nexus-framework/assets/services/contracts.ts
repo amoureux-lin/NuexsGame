@@ -92,10 +92,10 @@ export abstract class IUIService extends ServiceBase {
 }
 
 export abstract class INetService extends ServiceBase {
-    /** 发起 GET 请求。 */
-    abstract get<T>(path: string, options?: HttpOptions): Promise<HttpResponse<T>>;
-    /** 发起 POST 请求。 */
-    abstract post<T>(path: string, body?: unknown): Promise<HttpResponse<T>>;
+    /** 发起 GET 请求，成功时 resolve 仅返回响应体 data。 */
+    abstract get<T>(path: string, options?: HttpOptions): Promise<T>;
+    /** 发起 POST 请求，成功时 resolve 仅返回响应体 data。 */
+    abstract post<T>(path: string, body?: unknown): Promise<T>;
     /** 设置 HTTP 基础地址。 */
     abstract setBaseUrl(url: string): void;
     /** 设置认证 token。 */

@@ -3,6 +3,7 @@ export * from './core/Nexus';
 export * from './core/NexusConfig';
 export * from './core/ServiceBase';
 export * from './core/ServiceRegistry';
+export * from './manager/protoManager';
 export * from './services/contracts';
 export * from './NexusEvents';
 export * from './base/NexusBaseEntry';

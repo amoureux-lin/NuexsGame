@@ -1,4 +1,5 @@
 import type { BundleConfig, NexusConfig } from './NexusConfig';
+import { ProtoManager } from '../manager/protoManager';
 import { ServiceRegistry } from './ServiceRegistry';
 import { getQueryParam } from '../utils/url';
 import {
@@ -106,6 +107,11 @@ export class Nexus {
     /** 资源服务快捷入口。 */
     static get asset(): IAssetService {
         return ServiceRegistry.get(IAssetService);
+    }
+
+    /** Proto 消息类型映射：registerCommon 启动时调用，registerSubgame 子游戏 Loading 时调用。 */
+    static get proto(): typeof ProtoManager {
+        return ProtoManager;
     }
 
     /** 监听全局事件。 */
