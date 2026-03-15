@@ -29,7 +29,10 @@ export class LobbyLoading extends BaseLoading {
         //await Nexus.audio.playMusic('lobby', 'xxx');
         // await Promise.resolve();
         //模拟暂停 resolve不返回结果，防止进度条直接到100%
-        Nexus.ui.show(CommonUI.ALERT)
+        // Nexus.ui.show(CommonUI.ALERT)
+        // Nexus.ui.show(CommonUI.NET_LOADING)
+        // 仅确认
+
         await new Promise<void>(resolve => setTimeout(resolve, 10000));
     }
 

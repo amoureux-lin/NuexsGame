@@ -104,8 +104,12 @@ export abstract class INetService extends ServiceBase {
     abstract connectWs(url: string): Promise<void>;
     /** 发送 WebSocket 消息。 */
     abstract sendWs(cmd: string | number, data: unknown): void;
-    /** 监听指定命令的 WebSocket 消息。 */
-    abstract onWsMsg(cmd: string | number, fn: (msg: unknown) => void): void;
+    /** 监听指定命令的 WebSocket 消息；传 target 时可用 offWsMsgByTarget(target) 统一解绑。 */
+    abstract onWsMsg(cmd: string | number, fn: (msg: unknown) => void, target?: object): void;
+    /** 移除指定命令的 WebSocket 消息监听。 */
+    abstract offWsMsg(cmd: string | number, fn: (msg: unknown) => void): void;
+    /** 移除该 target 下所有 WebSocket 消息监听（与事件 offTarget 一致）。 */
+    abstract offWsMsgByTarget(target: object): void;
 }
 
 export abstract class IAudioService extends ServiceBase {

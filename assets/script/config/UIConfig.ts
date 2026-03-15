@@ -11,6 +11,7 @@ export interface PanelItem {
 /** 公共 UI 面板 ID：仅公共弹窗，如 CommonUI.ALERT */
 export const CommonUI = {
     ALERT: 'alert',
+    NET_LOADING: 'netLoading',
 } as const;
 
 /** 公共面板配置表：查表 UIPanelConfig[CommonUI.ALERT] */
@@ -19,6 +20,10 @@ export const UIPanelConfig: Record<string, PanelItem> = {
         layer: UILayer.POPUP,
         prefab: 'prefabs/alert',
         mask: true,
-    }
+    },
+    [CommonUI.NET_LOADING]: {
+        layer: UILayer.POPUP,
+        prefab: 'prefabs/netLoading',
+    },
 };
 

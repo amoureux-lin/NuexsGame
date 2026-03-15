@@ -5,6 +5,11 @@ import { NexusEvents } from '../NexusEvents';
 
 type WsHandler = (msg: unknown) => void;
 
+interface WsHandlerEntry {
+    fn: WsHandler;
+    target?: object;
+}
+
 /**
  * 基于 XMLHttpRequest + WebSocket 的网络实现。
  *
@@ -23,7 +28,7 @@ export class NetServiceImpl extends INetService {
     private _token   = '';
     private _timeout = 10000;
     private _ws: WebSocket | null = null;
-    private readonly _wsHandlers = new Map<string | number, Set<WsHandler>>();
+    private readonly _wsHandlers = new Map<string | number, Set<WsHandlerEntry>>();
 
     /** 读取并缓存网络超时配置。 */
     async onBoot(config: NexusConfig): Promise<void> {
@@ -78,7 +83,7 @@ export class NetServiceImpl extends INetService {
                     if (cmd === undefined) return;
                     const handlers = this._wsHandlers.get(cmd);
                     if (handlers) {
-                        for (const fn of handlers) fn(msg);
+                        for (const { fn } of handlers) fn(msg);
                     }
                 } catch (err) {
                     console.warn('[Nexus] WS message parse error:', err);
@@ -96,12 +101,38 @@ export class NetServiceImpl extends INetService {
         this._ws.send(JSON.stringify({ cmd, data }));
     }
 
-    /** 为指定 cmd 注册 WebSocket 消息处理器。 */
-    onWsMsg(cmd: string | number, fn: WsHandler): void {
+    /** 为指定 cmd 注册 WebSocket 消息处理器；传 target 时可用 offWsMsgByTarget 统一解绑。 */
+    onWsMsg(cmd: string | number, fn: WsHandler, target?: object): void {
         if (!this._wsHandlers.has(cmd)) {
             this._wsHandlers.set(cmd, new Set());
         }
-        this._wsHandlers.get(cmd)!.add(fn);
+        this._wsHandlers.get(cmd)!.add({ fn, target });
+    }
+
+    /** 移除指定 cmd 的 WebSocket 消息处理器。 */
+    offWsMsg(cmd: string | number, fn: WsHandler): void {
+        const handlers = this._wsHandlers.get(cmd);
+        if (handlers) {
+            for (const entry of handlers) {
+                if (entry.fn === fn) {
+                    handlers.delete(entry);
+                    break;
+                }
+            }
+            if (handlers.size === 0) this._wsHandlers.delete(cmd);
+        }
+    }
+
+    /** 移除该 target 下所有 WebSocket 消息监听。 */
+    offWsMsgByTarget(target: object): void {
+        for (const [cmd, handlers] of this._wsHandlers.entries()) {
+            const toRemove: WsHandlerEntry[] = [];
+            for (const entry of handlers) {
+                if (entry.target === target) toRemove.push(entry);
+            }
+            for (const entry of toRemove) handlers.delete(entry);
+            if (handlers.size === 0) this._wsHandlers.delete(cmd);
+        }
     }
 
     /** 销毁时关闭连接并清空运行时状态。 */

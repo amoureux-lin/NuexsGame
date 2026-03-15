@@ -30,7 +30,7 @@ export class GameLauncher extends Component {
         const config: NexusConfig = {
             version: '1.0.0',
             debug: true,
-            enableLobby: true,  // 不填 entryBundle 时：true → 进 lobby，false → 进第一个 subgame
+            enableLobby: false,  // 不填 entryBundle 时：true → 进 lobby，false → 进第一个 subgame
             defaultLanguage: 'zh_CN',
             languages: ['zh_CN', 'en_US'],
             networkTimeout: 10000,
