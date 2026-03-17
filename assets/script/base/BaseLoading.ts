@@ -1,5 +1,5 @@
-import { _decorator, AnimationClip, AudioClip, Font, Label, Prefab, ProgressBar, sp, SpriteFrame } from 'cc';
-import { Nexus, NexusBaseLoading } from 'db://nexus-framework/index';
+import { _decorator, AudioClip, Font, Label, Prefab, ProgressBar, sp, SpriteFrame } from 'cc';
+import { Nexus, NexusBaseLoading, NexusEvents } from 'db://nexus-framework/index';
 
 const { ccclass, property } = _decorator;
 
@@ -9,16 +9,18 @@ export interface CommonLoadDirItem {
     type?: any;
 }
 
-/** 进度分段：公共 0-20%，自定义资源 20-80%，播音乐 80-85%，进房 85-100% */
+/** 进度分段：公共 0-20%，自定义资源 20-80%，播音乐 80-85%,/连接 80-90%，进房 90-100% */
 const PROGRESS_COMMON_END = 20;
 const PROGRESS_CUSTOM_END = 80;
 const PROGRESS_MUSIC_END = 85;
+const PROGRESS_CONNECT_END = 90;
 const PROGRESS_JOIN_END = 100;
-/** 进度阶段索引：0 公共资源、1 子包资源、2 播音乐、3 进房。 */
+/** 进度阶段索引：0 公共资源、1 子包资源、2 播音乐、3 连接、4 进房。 */
 const STAGE_COMMON = 0;
 const STAGE_CUSTOM = 1;
 const STAGE_MUSIC = 2;
-const STAGE_JOIN = 3;
+const STAGE_CONNECT = 3;
+const STAGE_JOIN = 4;
 
 /**
  * 游戏侧 Loading 基类，模板方法 + 进度分段。
@@ -48,21 +50,26 @@ export abstract class BaseLoading extends NexusBaseLoading {
     protected _finishedTriggered = false;
     /**
      * 阶段文案数组：
-     * 0：公共资源 0-20%，1：自定义资源 20-80%，2：音乐 80-85%，3：进房 85-100%。
-     * setProgress(percent, tip) 时，根据 percent 所属区间写入对应下标的文案；
-     * update 中根据当前可视进度所属区间读取对应字符串显示。
+     * 0：公共资源 0-20%，1：自定义资源 20-80%，2：音乐 80-85%，3：连接 85-90%，4：进房 90-100%。
+     * setProgress(percent, tip) 时，根据 percent 所属分段写入对应下标的文案；
+     * update 中根据当前可视进度所属分段读取对应字符串显示。
      */
-    protected _stageTips: [string, string, string, string] = ['', '', '', ''];
+    protected _stageTips: [string, string, string, string, string] = ['', '', '', '', ''];
 
     protected _cancelled = false;
+    /** Socket 是否已连接成功（收到 NexusEvents.NET_CONNECTED 后置为 true）。 */
+    protected _netConnected = false;
 
     override onShow(params?: unknown): void {
         super.onShow(params);
         this._cancelled = false;
+        this._netConnected = false;
         this._displayProgress = 0;
         this._targetPercent = 0;
         this._finishedTriggered = false;
-        this._stageTips = ['', '', '', ''];
+        this._stageTips = ['', '', '', '', ''];
+        // 提前监听 Socket 连接成功事件，避免事件在等待阶段之前就触发而“丢失”。
+        Nexus.on(NexusEvents.NET_CONNECTED, this.onNetConnected, this);
         if (this.progressBar !== null) this.progressBar.progress = 0;
         if (this.progressLabel !== null) this.progressLabel.string = '';
         if (this.progressNumber !== null) this.progressNumber.string = '0%';
@@ -84,13 +91,15 @@ export abstract class BaseLoading extends NexusBaseLoading {
         // 根据当前“可视进度”所属分段显示对应阶段文案。
         if (this.progressLabel !== null) {
             const currentPercent = clamped * 100;
-            let idx = 3; // 默认进房段
+            let idx = STAGE_JOIN; // 默认进房段
             if (currentPercent < PROGRESS_COMMON_END) {
                 idx = STAGE_COMMON;
             } else if (currentPercent < PROGRESS_CUSTOM_END) {
                 idx = STAGE_CUSTOM;
             } else if (currentPercent < PROGRESS_MUSIC_END) {
                 idx = STAGE_MUSIC;
+            } else if (currentPercent < PROGRESS_CONNECT_END) {
+                idx = STAGE_CONNECT;
             } else {
                 idx = STAGE_JOIN;
             }
@@ -106,6 +115,8 @@ export abstract class BaseLoading extends NexusBaseLoading {
     override onCancel(): void {
         this._cancelled = true;
         this._finishedTriggered = true;
+        // 取消时移除与本 Loading 相关的事件监听。
+        Nexus.off(NexusEvents.NET_CONNECTED, this.onNetConnected, this);
     }
 
     protected isCancelled(): boolean {
@@ -127,6 +138,8 @@ export abstract class BaseLoading extends NexusBaseLoading {
                 idx = STAGE_CUSTOM;
             } else if (p <= PROGRESS_MUSIC_END) {
                 idx = STAGE_MUSIC;
+            } else if (p <= PROGRESS_CONNECT_END) {
+                idx = STAGE_CONNECT;
             } else {
                 idx = STAGE_JOIN;
             }
@@ -179,18 +192,30 @@ export abstract class BaseLoading extends NexusBaseLoading {
         this.setProgress(PROGRESS_COMMON_END, '加载公共资源...');
     }
 
-    /** 20-80% loadRes → 80-85% playMusic → 85-100% joinRoom。 */
+    /** 20-80% loadRes → 80-85% playMusic → 85-90% 连接 → 90-100% joinRoom。 */
     private async loadBundlePhase(params?: Record<string, unknown>): Promise<void> {
         this.setProgress(PROGRESS_COMMON_END, '加载本包资源...');
         await this.loadRes(params);
         if (this.isCancelled()) return;
         this.setProgress(PROGRESS_CUSTOM_END, '资源加载完成');
         await this.playMusic();
-        this.setProgress(PROGRESS_MUSIC_END, '准备进房...');
+        // 85%：音乐阶段完成后，进入“连接服务器”阶段；连接成功事件会触发进度从 85 涨到 90。
+        this.setProgress(PROGRESS_MUSIC_END, '连接服务器...');
         await this.joinRoom(params);
         if (this.isCancelled()) return;
         // 默认不再在 100% 时强制改 tip，避免资源很少时一打开就看到“进入游戏”而进度条还在中间。
         this.setProgress(PROGRESS_JOIN_END, '进入游戏...');
+    }
+
+    /** 收到一次 Socket 连接成功事件：将内部状态标记为已连接，并解锁 80→85 的进度段。 */
+    protected onNetConnected(): void {
+        console.log('onNetConnected');
+        if (this._netConnected) return;
+        this._netConnected = true;
+        // 若当前主进度已到达“连接阶段”（85% 左右），则把目标进度提升到 90%，展示“准备进房...”。
+        if (this._targetPercent >= PROGRESS_MUSIC_END && this._targetPercent < PROGRESS_CONNECT_END) {
+            this.setProgress(PROGRESS_CONNECT_END, '准备进房...');
+        }
     }
 
     /** 子类覆写：加载本 Bundle 自定义资源，进度在 20-80% 间可自行 setProgress。 */

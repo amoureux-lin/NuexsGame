@@ -37,12 +37,12 @@ export class SlotGameLoading extends BaseLoading {
         //     onCancel: () => {console.log('cancel')},
         // });
         // 带图标（仅显示预制体上的图标节点）
-        Nexus.ui.show(CommonUI.ALERT, {
-            content: '网络异常',
-            showIcon: true,
-            confirmText: '知道了',
-        });
-        await new Promise<void>(resolve => setTimeout(resolve, 10000));
+        // Nexus.ui.show(CommonUI.ALERT, {
+        //     content: '网络异常',
+        //     showIcon: true,
+        //     confirmText: '知道了',
+        // });
+        await new Promise<void>(resolve => setTimeout(resolve, 3000));
         // await Promise.resolve();
     }
 

@@ -15,6 +15,108 @@ export interface HttpOptions {
     timeout?: number;
 }
 
+/** WebSocket 增强配置（initWs 时传入） */
+export interface WsConfig {
+    /** -1 永久重连，0 不自动重连，>0 重试次数 */
+    autoReconnect?: number;
+    /** 重连间隔毫秒 */
+    reconnectDelayMs?: number;
+    /** 单次请求超时毫秒 */
+    requestTimeoutMs?: number;
+    /** 心跳间隔毫秒 */
+    heartbeatIntervalMs?: number;
+    /** 多久未收包主动断开毫秒 */
+    receiveTimeoutMs?: number;
+}
+
+/** 发包上下文：贯穿整条发送链，willSend 可修改 body / extra */
+export interface WsSendContext {
+    readonly msgType: number;
+    /** 0 = 单向通知（不需要响应），>0 = 请求（需要响应） */
+    readonly requestId: number;
+    /** willSend 可修改 body（例如加密、包装） */
+    body: unknown;
+    /** 追加公共字段（token、version、traceId 等），encode 时读取写入 header */
+    extra: Record<string, unknown>;
+}
+
+/** 包头结构（16 字节：length, msgType, requestId, errorCode） */
+export interface PacketHeader {
+    length: number;
+    msgType: number;
+    requestId: number;
+    errorCode: number;
+}
+
+/** 解码后的 WS 包（由各游戏的协议决定如何解析） */
+export interface DecodedPacket {
+    msgType: number;
+    requestId: number;
+    /** 可选：服务端错误码；没有错误码概念则不填 */
+    errorCode?: number;
+    body: unknown;
+}
+
+/**
+ * WS 委托接口：协议编解码 + 收发拦截 + 连接状态感知，统一由业务实现。
+ * 框架通过此接口与业务协议完全解耦。
+ */
+export interface IWsDelegate {
+    // ── Codec ─────────────────────────────────────────────────────────────
+
+    /**
+     * 编码：将发包上下文序列化为可发送的字节。
+     * ctx.requestId === 0 为单向通知，> 0 为需要响应的请求。
+     * 可读取 ctx.extra 中由 willSend 追加的公共字段写入自定义 header。
+     */
+    encode(ctx: WsSendContext): Uint8Array;
+
+    /**
+     * 解码：将收到的原始数据（二进制或文本）解析为结构化包。
+     * 业务自行定义 header 格式，框架不感知。
+     * 无法解析时返回 null，框架丢弃该包。
+     */
+    decode(data: Uint8Array | string): DecodedPacket | null;
+
+    /**
+     * 心跳包：返回已编码好的字节，框架直接 ws.send()。
+     * 返回 null 表示不启用心跳。
+     */
+    heartbeat(): Uint8Array | null;
+
+    // ── 发包拦截 ───────────────────────────────────────────────────────────
+
+    /**
+     * 发包前回调：可修改 ctx.body 或往 ctx.extra 追加公共字段（token、version 等）。
+     * 在 encode 之前调用。
+     */
+    willSend?(ctx: WsSendContext): void;
+
+    // ── 收包拦截 ───────────────────────────────────────────────────────────
+
+    /**
+     * 收到任意包后、分发前调用，由业务决定如何处理。
+     * 返回 true  = 静默拦截，不 dispatch 也不 reject pending（适合心跳、系统通知）。
+     * 返回 Error = 拦截并 reject 对应的 wsRequest Promise（适合服务端错误码）。
+     * 返回 void  = 继续正常流程（resolvePending + dispatch）。
+     */
+    willReceive?(pkt: DecodedPacket): true | Error | void;
+
+    // ── 连接状态回调 ────────────────────────────────────────────────────────
+
+    /** 连接建立成功 */
+    onConnected?(): void;
+    /** 连接断开 */
+    onDisconnected?(): void;
+    /**
+     * 正在重连；attemptsLeft 为剩余次数，0 表示不再重连。
+     * -1 永久重连时传入 -1。
+     */
+    onReconnecting?(attemptsLeft: number): void;
+    /** 连接发生错误 */
+    onConnectError?(error: unknown): void;
+}
+
 export interface HttpResponse<T> {
     ok: boolean;
     status: number;
@@ -102,7 +204,7 @@ export abstract class INetService extends ServiceBase {
     abstract setToken(token: string): void;
     /** 建立 WebSocket 连接。 */
     abstract connectWs(url: string): Promise<void>;
-    /** 发送 WebSocket 消息。 */
+    /** 发送 WebSocket 消息（单向，不关心响应）。 */
     abstract sendWs(cmd: string | number, data: unknown): void;
     /** 监听指定命令的 WebSocket 消息；传 target 时可用 offWsMsgByTarget(target) 统一解绑。 */
     abstract onWsMsg(cmd: string | number, fn: (msg: unknown) => void, target?: object): void;
@@ -110,6 +212,13 @@ export abstract class INetService extends ServiceBase {
     abstract offWsMsg(cmd: string | number, fn: (msg: unknown) => void): void;
     /** 移除该 target 下所有 WebSocket 消息监听（与事件 offTarget 一致）。 */
     abstract offWsMsgByTarget(target: object): void;
+
+    /** 初始化 WS：传入配置与委托实现（编解码 + 拦截 + 状态感知）。 */
+    abstract initWs(config: WsConfig, delegate: IWsDelegate): void;
+    /** 一发一收的 WS 请求（带 requestId、超时、错误码处理）；需先 initWs。 */
+    abstract wsRequest<T = unknown>(msgType: number, body: unknown, timeoutMs?: number): Promise<T>;
+    /** 当前 WebSocket 是否已连接。 */
+    abstract isConnected(): boolean;
 }
 
 export abstract class IAudioService extends ServiceBase {
@@ -143,6 +252,18 @@ export abstract class IStorageService extends ServiceBase {
     /** 判断 key 是否存在。 */
     abstract has(key: string): boolean;
     /** 清空当前命名空间下的数据。 */
+    abstract clear(): void;
+}
+
+/**
+ * 轻量数据存储：纯内存，不写入 Nexus.storage。
+ * 用于运行时全局数据（如 user_id、serverTime、token），进程内共享。
+ */
+export abstract class IDataStoreService extends ServiceBase {
+    abstract get<T>(key: string, defaultValue?: T): T | undefined;
+    abstract set<T>(key: string, value: T): void;
+    abstract remove(key: string): void;
+    abstract has(key: string): boolean;
     abstract clear(): void;
 }
 

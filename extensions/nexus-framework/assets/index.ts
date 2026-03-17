@@ -5,6 +5,8 @@ export * from './core/ServiceBase';
 export * from './core/ServiceRegistry';
 export * from './manager/protoManager';
 export * from './services/contracts';
+export { PacketHelper } from './impl/PacketHelper';
+export type { WsSendContext, IWsDelegate } from './services/contracts';
 export * from './NexusEvents';
 export * from './base/NexusBaseEntry';
 export * from './base/NexusBaseLoading';

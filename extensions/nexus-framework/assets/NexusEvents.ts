@@ -14,3 +14,4 @@ export const NexusEvents = {
 } as const;
 
 export type NexusEventKey = typeof NexusEvents[keyof typeof NexusEvents];
+

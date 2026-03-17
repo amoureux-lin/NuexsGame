@@ -4,6 +4,7 @@ import type { NexusConfig } from 'db://nexus-framework/index';
 import { bundles } from './config/BundleConfig';
 import { UIPanelConfig } from './config/UIConfig';
 import { COMMON_MSG_REGISTRY } from './proto/msg_registry_common';
+import { WsPacketHelper } from './net/WsPacketHelper';
 
 const { ccclass, property } = _decorator;
 
@@ -28,6 +29,15 @@ export class GameLauncher extends Component {
     }
 
     async gameInit(): Promise<void> {
+        // 初始化 WS 委托（编解码 + 拦截 + 连接状态 UI）
+        Nexus.net.initWs({
+            autoReconnect: 3,
+            reconnectDelayMs: 2000,
+            requestTimeoutMs: 10000,
+            heartbeatIntervalMs: 5000,
+            receiveTimeoutMs: 20000,
+        }, new WsPacketHelper());
+        // 初始化 Nexus 配置
         const config: NexusConfig = {
             version: '1.0.0',
             debug: true,
@@ -37,7 +47,6 @@ export class GameLauncher extends Component {
             networkTimeout: 10000,
             bundles: bundles,
         };
-
         await Nexus.init(config);
         // 注册公共 Proto 消息映射，供 WS 收发时 getDecoder/getEncoder 查表
         Nexus.proto.registerCommon(COMMON_MSG_REGISTRY);

@@ -1,6 +1,7 @@
 import { AssetServiceImpl } from './impl/AssetServiceImpl';
 import { AudioServiceImpl } from './impl/AudioServiceImpl';
 import { BundleServiceImpl } from './impl/BundleServiceImpl';
+import { DataStoreServiceImpl } from './impl/DataStoreServiceImpl';
 import { EventServiceImpl } from './impl/EventServiceImpl';
 import { I18nServiceImpl } from './impl/I18nServiceImpl';
 import { NetServiceImpl } from './impl/NetServiceImpl';
@@ -11,6 +12,7 @@ import {
     IAssetService,
     IAudioService,
     IBundleService,
+    IDataStoreService,
     IEventService,
     II18nService,
     INetService,
@@ -29,6 +31,7 @@ export function bootstrapNexus(): void {
 
     ServiceRegistry.register(IEventService, new EventServiceImpl());
     ServiceRegistry.register(IStorageService, new StorageServiceImpl());
+    ServiceRegistry.register(IDataStoreService, new DataStoreServiceImpl());
     ServiceRegistry.register(IAssetService, new AssetServiceImpl());
     ServiceRegistry.register(IBundleService, new BundleServiceImpl());
     ServiceRegistry.register(IUIService, new UIServiceImpl());

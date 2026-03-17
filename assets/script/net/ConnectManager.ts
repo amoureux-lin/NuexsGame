@@ -6,11 +6,11 @@ const { ccclass } = _decorator;
 
 /** 本地测试用的默认参数，可按需修改 */
 const DEFAULT_LOCAL_TOKEN_PARAMS = {
-    room_id: 1,
+    room_id: 66,
     room_name: '新手房-1',
-    game_id: 1,
+    game_id: 2,
     score: 10,
-    user_id: '1',
+    user_id: '123456',
     nick_name: 'Alice',
     user_avatar: 'https://p-web.herontest.xin/img/avatar/7.png',
     coin: 10000,
@@ -27,8 +27,14 @@ export class ConnectManager extends Component {
         Nexus.net.setBaseUrl("https://gwm.herondev.xin");
         if (this.isLocal()) {
             this.generateToken((token) => {
-                if (token) Nexus.net.setToken(token);
-                this.requestConfig();
+                if (token) {
+                    Nexus.net.setToken(token);
+                    Nexus.data.set('token', token);
+                    this.requestConfig();
+                }
+                else {
+                    console.warn('[ConnectManager] generateToken 失败');
+                }
             });
         } else {
             this.requestConfig();
@@ -66,7 +72,6 @@ export class ConnectManager extends Component {
             code: number, 
             data: { 
                 gate_addr: string,
-                token: string,
                 game_id: number,
                 user_id: string,
                 room_id: string,
@@ -89,11 +94,12 @@ export class ConnectManager extends Component {
             // }
 
             const gate_addr = res?.data?.gate_addr ?? '';
-            const token = res?.data?.token ?? '';
+            const token = Nexus.data.get<string>('token') ?? '';
             const game_id = Number(res?.data?.game_id) ?? 0;
             const user_id = Number(res?.data?.user_id) ?? 0;
             const room_id = Number(res?.data?.room_id) ?? 0;
             const voice_channel = res?.data?.voice_channel ?? '';
+            Nexus.data.set('user_id', user_id);
             this.connectWs(gate_addr, token, game_id, user_id, room_id, voice_channel);
         }).catch((err) => {
             console.log("config请求失败", err);

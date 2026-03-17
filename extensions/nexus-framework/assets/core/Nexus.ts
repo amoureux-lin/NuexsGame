@@ -6,6 +6,7 @@ import {
     IAssetService,
     IAudioService,
     IBundleService,
+    IDataStoreService,
     IEventService,
     II18nService,
     INetService,
@@ -94,9 +95,14 @@ export class Nexus {
         return ServiceRegistry.get(IAudioService);
     }
 
-    /** 存储服务快捷入口。 */
+    /** 存储服务快捷入口（持久化）。 */
     static get storage(): IStorageService {
         return ServiceRegistry.get(IStorageService);
+    }
+
+    /** 数据存储快捷入口（内存 + 可选持久化）。 */
+    static get data(): IDataStoreService {
+        return ServiceRegistry.get(IDataStoreService);
     }
 
     /** 国际化服务快捷入口。 */
