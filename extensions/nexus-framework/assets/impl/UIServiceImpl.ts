@@ -1,4 +1,4 @@
-import { director, instantiate, Label, Node, Prefab, UITransform, Vec3, Widget } from 'cc';
+import { director, instantiate, Node, Prefab, UITransform, Widget } from 'cc';
 import { Nexus } from '../core/Nexus';
 import { IUIService, UILayer, type UIPanelConfigMap, type UIPanelOptions } from '../services/contracts';
 import { NexusEvents } from '../NexusEvents';
@@ -42,8 +42,12 @@ export class UIServiceImpl extends IUIService {
     private readonly _panels        = new Map<string, PanelRecord>();
     /** 已注册的面板配置表：id -> 预制体路径、默认层级等。 */
     private readonly _panelConfigs  = new Map<string, UIPanelOptions>();
-    private _loadingNode: Node | null = null;
-    private _loadingLabel: Label | null = null;
+    /** 通过 setLoadingPanel 指定的 Loading 面板 key。 */
+    private _loadingPanelName: string | null = null;
+    /** Prefab 正在异步加载中的面板名集合。 */
+    private readonly _loadingSet    = new Set<string>();
+    /** 加载过程中收到 hide/destroy 请求的面板名集合。 */
+    private readonly _pendingHide   = new Set<string>();
 
     /** 框架启动时注册事件驱动的 UI 打开/关闭处理。 */
     async onBoot(): Promise<void> {
@@ -101,64 +105,118 @@ export class UIServiceImpl extends IUIService {
         this.buildLayers();
     }
 
-    /** 显示面板；如果已存在则仅重新激活并分发 onShow。返回面板根节点。 */
+    /**
+     * 指定用于 showLoading / hideLoading 的面板 key。
+     * 需先通过 registerPanels 注册该 key 对应的面板配置。
+     */
+    setLoadingPanel(name: string): void {
+        this._loadingPanelName = name;
+    }
+
+    /**
+     * 显示面板，返回面板根节点。
+     * - 未创建        → 加载 Prefab、实例化、挂载、触发 onShow
+     * - 已创建且隐藏  → 重新激活、触发 onShow
+     * - 已创建且显示  → 仅透传新参数触发 onShow（刷新内容），不重复挂载
+     * - 加载中途收到 hide/destroy → 加载完成后直接丢弃，不挂载不显示
+     */
     async show(name: string, params?: unknown, layer?: UILayer): Promise<Node> {
         const cfg = this._panelConfigs.get(name);
         const targetLayer: UILayer = layer ?? cfg?.layer ?? UILayer.PANEL;
 
-        // 已存在：直接显示并透传参数
+        // 已有节点：直接激活并透传参数
         const existing = this._panels.get(name);
         if (existing) {
-            existing.node.active = true;
+            if (!existing.node.active) {
+                existing.node.active = true;
+            }
             this.dispatch(existing.node, 'onShow', params);
             return existing.node;
         }
 
-        const prefabNameOrPath = cfg?.prefab ?? name;
-        const bundleOverride   = cfg?.bundle;
-        const prefab = await this.loadPrefab(prefabNameOrPath, bundleOverride);
-        const node   = instantiate(prefab);
+        // 已在加载中：跳过重复加载，避免创建多个孤儿节点
+        if (this._loadingSet.has(name)) return new Node();
 
+        // 标记为"加载中"，此后 hide/destroy 只写入 _pendingHide
+        this._loadingSet.add(name);
+        let prefab: Prefab;
+        try {
+            const prefabNameOrPath = cfg?.prefab ?? name;
+            const bundleOverride   = cfg?.bundle;
+            prefab = await this.loadPrefab(prefabNameOrPath, bundleOverride);
+        } finally {
+            this._loadingSet.delete(name);
+        }
+
+        // 加载期间已被 hide/destroy 取消，丢弃本次显示
+        if (this._pendingHide.has(name)) {
+            this._pendingHide.delete(name);
+            return new Node(); // 返回空节点，调用方通常不关心返回值
+        }
+
+        const node = instantiate(prefab!);
         this.getLayerNode(targetLayer).addChild(node);
         this._panels.set(name, { node, layer: targetLayer });
         this.dispatch(node, 'onShow', params);
         return node;
     }
 
-    /** 隐藏已创建的面板，并分发 onHide。 */
+    /**
+     * 隐藏面板，触发 onHide。
+     * - 面板正在加载中 → 记录待关闭，加载完成后丢弃
+     * - 面板不存在或已隐藏 → 跳过，避免重复触发 onHide
+     */
     hide(name: string): void {
+        if (this._loadingSet.has(name)) {
+            this._pendingHide.add(name);
+            return;
+        }
         const record = this._panels.get(name);
-        if (!record) return;
+        if (!record || !record.node.active) return;
         record.node.active = false;
         this.dispatch(record.node, 'onHide');
     }
 
-    /** 销毁面板节点并移除缓存。 */
+    /**
+     * 销毁面板节点并移除缓存。
+     * - 面板正在加载中 → 记录待关闭，加载完成后丢弃
+     * - 仅在 active 时触发 onHide，避免与 hide() 后再 destroy() 重复回调
+     */
     destroy(name: string): void {
+        if (this._loadingSet.has(name)) {
+            this._pendingHide.add(name);
+            return;
+        }
         const record = this._panels.get(name);
         if (!record) return;
-        this.dispatch(record.node, 'onHide');
+        if (record.node.active) {
+            this.dispatch(record.node, 'onHide');
+        }
         record.node.destroy();
         this._panels.delete(name);
     }
 
-    /** 显示全局 Loading，并更新提示文本。 */
+    /** 显示 Loading 面板，透传 text 参数给面板组件的 onShow。 */
     showLoading(text = ''): void {
-        const loading = this.ensureLoadingNode();
-        if (this._loadingLabel) {
-            this._loadingLabel.string = text || 'Loading...';
+        if (!this._loadingPanelName) {
+            console.warn('[Nexus] showLoading: 请先调用 setLoadingPanel(name) 指定 Loading 面板');
+            return;
         }
-        loading.active = true;
-        this.dispatch(loading, 'onShow', { text: this._loadingLabel?.string ?? text });
+        this.show(this._loadingPanelName, { text });
     }
 
-    /** 隐藏全局 Loading。 */
+    /** 隐藏 Loading 面板。 */
     hideLoading(): void {
-        this.ensureLoadingNode().active = false;
+        if (!this._loadingPanelName) return;
+        this.hide(this._loadingPanelName);
     }
 
-    /** Bundle 切换离开时销毁所有非持久面板 */
+    /** Bundle 切换离开时销毁所有面板，并清空加载中状态 */
     async onBundleExit(_bundleName: string): Promise<void> {
+        // 正在加载中的面板全部标记取消
+        for (const name of this._loadingSet) {
+            this._pendingHide.add(name);
+        }
         for (const [name, record] of [...this._panels.entries()]) {
             this.dispatch(record.node, 'onHide');
             record.node.destroy();
@@ -168,11 +226,15 @@ export class UIServiceImpl extends IUIService {
 
     /** 销毁时清空所有运行时缓存。 */
     async onDestroy(): Promise<void> {
+        for (const name of this._loadingSet) {
+            this._pendingHide.add(name);
+        }
         this._panels.clear();
         this._layers.clear();
         this._panelConfigs.clear();
-        this._loadingNode = null;
-        this._loadingLabel = null;
+        this._loadingSet.clear();
+        this._pendingHide.clear();
+        this._loadingPanelName = null;
         this._root = null;
         Nexus.offTarget(this);
     }
@@ -200,42 +262,11 @@ export class UIServiceImpl extends IUIService {
             node.setSiblingIndex(layer);
             this._layers.set(layer, node);
         }
-
-        this._loadingNode = null;
-        this._loadingLabel = null;
     }
 
     /** 获取指定层级节点，缺省时回退到根节点。 */
     private getLayerNode(layer: UILayer): Node {
         return this._layers.get(layer) ?? this._root!;
-    }
-
-    /** 延迟创建默认 Loading 节点。 */
-    private ensureLoadingNode(): Node {
-        if (this._loadingNode?.isValid) {
-            return this._loadingNode;
-        }
-
-        const loading = new Node('[Loading]');
-        loading.addComponent(UITransform);
-
-        const labelNode = new Node('Label');
-        labelNode.addComponent(UITransform);
-        labelNode.setPosition(new Vec3(0, 0, 0));
-
-        const label = labelNode.addComponent(Label);
-        label.string = 'Loading...';
-        label.fontSize = 36;
-        label.lineHeight = 40;
-
-        loading.addChild(labelNode);
-        loading.active = false;
-
-        this.getLayerNode(UILayer.LOADING).addChild(loading);
-        this._loadingNode = loading;
-        this._loadingLabel = label;
-
-        return loading;
     }
 
     /**

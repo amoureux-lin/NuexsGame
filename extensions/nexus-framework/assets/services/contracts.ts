@@ -185,12 +185,17 @@ export abstract class IUIService extends ServiceBase {
     abstract hide(name: string): void;
     /** 销毁一个已创建的 UI 面板。 */
     abstract destroy(name: string): void;
-    /** 显示全局 Loading。 */
+    /** 显示全局 Loading，透传 text 参数给面板组件的 onShow。 */
     abstract showLoading(text?: string): void;
     /** 隐藏全局 Loading。 */
     abstract hideLoading(): void;
     /** 设置 UI 根节点。 */
     abstract setRoot(root: object): void;
+    /**
+     * 指定用于 showLoading/hideLoading 的面板 key（需已通过 registerPanels 注册）。
+     * 未设置时 showLoading/hideLoading 无效并打印警告。
+     */
+    abstract setLoadingPanel(name: string): void;
 }
 
 export abstract class INetService extends ServiceBase {

@@ -215,10 +215,6 @@ export class BundleServiceImpl extends IBundleService {
             this._resolveLoading();
             this._resolveLoading = null;
         }
-        if (this._currentLoadingComp) {
-            this._currentLoadingComp.onCancel();
-            this._currentLoadingComp = null;
-        }
         if (this._currentBundleLoadingName) {
             Nexus.ui.destroy(this._currentBundleLoadingName);
             this._currentBundleLoadingName = '';

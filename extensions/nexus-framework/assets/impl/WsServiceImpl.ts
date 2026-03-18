@@ -26,17 +26,18 @@ export class WsServiceImpl extends ServiceBase {
     private readonly _wsHandlers = new Map<string | number, Set<WsHandlerEntry>>();
 
     private _config: WsConfig = {
-        autoReconnect: 0,
-        reconnectDelayMs: 2000,
-        requestTimeoutMs: 10000,
+        autoReconnect: 3,
+        reconnectDelayMs: 1000,
+        requestTimeoutMs: 5000,
         heartbeatIntervalMs: 5000,
-        receiveTimeoutMs: 60000,
+        receiveTimeoutMs: 5000,
     };
 
     private _delegate: IWsDelegate | null = null;
     private _connected = false;
     private _lastUrl = '';
     private _autoReconnect = 0;
+    private _autoReconnectInitial = 0; // 记录初始配置值，连接成功后重置用
     private _reconnectTimer: number | null = null;
     private _heartbeatTimer: number | null = null;
     private _receiveTimer: number | null = null;
@@ -51,6 +52,7 @@ export class WsServiceImpl extends ServiceBase {
         this._config = { ...this._config, ...config };
         this._delegate = delegate;
         this._autoReconnect = config.autoReconnect ?? 0;
+        this._autoReconnectInitial = this._autoReconnect;
     }
 
     isConnected(): boolean {
@@ -66,7 +68,7 @@ export class WsServiceImpl extends ServiceBase {
 
             this._ws.onopen = () => {
                 this._connected = true;
-                Nexus.emit(NexusEvents.NET_CONNECTED);
+                this._autoReconnect = this._autoReconnectInitial; // 重置重连次数
                 this._delegate?.onConnected?.();
                 this.startHeartbeat();
                 this.resetReceiveTimer();
@@ -80,10 +82,10 @@ export class WsServiceImpl extends ServiceBase {
             };
 
             this._ws.onclose = () => {
+                console.log('【ws】onclose');
                 this._connected = false;
                 this.clearTimers();
                 Nexus.emit(NexusEvents.NET_DISCONNECTED);
-                this._delegate?.onDisconnected?.();
                 this.tryReconnect();
             };
 
@@ -98,7 +100,7 @@ export class WsServiceImpl extends ServiceBase {
     private tryReconnect(): void {
         const mode = this._autoReconnect;
         if (mode === 0) {
-            this._delegate?.onReconnecting?.(0);
+            this._delegate?.onDisconnected?.();
             return;
         }
         this._delegate?.onReconnecting?.(mode);
@@ -287,9 +289,31 @@ export class WsServiceImpl extends ServiceBase {
         if (timeout <= 0) return;
 
         this._receiveTimer = setTimeout(() => {
-            console.warn('[Nexus] WS no message for long time, close');
-            this._ws?.close();
+            console.warn('[Nexus] WS no message for long time, force disconnect');
+            this.forceDisconnect();
         }, timeout);
+    }
+
+    /**
+     * 强制断开连接并立即触发重连流程。
+     * 用于收包超时等无法等待 TCP 层自然关闭的场景（如断网时 ws.close() 的 onclose 会延迟数十秒）。
+     * 先摘除所有事件处理器，再调用 close()，确保 onclose 姗姗来迟时不会重复触发重连。
+     */
+    private forceDisconnect(): void {
+        if (!this._ws) return;
+
+        // 先摘除处理器，让之后到来的 onclose 变成空操作
+        this._ws.onopen = null;
+        this._ws.onmessage = null;
+        this._ws.onerror = null;
+        this._ws.onclose = null;
+        try { this._ws.close(); } catch { /* ignore */ }
+        this._ws = null;
+
+        this._connected = false;
+        this.clearTimers();
+        Nexus.emit(NexusEvents.NET_DISCONNECTED);
+        this.tryReconnect();
     }
 
     private clearTimers(): void {

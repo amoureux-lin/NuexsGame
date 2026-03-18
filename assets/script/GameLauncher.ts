@@ -2,7 +2,7 @@ import { _decorator, Component, Node } from 'cc';
 import { bootstrapNexus, getCurrentSearch, getQueryParams, Nexus } from 'db://nexus-framework/index';
 import type { NexusConfig } from 'db://nexus-framework/index';
 import { bundles } from './config/BundleConfig';
-import { UIPanelConfig } from './config/UIConfig';
+import { CommonUI, UIPanelConfig } from './config/UIConfig';
 import { COMMON_MSG_REGISTRY } from './proto/msg_registry_common';
 import { WsPacketHelper } from './net/WsPacketHelper';
 
@@ -24,6 +24,7 @@ export class GameLauncher extends Component {
         await this.gameInit();
         Nexus.ui.setRoot(this.canvasRoot);
         Nexus.ui.registerPanels(UIPanelConfig);
+        Nexus.ui.setLoadingPanel(CommonUI.NET_LOADING);
         await Nexus.start(params);
 
     }
@@ -32,10 +33,10 @@ export class GameLauncher extends Component {
         // 初始化 WS 委托（编解码 + 拦截 + 连接状态 UI）
         Nexus.net.initWs({
             autoReconnect: 3,
-            reconnectDelayMs: 2000,
-            requestTimeoutMs: 10000,
+            reconnectDelayMs: 1000,
+            requestTimeoutMs: 5000,
             heartbeatIntervalMs: 5000,
-            receiveTimeoutMs: 20000,
+            receiveTimeoutMs: 6000,
         }, new WsPacketHelper());
         // 初始化 Nexus 配置
         const config: NexusConfig = {

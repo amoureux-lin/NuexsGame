@@ -112,7 +112,20 @@ export abstract class BaseLoading extends NexusBaseLoading {
         }
     }
 
-    override onCancel(): void {
+    /**
+     * 进度更新通知，由子类在更新进度时调用以驱动进度条/提示文字（如 BaseLoading.setProgress 内会调此方法）。
+     * 默认空实现。
+     */
+    protected onProgress(_percent: number, _tip?: string): void {
+        // console.log('onProgress', _percent, _tip);
+    }
+
+    /**
+     * 被新的 enter() 抢占时，框架在销毁本面板前调用。
+     * 子类覆写以取消挂起的网络请求、移除事件监听等，防止资源泄漏。
+     * 默认空实现。
+     */
+    onCancel(): void {
         this._cancelled = true;
         this._finishedTriggered = true;
         // 取消时移除与本 Loading 相关的事件监听。

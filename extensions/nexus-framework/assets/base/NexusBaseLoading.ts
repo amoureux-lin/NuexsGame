@@ -23,16 +23,5 @@ export abstract class NexusBaseLoading extends Component {
      */
     onShow(_params?: unknown): void {}
 
-    /**
-     * 进度更新通知，由子类在更新进度时调用以驱动进度条/提示文字（如 BaseLoading.setProgress 内会调此方法）。
-     * 默认空实现。
-     */
-    onProgress(_percent: number, _tip?: string): void {}
 
-    /**
-     * 被新的 enter() 抢占时，框架在销毁本面板前调用。
-     * 子类覆写以取消挂起的网络请求、移除事件监听等，防止资源泄漏。
-     * 默认空实现。
-     */
-    onCancel(): void {}
 }

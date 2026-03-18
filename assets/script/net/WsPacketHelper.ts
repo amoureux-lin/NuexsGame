@@ -133,19 +133,23 @@ export class WsPacketHelper implements IWsDelegate {
     // ── 连接状态 ───────────────────────────────────────────
 
     onConnected(): void {
+        console.log('【ws】连接成功');
         Nexus.ui.hideLoading();
     }
 
     onDisconnected(): void {
-        // 断开后由 onReconnecting 接管 UI
+        console.log('【ws】连接断开，重连次数耗尽');
+        Nexus.ui.hideLoading();
+        Nexus.ui.show(CommonUI.ALERT, {
+            content: '连接断开',
+            showIcon: true,
+            confirmText: '知道了',
+        });
     }
 
     onReconnecting(attemptsLeft: number): void {
-        if (attemptsLeft > 0) {
-            Nexus.ui.showLoading(`重连中，剩余 ${attemptsLeft} 次`);
-        } else {
-            Nexus.ui.hideLoading();
-        }
+        console.log(`重连中，剩余 ${attemptsLeft} 次`);
+        Nexus.ui.showLoading(`重连中，剩余 ${attemptsLeft} 次`)
     }
 
     onConnectError(error: unknown): void {
