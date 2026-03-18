@@ -1,5 +1,5 @@
 import { Model, Nexus } from 'db://nexus-framework/index';
-import { SlotGameEvents } from '../config/TongitsEvents';
+import { TongitsEvents } from '../config/TongitsEvents';
 
 export interface SpinResult {
     win: number;
@@ -11,7 +11,7 @@ export interface SpinResult {
 /**
  * 老虎机 Model：余额、旋转请求与结果，通过事件通知 View。
  */
-export class SlotGameModel extends Model {
+export class TongitsModel extends Model {
     private _balance = 0;
 
     get balance(): number {
@@ -23,10 +23,10 @@ export class SlotGameModel extends Model {
         try {
             // TODO: 替换为真实接口，如 Nexus.net.get<{ balance: number }>('/api/slot/balance')
             this._balance = 1000;
-            this.notify(SlotGameEvents.DATA_BALANCE_UPDATED, { balance: this._balance });
+            this.notify(TongitsEvents.DATA_BALANCE_UPDATED, { balance: this._balance });
         } catch (e) {
-            console.error('[SlotGameModel] fetchBalance failed', e);
-            this.notify(SlotGameEvents.DATA_BALANCE_UPDATED, { balance: this._balance });
+            console.error('[TongitsModel] fetchBalance failed', e);
+            this.notify(TongitsEvents.DATA_BALANCE_UPDATED, { balance: this._balance });
         }
     }
 
@@ -37,12 +37,12 @@ export class SlotGameModel extends Model {
             const win = Math.random() > 0.7 ? bet * 2 : 0;
             this._balance = this._balance - bet + win;
             const result: SpinResult = { win, balance: this._balance };
-            this.notify(SlotGameEvents.DATA_BALANCE_UPDATED, { balance: this._balance });
-            this.notify(SlotGameEvents.DATA_SPIN_RESULT, result);
+            this.notify(TongitsEvents.DATA_BALANCE_UPDATED, { balance: this._balance });
+            this.notify(TongitsEvents.DATA_SPIN_RESULT, result);
             return result;
         } catch (e) {
-            console.error('[SlotGameModel] spin failed', e);
-            this.notify(SlotGameEvents.DATA_BALANCE_UPDATED, { balance: this._balance });
+            console.error('[TongitsModel] spin failed', e);
+            this.notify(TongitsEvents.DATA_BALANCE_UPDATED, { balance: this._balance });
             return { win: 0, balance: this._balance };
         }
     }

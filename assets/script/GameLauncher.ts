@@ -4,7 +4,7 @@ import type { NexusConfig } from 'db://nexus-framework/index';
 import { bundles } from './config/BundleConfig';
 import { CommonUI, UIPanelConfig } from './config/UIConfig';
 import { COMMON_MSG_REGISTRY } from './proto/msg_registry_common';
-import { WsPacketHelper } from './net/WsPacketHelper';
+import { WsDelegate } from './net/WsDelegate';
 
 const { ccclass, property } = _decorator;
 
@@ -37,7 +37,7 @@ export class GameLauncher extends Component {
             requestTimeoutMs: 5000,
             heartbeatIntervalMs: 5000,
             receiveTimeoutMs: 6000,
-        }, new WsPacketHelper());
+        }, new WsDelegate());
         // 初始化 Nexus 配置
         const config: NexusConfig = {
             version: '1.0.0',

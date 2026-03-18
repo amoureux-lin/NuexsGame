@@ -1,4 +1,4 @@
-import { AssetManager, assetManager, director, error, Node, Scene } from 'cc';
+import { AssetManager, assetManager, director, error, instantiate, Node, Prefab, Scene } from 'cc';
 import { Nexus } from '../core/Nexus';
 import { NexusBaseEntry } from '../base/NexusBaseEntry';
 import { NexusBaseLoading } from '../base/NexusBaseLoading';
@@ -27,8 +27,14 @@ export class BundleServiceImpl extends IBundleService {
 
     private readonly _configs  = new Map<string, BundleConfig>();
     private readonly _bundles  = new Map<string, AssetManager.Bundle>();
-    private _activeEntries: NexusBaseEntry[] = [];
     private _current = '';
+    /** 常驻运行时根节点：挂载自动创建的 Entry（避免依赖场景手挂脚本）。 */
+    private _runtimeRoot: Node | null = null;
+    /** 当前 bundle 的运行时 Entry 节点与组件引用（用于 exit 时清理）。 */
+    private _runtimeEntryNode: Node | null = null;
+    private _runtimeEntryComp: NexusBaseEntry | null = null;
+    /** 标记：Entry.onEnter 已在“Entry Prefab 加载完成后”提前执行过，避免 runScene 后重复执行。 */
+    private _runtimeEntered = false;
     /** 当前正在显示的 Loading 面板名，用于并发取消时销毁 */
     private _currentBundleLoadingName = '';
     /** 当前 Loading 组件引用，用于取消时调用 onCancel() */
@@ -103,6 +109,9 @@ export class BundleServiceImpl extends IBundleService {
         // 约定：Bundle 专用 Loading 预制体放在 loading/ 目录下，命名为 bundleName + 'Loading'。
         const loadingPanelName = `loading/${bundleName + LOADING_PANEL_SUFFIX}`;
 
+        // 在显示 Loading 之前：先加载并常驻 Entry Prefab（替代旧的场景手挂/EntryRegistry 方案）
+        await this.loadAndAttachEntryPrefab(bundleName, params);
+
         // 显示 Loading 面板并拿到节点引用
         let loadingNode: Node | null = null;
         try {
@@ -136,6 +145,8 @@ export class BundleServiceImpl extends IBundleService {
         if (scene) {
             await new Promise<void>((resolve) => {
                 director.runScene(scene, undefined, async () => {
+                    // Entry.onEnter 已在 entry prefab 实例化完成后提前执行；
+                    // 这里保留一个可选钩子：若 Entry 需要等场景激活后再做绑定，可实现 onSceneReady(params)。
                     await this.invokeEnterHooks(params);
                     await ServiceRegistry.notifyBundleEnter(bundleName);
                     Nexus.event.emit(NexusEvents.BUNDLE_ENTER, bundleName);
@@ -200,8 +211,11 @@ export class BundleServiceImpl extends IBundleService {
         this._cancelPendingEnter();
         this._configs.clear();
         this._bundles.clear();
-        this._activeEntries = [];
         this._current = '';
+        if (this._runtimeRoot) {
+            this._runtimeRoot.destroy();
+            this._runtimeRoot = null;
+        }
     }
 
     // ── 私有工具 ─────────────────────────────────────
@@ -237,7 +251,6 @@ export class BundleServiceImpl extends IBundleService {
             bundle.loadScene(sceneName, (err: Error | null, scene: Scene) => {
                 if (err) {
                     error('[Nexus][BundleService] Failed to load scene:', `${bundleName}/${sceneName}`, err);
-                    this._activeEntries = [];
                     resolve(null);
                     return;
                 }
@@ -246,21 +259,85 @@ export class BundleServiceImpl extends IBundleService {
         });
     }
 
-    /** 收集当前场景中的 NexusBaseEntry，并依次调用 onEnter。 */
+    /** 调用当前 bundle 的 Entry.onEnter。 */
     private async invokeEnterHooks(params?: Record<string, unknown>): Promise<void> {
-        const scene = director.getScene();
-        this._activeEntries = scene?.getComponentsInChildren(NexusBaseEntry) ?? [];
-
-        for (const entry of this._activeEntries) {
-            await entry.onEnter(params);
+        if (!this._runtimeEntryComp) {
+            throw new Error(`[Nexus] Entry prefab not loaded for bundle: ${this._current}`);
         }
+        // onEnter 已提前执行过：这里不重复调用，改为可选 onSceneReady
+        const sceneReady = (this._runtimeEntryComp as any).onSceneReady as undefined | ((p?: Record<string, unknown>) => Promise<void> | void);
+        if (sceneReady) await sceneReady.call(this._runtimeEntryComp, params);
     }
 
     /** 依次调用当前场景入口的 onExit。 */
     private async invokeExitHooks(): Promise<void> {
-        for (const entry of this._activeEntries) {
-            await entry.onExit();
+        if (this._runtimeEntryComp) {
+            await this._runtimeEntryComp.onExit();
+            this._runtimeEntryComp = null;
         }
-        this._activeEntries = [];
+        if (this._runtimeEntryNode) {
+            this._runtimeEntryNode.destroy();
+            this._runtimeEntryNode = null;
+        }
+        this._runtimeEntered = false;
+    }
+
+    /** 确保常驻运行时根节点存在。 */
+    private ensureRuntimeRoot(): Node {
+        if (this._runtimeRoot && this._runtimeRoot.isValid) return this._runtimeRoot;
+        const root = new Node('[NexusRuntime]');
+        director.addPersistRootNode(root);
+        this._runtimeRoot = root;
+        return root;
+    }
+
+    /**
+     * load(bundle) 后立即调用：加载并实例化 `<bundleName>Entry.prefab`，挂到常驻节点上。
+     *
+     * 约定（当前采用最简单规则）：
+     * - Prefab 路径：`${bundleName}Entry`（位于 bundle 根目录，例如 tongits/tongitsEntry.prefab）
+     * - Prefab 根节点（或子节点）上必须挂载一个继承 NexusBaseEntry 的组件
+     */
+    private async loadAndAttachEntryPrefab(bundleName: string, params?: Record<string, unknown>): Promise<void> {
+        // 清理旧的运行时 Entry（防御：一般上一次会在 invokeExitHooks 清理）
+        if (this._runtimeEntryNode) {
+            this._runtimeEntryNode.destroy();
+            this._runtimeEntryNode = null;
+            this._runtimeEntryComp = null;
+        }
+        this._runtimeEntered = false;
+
+        const bundle = this._bundles.get(bundleName);
+        if (!bundle) throw new Error(`[Nexus] Bundle not loaded: ${bundleName}`);
+
+        const entryPrefabPath = `${bundleName}Entry`;
+        const prefab = await new Promise<Prefab>((resolve, reject) => {
+            bundle.load(entryPrefabPath, Prefab, (err, p) => err ? reject(err) : resolve(p));
+        }).catch((e) => {
+            throw new Error(`[Nexus] Missing entry prefab: ${bundleName}/${entryPrefabPath}.prefab. ${String(e)}`);
+        });
+
+        const root = this.ensureRuntimeRoot();
+        const node = instantiate(prefab);
+        node.name = `[Entry:${bundleName}]`;
+        root.addChild(node);
+
+        const comp = node.getComponent(NexusBaseEntry) ?? node.getComponentInChildren(NexusBaseEntry);
+        if (!comp) {
+            node.destroy();
+            throw new Error(`[Nexus] Entry prefab has no NexusBaseEntry component: ${bundleName}/${entryPrefabPath}.prefab`);
+        }
+
+        this._runtimeEntryNode = node;
+        this._runtimeEntryComp = comp;
+
+        // 更早执行：可选预加载钩子（注册 panels/proto/ws 等，不依赖场景节点）
+        const pre = (comp as any).onPreload as undefined | ((p?: Record<string, unknown>) => Promise<void> | void);
+        if (pre) await pre.call(comp, params);
+
+        // 你期望的更早启动：Entry Prefab 加载完成后立刻 onEnter（不等待场景加载/切换）
+        // 注意：若 onEnter 内依赖场景节点，请改用可选 onSceneReady(params) 在 runScene 后执行。
+        await comp.onEnter(params);
+        this._runtimeEntered = true;
     }
 }

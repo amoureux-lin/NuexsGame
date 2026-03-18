@@ -23,6 +23,7 @@ export class LobbyEntry extends NexusBaseEntry {
         this._model = new LobbyModel();
         this._controller = new LobbyController(this._model);
         await this._controller.start(params);
+        console.log('LobbyEntry onEnter');
     }
 
     async onExit(): Promise<void> {

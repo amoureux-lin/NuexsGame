@@ -5,13 +5,13 @@ import { Nexus } from 'db://nexus-framework/index';
 
 const { ccclass } = _decorator;
 
-/** 子游戏 Loading 面板，完成后自动切换到 slotGameMain 场景。 */
-@ccclass('SlotGameLoading')
-export class SlotGameLoading extends BaseLoading {
+/** 子游戏 Loading 面板，完成后自动切换到 tongitsMain 场景。 */
+@ccclass('TongitsLoading')
+export class TongitsLoading extends BaseLoading {
 
     override onShow(params?: unknown): void {
         super.onShow(params);
-        console.log('SlotGameLoading params:', params);
+        console.log('TongitsLoading params:', params);
     }
 
     /** 子游戏自定义资源，进度 20-80%。 */
@@ -22,7 +22,7 @@ export class SlotGameLoading extends BaseLoading {
     }
 
     protected async playMusic(): Promise<void> {
-        // TODO: await Nexus.audio.playMusic('slotGame', 'audios/bgm', true);
+        // TODO: await Nexus.audio.playMusic('tongits', 'audios/bgm', true);
         // Nexus.ui.show(CommonUI.ALERT, {
         //     content: '操作成功',
         //     onConfirm: () => console.log('ok'),

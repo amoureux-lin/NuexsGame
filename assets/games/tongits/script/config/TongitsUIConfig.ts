@@ -2,19 +2,19 @@ import type { PanelItem } from 'db://assets/script/config/UIConfig';
 import { UILayer } from 'db://nexus-framework/index';
 
 /** 老虎机子游戏 UI 面板 ID */
-export const slotGameUI = {
-    RESULT: 'slotGameResult',
-    SETTINGS: 'slotGameSettings',
+export const tongitsUI = {
+    RESULT: 'tongitsResult',
+    SETTINGS: 'tongitsSettings',
 } as const;
 
-/** 老虎机面板配置：预制体路径相对于 slotGame Bundle 根目录 */
-export const SlotGameUIPanelConfig: Record<string, PanelItem> = {
-    [slotGameUI.RESULT]: {
+/** 老虎机面板配置：预制体路径相对于 tongits Bundle 根目录 */
+export const TongitsUIPanelConfig: Record<string, PanelItem> = {
+    [tongitsUI.RESULT]: {
         layer: UILayer.POPUP,
-        prefab: 'prefabs/slotGameResult',
+        prefab: 'prefabs/tongitsResult',
     },
-    [slotGameUI.SETTINGS]: {
+    [tongitsUI.SETTINGS]: {
         layer: UILayer.PANEL,
-        prefab: 'prefabs/slotGameSettings',
+        prefab: 'prefabs/tongitsSettings',
     },
 };

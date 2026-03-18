@@ -16,7 +16,8 @@ import { CommonUI } from '../config/UIConfig';
 const HEADER_SIZE = 16;
 const HEARTBEAT_RES = MessageType.GATEWAY_PONG_RES;
 
-export class WsPacketHelper implements IWsDelegate {
+/** WS 协议委托：16字节头 + Proto/JSON 负载编解码 */
+export class WsDelegate implements IWsDelegate {
 
     // ── Codec ─────────────────────────────────────────────
 
@@ -27,7 +28,7 @@ export class WsPacketHelper implements IWsDelegate {
             try {
                 payload = encoder(ctx.body);
             } catch (e) {
-                console.warn('[WsPacketHelper] encode failed, fallback JSON', ctx.msgType, e);
+                console.warn('[WsDelegate] encode failed, fallback JSON', ctx.msgType, e);
                 payload = new TextEncoder().encode(JSON.stringify(ctx.body ?? {}));
             }
         } else {
@@ -75,7 +76,7 @@ export class WsPacketHelper implements IWsDelegate {
             try {
                 body = decoder(payload);
             } catch (e) {
-                console.warn('[WsPacketHelper] decode failed, fallback JSON', msgType, e);
+                console.warn('[WsDelegate] decode failed, fallback JSON', msgType, e);
             }
         }
         if (body === undefined) {
@@ -122,7 +123,7 @@ export class WsPacketHelper implements IWsDelegate {
 
         // 服务端错误码：业务决定什么是错误、如何展示
         if ((pkt.errorCode ?? 0) !== 0) {
-            console.warn('[WsPacketHelper] 服务端错误码：', pkt.errorCode, pkt);
+            console.warn('[WsDelegate] 服务端错误码：', pkt.errorCode, pkt);
             Nexus.ui.show(CommonUI.ALERT, { message: `错误码: ${pkt.errorCode}` });
             return new Error(`Server error: ${pkt.errorCode}`);
         }
@@ -153,6 +154,6 @@ export class WsPacketHelper implements IWsDelegate {
     }
 
     onConnectError(error: unknown): void {
-        console.warn('[WsPacketHelper] 连接错误：', error);
+        console.warn('[WsDelegate] 连接错误：', error);
     }
 }

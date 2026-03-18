@@ -1,22 +1,22 @@
 import { Nexus } from 'db://nexus-framework/index';
 import { Controller } from 'db://nexus-framework/index';
-import { SlotGameEvents } from '../config/TongitsEvents';
-import { slotGameUI } from '../config/TongitsUIConfig';
-import type { SlotGameModel } from './TongitsModel';
+import { TongitsEvents } from '../config/TongitsEvents';
+import { tongitsUI } from '../config/TongitsUIConfig';
+import type { TongitsModel } from './TongitsModel';
 
 /**
  * 老虎机 Controller：处理旋转、返回大厅、设置等命令。
  */
-export class SlotGameController extends Controller {
+export class TongitsController extends Controller {
 
-    constructor(private readonly _model: SlotGameModel) {
+    constructor(private readonly _model: TongitsModel) {
         super();
     }
 
     protected registerCommands(): void {
-        this.handle<{ bet: number }>(SlotGameEvents.CMD_SPIN, (data) => this.onSpin(data?.bet ?? 0));
-        this.handle(SlotGameEvents.CMD_OPEN_SETTINGS, () => this.onOpenSettings());
-        this.handle(SlotGameEvents.CMD_BACK_LOBBY, () => this.onBackLobby());
+        this.handle<{ bet: number }>(TongitsEvents.CMD_SPIN, (data) => this.onSpin(data?.bet ?? 0));
+        this.handle(TongitsEvents.CMD_OPEN_SETTINGS, () => this.onOpenSettings());
+        this.handle(TongitsEvents.CMD_BACK_LOBBY, () => this.onBackLobby());
     }
 
     override async start(params?: Record<string, unknown>): Promise<void> {
@@ -29,7 +29,7 @@ export class SlotGameController extends Controller {
         try {
             const result = await this._model.spin(bet);
             if (result.win > 0) {
-                await Nexus.ui.show(slotGameUI.RESULT, { win: result.win });
+                await Nexus.ui.show(tongitsUI.RESULT, { win: result.win });
             }
         } finally {
             Nexus.ui.hideLoading();
@@ -37,7 +37,7 @@ export class SlotGameController extends Controller {
     }
 
     private onOpenSettings(): void {
-        Nexus.ui.show(slotGameUI.SETTINGS);
+        Nexus.ui.show(tongitsUI.SETTINGS);
     }
 
     private async onBackLobby(): Promise<void> {
