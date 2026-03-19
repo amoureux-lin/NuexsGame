@@ -47,10 +47,11 @@ export class TongitsLoading extends BaseLoading {
     }
 
     /** 建连、进房等，进度 85-100%。 */
-    protected async joinRoom(_params?: Record<string, unknown>): Promise<void> {
+    protected async joinRoom(_params?: Record<string, unknown>): Promise<boolean> {
         this.setProgress(90, '连接中...');
-        // TODO: await Nexus.net.connectWs(...); 发 joinGame，等 GAME_JOIN_SUCCESS
+        // TODO: 发 joinGame，等 GAME_JOIN_SUCCESS，再 return true；等 GAME_JOIN_FAIL return false
         await Promise.resolve();
+        return true; // 占位实现：当前还没有真实进房协议
     }
 }
 

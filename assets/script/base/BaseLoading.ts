@@ -59,11 +59,20 @@ export abstract class BaseLoading extends NexusBaseLoading {
     protected _cancelled = false;
     /** Socket 是否已连接成功（收到 NexusEvents.NET_CONNECTED 后置为 true）。 */
     protected _netConnected = false;
+    /** joinRoom 是否已成功完成（由子类返回值或抛错决定）。 */
+    protected _joinRoomSucceeded = false;
+
+    private _netConnectedPromise: Promise<void> | null = null;
+    private _resolveNetConnected: (() => void) | null = null;
 
     override onShow(params?: unknown): void {
         super.onShow(params);
         this._cancelled = false;
-        this._netConnected = false;
+        // onopen 可能发生在本面板显示之前；因此首次以 isConnected() 作为兜底。
+        this._netConnected = Nexus.net.isConnected();
+        this._joinRoomSucceeded = false;
+        this._netConnectedPromise = new Promise<void>((r) => { this._resolveNetConnected = r; });
+        if (this._netConnected) this._resolveNetConnected?.();
         this._displayProgress = 0;
         this._targetPercent = 0;
         this._finishedTriggered = false;
@@ -107,8 +116,11 @@ export abstract class BaseLoading extends NexusBaseLoading {
         }
         // 主进度到 100% 时，平滑动画结束后触发场景切换与关闭 Loading（只触发一次）。
         if (!this._finishedTriggered && clamped >= 0.999) {
-            this._finishedTriggered = true;
-            Nexus.bundle.loadFinish();
+            // 只有“WS 已连接 + joinRoom 成功”两者同时成立，才允许 loadFinish()
+            if (this._netConnected && this._joinRoomSucceeded) {
+                this._finishedTriggered = true;
+                Nexus.bundle.loadFinish();
+            }
         }
     }
 
@@ -128,8 +140,12 @@ export abstract class BaseLoading extends NexusBaseLoading {
     onCancel(): void {
         this._cancelled = true;
         this._finishedTriggered = true;
+        this._joinRoomSucceeded = false;
         // 取消时移除与本 Loading 相关的事件监听。
         Nexus.off(NexusEvents.NET_CONNECTED, this.onNetConnected, this);
+        this._resolveNetConnected?.();
+        this._netConnectedPromise = null;
+        this._resolveNetConnected = null;
     }
 
     protected isCancelled(): boolean {
@@ -214,9 +230,24 @@ export abstract class BaseLoading extends NexusBaseLoading {
         await this.playMusic();
         // 85%：音乐阶段完成后，进入“连接服务器”阶段；连接成功事件会触发进度从 85 涨到 90。
         this.setProgress(PROGRESS_MUSIC_END, '连接服务器...');
-        await this.joinRoom(params);
+        let joinOk = false;
+        try {
+            joinOk = await this.joinRoom(params);
+        } catch {
+            joinOk = false;
+        }
+        this._joinRoomSucceeded = !!joinOk;
         if (this.isCancelled()) return;
-        // 默认不再在 100% 时强制改 tip，避免资源很少时一打开就看到“进入游戏”而进度条还在中间。
+
+        // joinRoom 未成功：不允许推进到 100%（避免“进度到 100 但未真正进房”）
+        if (!this._joinRoomSucceeded) {
+            this.setProgress(PROGRESS_CONNECT_END, '进房失败');
+            return;
+        }
+
+        // joinRoom 成功但 WS 尚未连接：等待 WS 连接完成后再推进到 100%
+        await this.waitNetConnected();
+        // 两者同时成立时允许进入 100%
         this.setProgress(PROGRESS_JOIN_END, '进入游戏...');
     }
 
@@ -225,6 +256,7 @@ export abstract class BaseLoading extends NexusBaseLoading {
         console.log('onNetConnected');
         if (this._netConnected) return;
         this._netConnected = true;
+        this._resolveNetConnected?.();
         // 若当前主进度已到达“连接阶段”（85% 左右），则把目标进度提升到 90%，展示“准备进房...”。
         if (this._targetPercent >= PROGRESS_MUSIC_END && this._targetPercent < PROGRESS_CONNECT_END) {
             this.setProgress(PROGRESS_CONNECT_END, '准备进房...');
@@ -242,7 +274,19 @@ export abstract class BaseLoading extends NexusBaseLoading {
     }
 
     /** 子类覆写：建连、进房等，完成即 resolve，进度 85-100%。 */
-    protected async joinRoom(_params?: Record<string, unknown>): Promise<void> {
+    protected async joinRoom(_params?: Record<string, unknown>): Promise<boolean> {
         await Promise.resolve();
+        // 默认实现：视为“成功”（子类可覆写为真实进房成功后 resolve(true)）
+        return true;
+    }
+
+    private waitNetConnected(): Promise<void> {
+        if (this._netConnected) return Promise.resolve();
+        if (this._netConnectedPromise) return this._netConnectedPromise;
+        // 兜底：理论上 onShow 会初始化该 Promise；但为了安全，这里也提供降级逻辑
+        return new Promise<void>((r) => {
+            this._resolveNetConnected = r;
+            this._netConnectedPromise = r ? undefined : null as any; // 仅占位，实际由上面 Promise 解析
+        });
     }
 }

@@ -37,8 +37,9 @@ export class LobbyLoading extends BaseLoading {
     }
 
     /** 大厅无需进房，直接完成；若需建连可在此 await。 */
-    protected async joinRoom(_params?: Record<string, unknown>): Promise<void> {
+    protected async joinRoom(_params?: Record<string, unknown>): Promise<boolean> {
         // TODO: 可选建连、拉取游戏列表等
         await Promise.resolve();
+        return true;
     }
 }

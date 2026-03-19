@@ -70,6 +70,8 @@ export class WsServiceImpl extends ServiceBase {
                 this._connected = true;
                 this._autoReconnect = this._autoReconnectInitial; // 重置重连次数
                 this._delegate?.onConnected?.();
+                // 统一抛出框架事件，供 Loading/业务按“已建立连接”推进流程
+                Nexus.emit(NexusEvents.NET_CONNECTED);
                 this.startHeartbeat();
                 this.resetReceiveTimer();
                 resolve();
