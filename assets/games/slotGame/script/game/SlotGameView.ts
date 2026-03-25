@@ -1,5 +1,5 @@
 import { _decorator } from 'cc';
-import { View } from 'db://nexus-framework/index';
+import { MvcView } from 'db://nexus-framework/index';
 import { SlotGameEvents } from '../config/SlotGameEvents';
 import type { SpinResult } from './SlotGameModel';
 
@@ -10,7 +10,7 @@ const { ccclass } = _decorator;
  * 监听余额/旋转结果刷新 UI，用户操作通过 dispatch 发给 Controller。
  */
 @ccclass('SlotGameView')
-export class SlotGameView extends View {
+export class SlotGameView extends MvcView {
 
     protected registerEvents(): void {
         this.listen<{ balance: number }>(SlotGameEvents.DATA_BALANCE_UPDATED, (data) => {

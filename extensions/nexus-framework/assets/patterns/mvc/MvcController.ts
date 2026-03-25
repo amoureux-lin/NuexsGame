@@ -4,7 +4,7 @@ import { Nexus } from '../../core/Nexus';
  * MVC — Controller 基类
  * 协调 Model 和 View：处理来自 View 的命令，调用 Model，触发结果事件。
  */
-export abstract class Controller {
+export abstract class MvcController {
 
     /** 创建时立即注册该 Controller 负责处理的命令。 */
     constructor() {

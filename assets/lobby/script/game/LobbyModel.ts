@@ -1,4 +1,4 @@
-import { Model, Nexus } from 'db://nexus-framework/index';
+import { MvcModel, Nexus } from 'db://nexus-framework/index';
 import { LobbyEvents, LobbyWsCmd } from '../config/LobbyEvents';
 
 /** 游戏列表项，按需扩展 */
@@ -22,7 +22,7 @@ export interface UserInfo {
 /**
  * 大厅 Model：负责游戏列表、用户信息等数据与拉取，通过事件通知 View 更新。
  */
-export class LobbyModel extends Model {
+export class LobbyModel extends MvcModel {
     private _gameList: GameItem[] = [];
     private _userInfo: UserInfo = {};
 

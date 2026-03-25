@@ -1,5 +1,5 @@
 import { Nexus } from 'db://nexus-framework/index';
-import { Controller } from 'db://nexus-framework/index';
+import { MvcController } from 'db://nexus-framework/index';
 import { SlotGameEvents } from '../config/SlotGameEvents';
 import { slotGameUI } from '../config/SlotGameUIConfig';
 import type { SlotGameModel } from './SlotGameModel';
@@ -7,7 +7,7 @@ import type { SlotGameModel } from './SlotGameModel';
 /**
  * 老虎机 Controller：处理旋转、返回大厅、设置等命令。
  */
-export class SlotGameController extends Controller {
+export class SlotGameController extends MvcController {
 
     constructor(private readonly _model: SlotGameModel) {
         super();

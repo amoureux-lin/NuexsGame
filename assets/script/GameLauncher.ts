@@ -21,6 +21,8 @@ export class GameLauncher extends Component {
     async onLoad(): Promise<void> {
         bootstrapNexus();
         const params = getQueryParams();
+        console.log("params:",params);
+        
         await this.gameInit();
         Nexus.ui.setRoot(this.canvasRoot);
         Nexus.ui.registerPanels(UIPanelConfig);

@@ -4,14 +4,8 @@ const { ccclass } = _decorator;
 
 /**
  * Bundle Loading 面板基类，每个 Bundle 的 Loading 预制体根节点挂载继承此类的脚本。
- *
- * 框架在显示 Loading 面板后调用 onShow(params)，由组件在此处完成初始化并自行启动加载流程；
- * 何时完成由业务决定（如游戏侧 BaseLoading 将主进度推到 100% 后，进度条动画到 100% 时自动调用 loadFinish）。
- * 框架不依赖 execute，只等待 loadFinish() 被调用后再切场景并销毁本面板。
- *
  * 框架调用时序：
  *   onShow(params) → 面板显示时调用，可在此初始化并启动加载流程
- *   onCancel()     → 被新的 enter() 抢占时，在销毁前调用（用于取消挂起的请求/监听）
  */
 @ccclass('NexusBaseLoading')
 export abstract class NexusBaseLoading extends Component {

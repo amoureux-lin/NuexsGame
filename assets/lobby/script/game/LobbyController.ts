@@ -1,5 +1,5 @@
 import { Nexus } from 'db://nexus-framework/index';
-import { Controller } from 'db://nexus-framework/index';
+import { MvcController } from 'db://nexus-framework/index';
 import { LobbyEvents } from '../config/LobbyEvents';
 import { lobbyUI } from '../config/LobbyUIConfig';
 import type { LobbyModel } from './LobbyModel';
@@ -7,7 +7,7 @@ import type { LobbyModel } from './LobbyModel';
 /**
  * 大厅 Controller：处理 View 派发的命令，调用 Model 拉数、调 Nexus 打开面板/进子游戏。
  */
-export class LobbyController extends Controller {
+export class LobbyController extends MvcController {
 
     constructor(private readonly _model: LobbyModel) {
         super();

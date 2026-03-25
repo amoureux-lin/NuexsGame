@@ -18,6 +18,8 @@ export class TongitsEntry extends NexusBaseEntry {
     private _controller: TongitsController | null = null;
 
     async onEnter(params?: Record<string, unknown>): Promise<void> {
+        console.log("TongitsEntry");
+        
         await super.onEnter(params);
         // 子游戏启动时注册本游戏 Proto 映射（合并进运行时总表）
         Nexus.proto.registerSubgame(TONGITS_MSG_REGISTRY);
@@ -26,8 +28,7 @@ export class TongitsEntry extends NexusBaseEntry {
         this._model = new TongitsModel();
         this._controller = new TongitsController(this._model);
         await this._controller.start(params);
-        console.log('TongitsEntry onEnter');
-        
+        await Nexus.ui.show(tongitsUI.LOADING, params);
     }
 
     async onExit(): Promise<void> {

@@ -5,7 +5,7 @@ import { Nexus } from '../../core/Nexus';
  * MVC — View 基类（Component 子类）
  * 只负责 UI 展示：监听事件更新界面，用户操作通过 dispatch 转发给 Controller。
  */
-export abstract class View extends Component {
+export abstract class MvcView extends Component {
 
     /** 组件加载后注册当前 View 关心的事件。 */
     protected onLoad(): void {

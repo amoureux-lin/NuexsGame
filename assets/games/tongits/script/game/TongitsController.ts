@@ -1,5 +1,5 @@
 import { Nexus } from 'db://nexus-framework/index';
-import { Controller } from 'db://nexus-framework/index';
+import { MvcController } from 'db://nexus-framework/index';
 import { TongitsEvents } from '../config/TongitsEvents';
 import { tongitsUI } from '../config/TongitsUIConfig';
 import type { TongitsModel } from './TongitsModel';
@@ -7,7 +7,7 @@ import type { TongitsModel } from './TongitsModel';
 /**
  * 老虎机 Controller：处理旋转、返回大厅、设置等命令。
  */
-export class TongitsController extends Controller {
+export class TongitsController extends MvcController {
 
     constructor(private readonly _model: TongitsModel) {
         super();

@@ -1,4 +1,4 @@
-import { Model, Nexus } from 'db://nexus-framework/index';
+import { MvcModel, Nexus } from 'db://nexus-framework/index';
 import { TongitsEvents } from '../config/TongitsEvents';
 
 export interface SpinResult {
@@ -11,7 +11,7 @@ export interface SpinResult {
 /**
  * 老虎机 Model：余额、旋转请求与结果，通过事件通知 View。
  */
-export class TongitsModel extends Model {
+export class TongitsModel extends MvcModel {
     private _balance = 0;
 
     get balance(): number {

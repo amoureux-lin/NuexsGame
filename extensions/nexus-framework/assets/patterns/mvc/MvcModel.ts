@@ -4,7 +4,7 @@ import { Nexus } from '../../core/Nexus';
  * MVC — Model 基类
  * 负责数据存储与业务规则，通过事件总线通知 View 更新。
  */
-export abstract class Model {
+export abstract class MvcModel {
 
     /**
      * 向事件总线发布数据变更通知。

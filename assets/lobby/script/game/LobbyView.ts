@@ -1,5 +1,5 @@
 import { _decorator } from 'cc';
-import { View } from 'db://nexus-framework/index';
+import { MvcView } from 'db://nexus-framework/index';
 import { LobbyEvents } from '../config/LobbyEvents';
 import type { GameItem, UserInfo } from './LobbyModel';
 
@@ -10,7 +10,7 @@ const { ccclass } = _decorator;
  * 只负责：监听数据事件刷新 UI，用户操作通过 dispatch 发给 Controller。
  */
 @ccclass('LobbyView')
-export class LobbyView extends View {
+export class LobbyView extends MvcView {
 
     protected registerEvents(): void {
         this.listen<{ list: GameItem[] }>(LobbyEvents.DATA_GAME_LIST_UPDATED, (data) => {

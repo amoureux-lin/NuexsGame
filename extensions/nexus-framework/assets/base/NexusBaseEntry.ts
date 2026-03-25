@@ -25,12 +25,14 @@ const { ccclass } = _decorator;
 export abstract class NexusBaseEntry extends Component {
 
     /**
-     * Bundle 切换进入时由 BundleService 调用。
+     * Bundle 进入时由 BundleService 调用，params 来自 Nexus.bundle.enter()。
+     * 子类在此做初始化：注册面板、创建 MVC、显示 Loading 等。
      */
     async onEnter(_params?: Record<string, unknown>): Promise<void> {}
 
     /**
      * Bundle 切换离开时由 BundleService 调用。
+     * 子类在此做清理：销毁 MVC、反注册面板等。
      */
     async onExit(): Promise<void> {
         Nexus.offTarget(this);

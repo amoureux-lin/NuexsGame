@@ -1,5 +1,5 @@
 import { _decorator } from 'cc';
-import { View } from 'db://nexus-framework/index';
+import { MvcView } from 'db://nexus-framework/index';
 import { TongitsEvents } from '../config/TongitsEvents';
 import type { SpinResult } from './TongitsModel';
 
@@ -10,7 +10,7 @@ const { ccclass } = _decorator;
  * 监听余额/旋转结果刷新 UI，用户操作通过 dispatch 发给 Controller。
  */
 @ccclass('TongitsView')
-export class TongitsView extends View {
+export class TongitsView extends MvcView {
 
     protected registerEvents(): void {
         this.listen<{ balance: number }>(TongitsEvents.DATA_BALANCE_UPDATED, (data) => {

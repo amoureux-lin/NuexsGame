@@ -53,7 +53,7 @@ export class Alert extends Component {
 
     private _params: AlertParams | null = null;
 
-    onShow(params?: unknown): void {
+    onEnter(params?: unknown): void {
         const p = (params ?? {}) as AlertParams;
         this._params = p;
 
@@ -81,7 +81,7 @@ export class Alert extends Component {
         this._bindButtons();
     }
 
-    onHide(): void {
+    onExit(): void {
         this._params = null;
         this._unbindButtons();
     }
