@@ -162,7 +162,9 @@ export abstract class IBundleService extends ServiceBase {
     abstract load(bundleName: string): Promise<void>;
     /** 进入指定 Bundle，并执行切换流程。 */
     abstract enter(bundleName: string, params?: Record<string, unknown>): Promise<void>;
-    /** 由 Loading 在“加载完成、进度到 100%”后调用，触发场景切换并关闭 Loading；不依赖 execute() 的 resolve。 */
+    /** 由 Entry 在加载完成后主动调用，加载并切换到当前 Bundle 的主场景。 */
+    abstract runScene(): Promise<void>;
+    /** @deprecated 已废弃，无需调用。 */
     abstract loadFinish(): void;
     /** 退出当前 Bundle。 */
     abstract exit(bundleName: string): Promise<void>;
@@ -191,6 +193,8 @@ export abstract class IUIService extends ServiceBase {
     abstract hideLoading(): void;
     /** 设置 UI 根节点。 */
     abstract setRoot(root: object): void;
+    /** 获取指定层级的容器节点。 */
+    abstract getLayerNode(layer: UILayer): Node;
     /**
      * 指定用于 showLoading/hideLoading 的面板 key（需已通过 registerPanels 注册）。
      * 未设置时 showLoading/hideLoading 无效并打印警告。

@@ -1,7 +1,6 @@
 import { AssetManager, assetManager, director, error, instantiate, Node, Prefab, Scene } from 'cc';
 import { Nexus } from '../core/Nexus';
 import { NexusBaseEntry } from '../base/NexusBaseEntry';
-import { NexusBaseLoading } from '../base/NexusBaseLoading';
 import type { BundleConfig, NexusConfig } from '../core/NexusConfig';
 import { ServiceRegistry } from '../core/ServiceRegistry';
 import { IBundleService, UILayer } from '../services/contracts';
@@ -9,8 +8,6 @@ import { NexusEvents } from '../NexusEvents';
 
 /** 入口场景名约定：bundleName + 'Main'，如 lobbyMain、slotGameMain */
 const ENTRY_SCENE_SUFFIX = 'Main';
-/** Loading 面板名约定：bundleName + 'Loading'，如 lobbyLoading、slotGameLoading */
-const LOADING_PANEL_SUFFIX = 'Loading';
 /** Cocos Creator 内置 Bundle，不可卸载，避免破坏引擎 */
 const BUILTIN_BUNDLES = new Set<string>(['internal', 'main', 'resources']);
 
@@ -19,9 +16,8 @@ const BUILTIN_BUNDLES = new Set<string>(['internal', 'main', 'resources']);
  *
  * 切换流程：
  *   1. notifyBundleExit(prev) → 卸载非 common Bundle
- *   2. loadBundle(next) → show(bundleName+'Loading') 拿到节点引用
- *   3. 并行：loadScene(bundleName+'Main') + Loading.onShow(params) 启动流程，等待 loadFinish()
- *   4. loadFinish() 后：runScene → NexusBaseEntry.onEnter → notifyBundleEnter → destroy Loading
+ *   2. loadBundle(next) → 加载并挂载 Entry Prefab（onPreload → onEnter）
+ *   3. Entry 完成逻辑后主动调用 Nexus.bundle.runScene() → loadScene → onSceneReady → notifyBundleEnter
  */
 export class BundleServiceImpl extends IBundleService {
 
@@ -33,16 +29,10 @@ export class BundleServiceImpl extends IBundleService {
     /** 当前 bundle 的运行时 Entry 节点与组件引用（用于 exit 时清理）。 */
     private _runtimeEntryNode: Node | null = null;
     private _runtimeEntryComp: NexusBaseEntry | null = null;
-    /** 标记：Entry.onEnter 已在“Entry Prefab 加载完成后”提前执行过，避免 runScene 后重复执行。 */
+    /** 标记：Entry.onEnter 已在”Entry Prefab 加载完成后”提前执行过，避免 runScene 后重复执行。 */
     private _runtimeEntered = false;
-    /** 当前正在显示的 Loading 面板名，用于并发取消时销毁 */
-    private _currentBundleLoadingName = '';
-    /** 当前 Loading 组件引用，用于取消时调用 onCancel() */
-    private _currentLoadingComp: NexusBaseLoading | null = null;
     /** 并发 enter() 控制：每次 enter 递增，异步步骤间检测是否已被新 enter 取代 */
     private _enterGeneration = 0;
-    /** Loading 调用 loadFinish() 时 resolve，用于 enter() 中“等待完成”而非仅等 execute()。 */
-    private _resolveLoading: (() => void) | null = null;
 
     /** 缓存 Bundle 配置并预加载标记为 preload 的包。 */
     async onBoot(config: NexusConfig): Promise<void> {
@@ -69,14 +59,15 @@ export class BundleServiceImpl extends IBundleService {
     }
 
     /**
-     * 执行完整的 Bundle 切换流程。
-     * 若有上一次未完成的 enter（Loading 正在显示），先销毁它再开始新流程。
+     * 执行 Bundle 切换流程（不含场景跳转）。
+     *
+     * 切换流程：
+     *   1. 退出旧 Bundle（notifyBundleExit → 卸载）
+     *   2. 加载新 Bundle → 加载并挂载 Entry Prefab（onPreload → onEnter）
+     *   3. Entry 在 onEnter 中完成所有逻辑后，主动调用 Nexus.bundle.runScene() 跳转场景
      */
     async enter(bundleName: string, params?: Record<string, unknown>): Promise<void> {
         this.ensureConfig(bundleName);
-
-        // 取消上一次未完成的 enter：销毁旧 Loading 面板
-        this._cancelPendingEnter();
 
         const generation = ++this._enterGeneration;
         const cancelled = (): boolean => generation !== this._enterGeneration;
@@ -104,50 +95,26 @@ export class BundleServiceImpl extends IBundleService {
 
         if (cancelled()) return;
 
-        // 约定：场景放在 scene/ 目录下，命名为 bundleName + 'Main'，如 lobby/scene/lobbyMain。
-        const entrySceneName   = `scene/${bundleName + ENTRY_SCENE_SUFFIX}`;
-        // 约定：Bundle 专用 Loading 预制体放在 loading/ 目录下，命名为 bundleName + 'Loading'。
-        const loadingPanelName = `loading/${bundleName + LOADING_PANEL_SUFFIX}`;
-
-        // 在显示 Loading 之前：先加载并常驻 Entry Prefab（替代旧的场景手挂/EntryRegistry 方案）
+        // 加载并挂载 Entry Prefab → onPreload → onEnter
+        // Entry 在 onEnter 中完成资源加载等逻辑后，主动调用 Nexus.bundle.runScene() 跳转场景
         await this.loadAndAttachEntryPrefab(bundleName, params);
+    }
 
-        // 显示 Loading 面板并拿到节点引用
-        let loadingNode: Node | null = null;
-        try {
-            loadingNode = await Nexus.ui.show(loadingPanelName, params, UILayer.LOADING);
-            this._currentBundleLoadingName = loadingPanelName;
-        } catch (e) {
-            // 无该 Loading 预制体或加载失败时打印错误日志，方便排查路径/配置问题
-            error('[Nexus][BundleService] Failed to show loading panel:', loadingPanelName, e);
+    /** 由 Entry 在加载完成后主动调用，加载并切换到当前 Bundle 的主场景。 */
+    async runScene(): Promise<void> {
+        const bundleName = this._current;
+        if (!bundleName) {
+            error('[Nexus][BundleService] runScene: no active bundle');
+            return;
         }
 
-        if (cancelled()) return;
+        const entrySceneName = `scene/${bundleName + ENTRY_SCENE_SUFFIX}`;
+        const scene = await this.tryLoadScene(bundleName, entrySceneName);
 
-        // 并行：加载场景到内存 + 等待 loadFinish()（由 Loading 内进度到 100% 时自动触发）
-        const loadingComp = loadingNode?.getComponent(NexusBaseLoading) ?? null;
-        this._currentLoadingComp = loadingComp;
-        const scenePromise = this.tryLoadScene(bundleName, entrySceneName);
-        let scene: Scene | null;
-        if (loadingComp) {
-            const finishPromise = new Promise<void>(r => { this._resolveLoading = r; });
-            scene = (await Promise.all([scenePromise, finishPromise]))[0] as Scene | null;
-        } else {
-            this._resolveLoading = null;
-            scene = await scenePromise;
-        }
-
-        if (cancelled()) return;
-
-        this._resolveLoading = null;
-
-        // 两者均完成 → 切换场景
         if (scene) {
             await new Promise<void>((resolve) => {
                 director.runScene(scene, undefined, async () => {
-                    // Entry.onEnter 已在 entry prefab 实例化完成后提前执行；
-                    // 这里保留一个可选钩子：若 Entry 需要等场景激活后再做绑定，可实现 onSceneReady(params)。
-                    await this.invokeEnterHooks(params);
+                    await this.invokeEnterHooks();
                     await ServiceRegistry.notifyBundleEnter(bundleName);
                     Nexus.event.emit(NexusEvents.BUNDLE_ENTER, bundleName);
                     resolve();
@@ -157,19 +124,11 @@ export class BundleServiceImpl extends IBundleService {
             await ServiceRegistry.notifyBundleEnter(bundleName);
             Nexus.event.emit(NexusEvents.BUNDLE_ENTER, bundleName);
         }
-
-        // 销毁 Loading 面板
-        this._currentLoadingComp = null;
-        if (this._currentBundleLoadingName) {
-            Nexus.ui.destroy(this._currentBundleLoadingName);
-            this._currentBundleLoadingName = '';
-        }
     }
 
     /** 退出当前 Bundle，并触发退出生命周期。 */
     async exit(bundleName: string): Promise<void> {
         if (this._current !== bundleName) return;
-        this._cancelPendingEnter();
         await this.invokeExitHooks();
         await ServiceRegistry.notifyBundleExit(bundleName);
         Nexus.event.emit(NexusEvents.BUNDLE_EXIT, bundleName);
@@ -197,18 +156,12 @@ export class BundleServiceImpl extends IBundleService {
         return this._current;
     }
 
-    /** Loading 在进度到 100% 后调用，触发当前 enter 的“完成”并执行场景切换、关闭 Loading。 */
-    loadFinish(): void {
-        if (this._resolveLoading) {
-            this._resolveLoading();
-            this._resolveLoading = null;
-        }
-    }
+    /** 空实现，保留接口兼容。 */
+    loadFinish(): void {}
 
     /** 销毁时执行退出钩子并清空缓存。 */
     async onDestroy(): Promise<void> {
         await this.invokeExitHooks();
-        this._cancelPendingEnter();
         this._configs.clear();
         this._bundles.clear();
         this._current = '';
@@ -219,21 +172,6 @@ export class BundleServiceImpl extends IBundleService {
     }
 
     // ── 私有工具 ─────────────────────────────────────
-
-    /**
-     * 取消当前正在进行中的 enter：销毁已显示的 Loading 面板。
-     * generation 计数器负责让旧 enter() 的后续逻辑自动放弃执行。
-     */
-    private _cancelPendingEnter(): void {
-        if (this._resolveLoading) {
-            this._resolveLoading();
-            this._resolveLoading = null;
-        }
-        if (this._currentBundleLoadingName) {
-            Nexus.ui.destroy(this._currentBundleLoadingName);
-            this._currentBundleLoadingName = '';
-        }
-    }
 
     /** 确保目标 Bundle 已在配置中声明。 */
     private ensureConfig(bundleName: string): void {
@@ -311,21 +249,24 @@ export class BundleServiceImpl extends IBundleService {
         if (!bundle) throw new Error(`[Nexus] Bundle not loaded: ${bundleName}`);
 
         const entryPrefabPath = `${bundleName}Entry`;
-        const prefab = await new Promise<Prefab>((resolve, reject) => {
+        const prefab = await new Promise<Prefab | null>((resolve, reject) => {
             bundle.load(entryPrefabPath, Prefab, (err, p) => err ? reject(err) : resolve(p));
         }).catch((e) => {
-            throw new Error(`[Nexus] Missing entry prefab: ${bundleName}/${entryPrefabPath}.prefab. ${String(e)}`);
+            error(`[Nexus] Missing entry prefab: ${bundleName}/${entryPrefabPath}.prefab.`, e);
+            return null;
         });
+        if (!prefab) return;
 
-        const root = this.ensureRuntimeRoot();
         const node = instantiate(prefab);
         node.name = `[Entry:${bundleName}]`;
-        root.addChild(node);
+        // 挂到 UI 的 LOADING 层下，确保 Entry 的 UI 节点可见
+        Nexus.ui.getLayerNode(UILayer.LOADING).addChild(node);
 
         const comp = node.getComponent(NexusBaseEntry) ?? node.getComponentInChildren(NexusBaseEntry);
         if (!comp) {
             node.destroy();
-            throw new Error(`[Nexus] Entry prefab has no NexusBaseEntry component: ${bundleName}/${entryPrefabPath}.prefab`);
+            error(`[Nexus] Entry prefab has no NexusBaseEntry component: ${bundleName}/${entryPrefabPath}.prefab`);
+            return;
         }
 
         this._runtimeEntryNode = node;
@@ -335,7 +276,7 @@ export class BundleServiceImpl extends IBundleService {
         const pre = (comp as any).onPreload as undefined | ((p?: Record<string, unknown>) => Promise<void> | void);
         if (pre) await pre.call(comp, params);
 
-        // 你期望的更早启动：Entry Prefab 加载完成后立刻 onEnter（不等待场景加载/切换）
+        // 你期望更早启动：Entry Prefab 加载完成后立刻 onEnter（不等待场景加载/切换）
         // 注意：若 onEnter 内依赖场景节点，请改用可选 onSceneReady(params) 在 runScene 后执行。
         await comp.onEnter(params);
         this._runtimeEntered = true;

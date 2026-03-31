@@ -124,8 +124,9 @@ export class WsDelegate implements IWsDelegate {
         // 服务端错误码：业务决定什么是错误、如何展示
         if ((pkt.errorCode ?? 0) !== 0) {
             console.warn('[WsDelegate] 服务端错误码：', pkt.errorCode, pkt);
-            Nexus.ui.show(CommonUI.ALERT, { message: `错误码: ${pkt.errorCode}` });
-            return new Error(`Server error: ${pkt.errorCode}`);
+            Nexus.ui.show(CommonUI.ALERT, { content: `错误码: ${pkt.errorCode}` });
+            // return new Error(`Server error: ${pkt.errorCode}`);
+            console.error(`Server error: ${pkt.errorCode}`)
         }
 
         console.log('【ws】收到消息：', pkt.msgType, pkt);

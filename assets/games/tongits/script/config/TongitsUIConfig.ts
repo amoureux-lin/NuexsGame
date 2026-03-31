@@ -1,19 +1,14 @@
 import type { PanelItem } from 'db://assets/script/config/UIConfig';
 import { UILayer } from 'db://nexus-framework/index';
 
-/** 老虎机子游戏 UI 面板 ID */
+/** Tongits 子游戏 UI 面板 ID */
 export const tongitsUI = {
-    LOADING: 'tongitsLoading',
     RESULT: 'tongitsResult',
     SETTINGS: 'tongitsSettings',
 } as const;
 
-/** 老虎机面板配置：预制体路径相对于 tongits Bundle 根目录 */
+/** Tongits 面板配置：预制体路径相对于 tongits Bundle 根目录 */
 export const TongitsUIPanelConfig: Record<string, PanelItem> = {
-    [tongitsUI.LOADING]: {
-        layer: UILayer.LOADING,
-        prefab: 'loading/tongitsLoading',
-    },
     [tongitsUI.RESULT]: {
         layer: UILayer.POPUP,
         prefab: 'prefabs/tongitsResult',

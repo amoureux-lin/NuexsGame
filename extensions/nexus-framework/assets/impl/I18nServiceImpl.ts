@@ -42,7 +42,8 @@ export class I18nServiceImpl extends II18nService {
     /** 切换当前语言并重新加载翻译表。 */
     async switchLanguage(lang: string): Promise<void> {
         if (!this._languages.has(lang)) {
-            throw new Error(`[Nexus] Unsupported language: ${lang}`);
+            console.error(`[Nexus] Unsupported language: ${lang}`);
+            return;
         }
         this._language = lang;
         await this.loadTranslations(lang);

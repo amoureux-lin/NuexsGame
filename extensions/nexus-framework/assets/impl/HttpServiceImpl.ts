@@ -65,12 +65,14 @@ export class HttpServiceImpl extends ServiceBase {
                 if (xhr.status >= 200 && xhr.status < 300) {
                     resolve(data);
                 } else {
-                    reject(new Error(`[Nexus] HTTP ${xhr.status}: ${url}`));
+                    const msg = `[Nexus] HTTP ${xhr.status}: ${url}`;
+                    console.error(msg);
+                    reject(msg);
                 }
             };
 
-            xhr.onerror = () => reject(new Error(`[Nexus] Network error: ${url}`));
-            xhr.ontimeout = () => reject(new Error(`[Nexus] Request timeout: ${url}`));
+            xhr.onerror = () => { const msg = `[Nexus] Network error: ${url}`; console.error(msg); reject(msg); };
+            xhr.ontimeout = () => { const msg = `[Nexus] Request timeout: ${url}`; console.error(msg); reject(msg); };
 
             xhr.send(body !== undefined ? JSON.stringify(body) : null);
         });

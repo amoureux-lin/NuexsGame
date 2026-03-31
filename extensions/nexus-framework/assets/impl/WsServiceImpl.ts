@@ -127,6 +127,7 @@ export class WsServiceImpl extends ServiceBase {
             console.warn('[Nexus] WebSocket is not connected');
             return;
         }
+        console.log('【ws】发送消息',body);
         const ctx: WsSendContext = { msgType, requestId, body, extra: {} };
         this._delegate?.willSend?.(ctx);
         const packet = this._delegate
@@ -142,17 +143,20 @@ export class WsServiceImpl extends ServiceBase {
 
     wsRequest<T = unknown>(msgType: number, body: unknown, timeoutMs?: number): Promise<T> {
         if (!this._delegate) {
-            return Promise.reject(new Error('[Nexus] initWs required for wsRequest'));
+            console.error('[Nexus] initWs required for wsRequest');
+            return Promise.reject('[Nexus] initWs required for wsRequest');
         }
         if (!this._ws || this._ws.readyState !== WebSocket.OPEN) {
-            return Promise.reject(new Error('[Nexus] WebSocket not connected'));
+            console.error('[Nexus] WebSocket not connected');
+            return Promise.reject('[Nexus] WebSocket not connected');
         }
 
         const requestId = this._nextRequestId++;
         return new Promise<T>((resolve, reject) => {
             const ms = timeoutMs ?? this._config.requestTimeoutMs ?? 10000;
             const timeoutId = setTimeout(() => {
-                this.rejectPending(requestId, new Error('[Nexus] WS request timeout'));
+                console.error('[Nexus] WS request timeout, requestId:', requestId);
+                this.rejectPending(requestId, '[Nexus] WS request timeout');
             }, ms);
             this._pending.set(requestId, { resolve, reject, timeoutId, msgType });
             this.buildAndSend(msgType, body, requestId);
@@ -336,7 +340,7 @@ export class WsServiceImpl extends ServiceBase {
     async onDestroy(): Promise<void> {
         this.clearTimers();
         for (const requestId of this._pending.keys()) {
-            this.rejectPending(requestId, new Error('[Nexus] WS destroyed'));
+            this.rejectPending(requestId, '[Nexus] WS destroyed');
         }
         this._wsHandlers.clear();
         if (this._ws) {

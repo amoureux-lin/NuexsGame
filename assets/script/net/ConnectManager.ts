@@ -1,21 +1,10 @@
 import { _decorator, Component } from 'cc';
-import { Nexus } from 'db://nexus-framework/index';
+import {getQueryParam, Nexus} from 'db://nexus-framework/index';
 import { GameEvents } from '../config/GameEvents';
 
 const { ccclass } = _decorator;
 
-/** 本地测试用的默认参数，可按需修改 */
-const DEFAULT_LOCAL_TOKEN_PARAMS = {
-    room_id: 66,
-    room_name: '新手房-1',
-    game_id: 2,
-    score: 10,
-    user_id: '123456',
-    nick_name: 'Alice',
-    user_avatar: 'https://p-web.herontest.xin/img/avatar/7.png',
-    coin: 10000,
-    is_guest: false,
-};
+
 
 @ccclass('ConnectManager')
 export class ConnectManager extends Component {
@@ -55,6 +44,18 @@ export class ConnectManager extends Component {
      * 非本地环境不要调用此方法。
      */
     private generateToken(callback?: (token: string) => void): void {
+        /** 本地测试用的默认参数，可按需修改 */
+        const DEFAULT_LOCAL_TOKEN_PARAMS = {
+            room_id: getQueryParam('room_id') || 88,
+            room_name: '新手房-1',
+            game_id: getQueryParam('game_id') || 6,
+            score: 10,
+            user_id: getQueryParam('user_id') || '123456',
+            nick_name: 'Alice',
+            user_avatar: 'https://p-web.herontest.xin/img/avatar/7.png',
+            coin: 10000,
+            is_guest: false,
+        };
         Nexus.net.post<{ code: number, data: { token: string } }>(GameEvents.HTTP_GENERATE_TOKEN as string, DEFAULT_LOCAL_TOKEN_PARAMS)
             .then((res) => {
                 console.log("generateToken success", res);

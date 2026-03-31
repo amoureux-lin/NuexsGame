@@ -265,7 +265,7 @@ export class UIServiceImpl extends IUIService {
     }
 
     /** 获取指定层级节点，缺省时回退到根节点。 */
-    private getLayerNode(layer: UILayer): Node {
+    getLayerNode(layer: UILayer): Node {
         return this._layers.get(layer) ?? this._root!;
     }
 
