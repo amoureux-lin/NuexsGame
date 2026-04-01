@@ -1,23 +1,19 @@
 import { _decorator } from 'cc';
-import { Nexus, NexusBaseEntry } from 'db://nexus-framework/index';
+import { Nexus } from 'db://nexus-framework/index';
+import { BaseGameEntry } from 'db://assets/script/base/BaseGameEntry';
 import { slotGameUI, SlotGameUIPanelConfig } from './config/SlotGameUIConfig';
 import { SlotGameController } from './game/SlotGameController';
 import { SlotGameModel } from './game/SlotGameModel';
 
 const { ccclass } = _decorator;
 
-/**
- * 老虎机子游戏入口：挂到 slotGameMain 场景根节点，Bundle 进入时由框架调用 onEnter/onExit。
- * 使用 MVC：Model + Controller 在 Entry 创建，View 挂到场景节点自行监听与派发。
- */
 @ccclass('SlotGameEntry')
-export class SlotGameEntry extends NexusBaseEntry {
+export class SlotGameEntry extends BaseGameEntry {
 
     private _model: SlotGameModel | null = null;
     private _controller: SlotGameController | null = null;
 
-    async onEnter(params?: Record<string, unknown>): Promise<void> {
-        await super.onEnter(params);
+    protected async onGameInit(params?: Record<string, unknown>): Promise<void> {
         Nexus.ui.registerPanels(SlotGameUIPanelConfig);
 
         this._model = new SlotGameModel();
@@ -25,11 +21,10 @@ export class SlotGameEntry extends NexusBaseEntry {
         await this._controller.start(params);
     }
 
-    async onExit(): Promise<void> {
+    protected async onGameExit(): Promise<void> {
         this._controller?.destroy();
         this._controller = null;
         this._model = null;
         Nexus.ui.unregisterPanels(slotGameUI);
-        await super.onExit();
     }
 }

@@ -2,6 +2,12 @@ import { AudioClip, AudioSource, director, game, Node } from 'cc';
 import { Nexus } from '../core/Nexus';
 import { IAudioService } from '../services/contracts';
 
+/** localStorage key 常量 */
+const STORAGE_MUSIC_VOLUME  = 'audio_music_volume';
+const STORAGE_SFX_VOLUME    = 'audio_sfx_volume';
+const STORAGE_MUSIC_ENABLED = 'audio_music_enabled';
+const STORAGE_SFX_ENABLED   = 'audio_sfx_enabled';
+
 /**
  * 基于 AudioSource 的音频管理实现。
  *
@@ -9,6 +15,8 @@ import { IAudioService } from '../services/contracts';
  *   - 创建一个跨场景持久节点 [NexusAudio]
  *   - 挂一个 AudioSource 专用于背景音乐（loop）
  *   - 挂 SFX_POOL_SIZE 个 AudioSource 组成音效池（playOneShot，自动复用空闲通道）
+ *
+ * 音量与开关状态通过 Nexus.storage 持久化到 localStorage，onBoot 时自动恢复。
  */
 export class AudioServiceImpl extends IAudioService {
 
@@ -23,8 +31,14 @@ export class AudioServiceImpl extends IAudioService {
     private _musicSource:  AudioSource | null = null;
     private _sfxSources:   AudioSource[]      = [];
 
-    /** 创建持久音频节点，并初始化音乐通道与音效池。 */
+    /** 创建持久音频节点，并从 localStorage 恢复音量与开关状态。 */
     async onBoot(): Promise<void> {
+        // 从 localStorage 恢复状态
+        this._musicVolume  = Nexus.storage.get<number>(STORAGE_MUSIC_VOLUME, 1)!;
+        this._sfxVolume    = Nexus.storage.get<number>(STORAGE_SFX_VOLUME, 1)!;
+        this._musicEnabled = Nexus.storage.get<boolean>(STORAGE_MUSIC_ENABLED, true)!;
+        this._sfxEnabled   = Nexus.storage.get<boolean>(STORAGE_SFX_ENABLED, true)!;
+
         this._audioNode = new Node('[NexusAudio]');
 
         // 添加到当前场景，再设为持久节点（CC3 要求）
@@ -45,10 +59,11 @@ export class AudioServiceImpl extends IAudioService {
         }
     }
 
-    /** 加载并播放背景音乐。 */
-    async playMusic(bundle: string, path: string, loop = true): Promise<void> {
+    /** 播放背景音乐，自动从当前 bundle 查找，失败 fallback 到 common。 */
+    async playMusic(path: string, loop = true): Promise<void> {
         if (!this._musicEnabled || !this._musicSource) return;
-        const clip = await Nexus.asset.load<AudioClip>(bundle, path, AudioClip);
+        const clip = await this.loadClip(path);
+        if (!clip) return;
         this._musicSource.clip   = clip;
         this._musicSource.loop   = loop;
         this._musicSource.volume = this._musicVolume;
@@ -60,37 +75,85 @@ export class AudioServiceImpl extends IAudioService {
         this._musicSource?.stop();
     }
 
-    /** 播放一个音效，优先复用空闲通道。 */
-    async playSfx(bundle: string, path: string): Promise<void> {
+    /** 播放音效，自动从当前 bundle 查找，失败 fallback 到 common。 */
+    async playSfx(path: string): Promise<void> {
         if (!this._sfxEnabled) return;
-        const clip = await Nexus.asset.load<AudioClip>(bundle, path, AudioClip);
-        // 优先找空闲通道，没有则复用第一个
+        const clip = await this.loadClip(path);
+        if (!clip) return;
         const src = this._sfxSources.find(s => !s.playing) ?? this._sfxSources[0];
         src.volume = this._sfxVolume;
         src.playOneShot(clip);
     }
 
-    /** 设置背景音乐音量。 */
+    /** 播放指定 bundle 的背景音乐。 */
+    async playMusicByBundle(bundle: string, path: string, loop = true): Promise<void> {
+        if (!this._musicEnabled || !this._musicSource) return;
+        try {
+            const clip = await Nexus.asset.load<AudioClip>(bundle, path, AudioClip);
+            this._musicSource.clip   = clip;
+            this._musicSource.loop   = loop;
+            this._musicSource.volume = this._musicVolume;
+            this._musicSource.play();
+        } catch {
+            console.error(`[Nexus][Audio] Failed to load music: ${bundle}/${path}`);
+        }
+    }
+
+    /** 播放指定 bundle 的音效。 */
+    async playSfxByBundle(bundle: string, path: string): Promise<void> {
+        if (!this._sfxEnabled) return;
+        try {
+            const clip = await Nexus.asset.load<AudioClip>(bundle, path, AudioClip);
+            const src = this._sfxSources.find(s => !s.playing) ?? this._sfxSources[0];
+            src.volume = this._sfxVolume;
+            src.playOneShot(clip);
+        } catch {
+            console.error(`[Nexus][Audio] Failed to load sfx: ${bundle}/${path}`);
+        }
+    }
+
+    /** 设置背景音乐音量并持久化。 */
     setMusicVolume(vol: number): void {
         this._musicVolume = this.clamp01(vol);
         if (this._musicSource) this._musicSource.volume = this._musicVolume;
+        Nexus.storage.set(STORAGE_MUSIC_VOLUME, this._musicVolume);
     }
 
-    /** 设置音效音量。 */
+    /** 设置音效音量并持久化。 */
     setSfxVolume(vol: number): void {
         this._sfxVolume = this.clamp01(vol);
         for (const src of this._sfxSources) src.volume = this._sfxVolume;
+        Nexus.storage.set(STORAGE_SFX_VOLUME, this._sfxVolume);
     }
 
-    /** 开关背景音乐；关闭时会立即停止播放。 */
+    /** 获取当前背景音乐音量。 */
+    getMusicVolume(): number { return this._musicVolume; }
+
+    /** 获取当前音效音量。 */
+    getSfxVolume(): number { return this._sfxVolume; }
+
+    /** 开关背景音乐并持久化；关闭时会立即停止播放。 */
     setMusicEnabled(on: boolean): void {
         this._musicEnabled = on;
+        Nexus.storage.set(STORAGE_MUSIC_ENABLED, on);
         if (!on) this.stopMusic();
     }
 
-    /** 开关音效播放。 */
+    /** 开关音效播放并持久化。 */
     setSfxEnabled(on: boolean): void {
         this._sfxEnabled = on;
+        Nexus.storage.set(STORAGE_SFX_ENABLED, on);
+    }
+
+    /** 背景音乐是否开启。 */
+    isMusicEnabled(): boolean { return this._musicEnabled; }
+
+    /** 音效是否开启。 */
+    isSfxEnabled(): boolean { return this._sfxEnabled; }
+
+    /** 背景音乐是否正在播放。 */
+    isMusicPlaying(): boolean {
+        return !!this._musicSource?.playing;
     }
 
     /** 暂停全部音频通道。 */
@@ -117,6 +180,25 @@ export class AudioServiceImpl extends IAudioService {
         }
         this._musicSource = null;
         this._sfxSources  = [];
+    }
+
+    /** 先从当前 bundle 加载 AudioClip，失败则 fallback 到 common，都失败返回 null。 */
+    private async loadClip(path: string): Promise<AudioClip | null> {
+        const current = Nexus.bundle.current;
+        if (current) {
+            try {
+                return await Nexus.asset.load<AudioClip>(current, path, AudioClip);
+            } catch {
+                // 当前 bundle 加载失败，尝试 common
+            }
+        }
+        try {
+            return await Nexus.asset.load<AudioClip>('common', path, AudioClip);
+        } catch {
+            // common 也失败
+        }
+        console.error(`[Nexus][Audio] Failed to load audio: ${path} (tried: ${current || 'none'}, common)`);
+        return null;
     }
 
     /** 将数值限制在 0 到 1 之间。 */

@@ -117,7 +117,7 @@ export class WsDelegate implements IWsDelegate {
     willReceive(pkt: DecodedPacket): true | Error | void {
         // 过滤心跳响应，不分发给业务
         if (pkt.msgType === HEARTBEAT_RES) {
-            console.log('【ws】心跳响应：', pkt);
+            // console.log('【ws】心跳响应：', pkt);
             return true;
         }
 

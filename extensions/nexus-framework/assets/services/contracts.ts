@@ -231,20 +231,34 @@ export abstract class INetService extends ServiceBase {
 }
 
 export abstract class IAudioService extends ServiceBase {
-    /** 播放背景音乐。 */
-    abstract playMusic(bundle: string, path: string, loop?: boolean): Promise<void>;
+    /** 播放背景音乐，自动从当前 bundle 查找，失败 fallback 到 common。 */
+    abstract playMusic(path: string, loop?: boolean): Promise<void>;
     /** 停止背景音乐。 */
     abstract stopMusic(): void;
-    /** 播放音效。 */
-    abstract playSfx(bundle: string, path: string): Promise<void>;
+    /** 播放音效，自动从当前 bundle 查找，失败 fallback 到 common。 */
+    abstract playSfx(path: string): Promise<void>;
+    /** 播放指定 bundle 的背景音乐。 */
+    abstract playMusicByBundle(bundle: string, path: string, loop?: boolean): Promise<void>;
+    /** 播放指定 bundle 的音效。 */
+    abstract playSfxByBundle(bundle: string, path: string): Promise<void>;
     /** 设置背景音乐音量。 */
     abstract setMusicVolume(vol: number): void;
     /** 设置音效音量。 */
     abstract setSfxVolume(vol: number): void;
+    /** 获取当前背景音乐音量。 */
+    abstract getMusicVolume(): number;
+    /** 获取当前音效音量。 */
+    abstract getSfxVolume(): number;
     /** 开关背景音乐。 */
     abstract setMusicEnabled(on: boolean): void;
     /** 开关音效。 */
     abstract setSfxEnabled(on: boolean): void;
+    /** 背景音乐是否开启。 */
+    abstract isMusicEnabled(): boolean;
+    /** 音效是否开启。 */
+    abstract isSfxEnabled(): boolean;
+    /** 背景音乐是否正在播放。 */
+    abstract isMusicPlaying(): boolean;
     /** 暂停所有音频。 */
     abstract pauseAll(): void;
     /** 恢复所有音频。 */

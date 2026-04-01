@@ -1,163 +1,63 @@
-import { _decorator, AudioClip, Font, Prefab, ProgressBar, Label, Node, sp, SpriteFrame } from 'cc';
-import { Nexus, NexusBaseEntry, NexusEvents } from 'db://nexus-framework/index';
-import { tongitsUI, TongitsUIPanelConfig } from './config/TongitsUIConfig';
+import { _decorator, AudioClip, Font, SpriteFrame } from 'cc';
+import { Nexus } from 'db://nexus-framework/index';
+import { BaseGameEntry, PROGRESS_COMMON_END, PROGRESS_BUNDLE_END } from 'db://assets/script/base/BaseGameEntry';
+import {TongitsUI, TongitsUIPanelConfig} from './config/TongitsUIConfig';
 import { TongitsController } from './game/TongitsController';
 import { TongitsModel } from './game/TongitsModel';
 import { TONGITS_MSG_REGISTRY } from './proto/msg_registry_tongits';
 import { MessageType } from './proto/message_type';
 import type { JoinRoomRes } from './proto/tongits';
 
-const { ccclass, property } = _decorator;
+const { ccclass } = _decorator;
 
-/** 进度分段 */
-const PROGRESS_COMMON_END = 30;
-const PROGRESS_BUNDLE_END = 60;
-const PROGRESS_CONNECT_END = 80;
-const PROGRESS_JOIN_END = 100;
-/** 显示进度追赶到该比例（相对 0~1）后再切场景，避免条还没满就跳转 */
-const DISPLAY_PROGRESS_COMPLETE = 0.998;
-
-/**
- * Tongits 子游戏入口：Bundle 进入时由框架调用 onEnter/onExit。
- * Entry prefab 上挂载 Loading UI 节点（进度条等），加载完成后跳转场景。
- */
 @ccclass('TongitsEntry')
-export class TongitsEntry extends NexusBaseEntry {
-
-    @property({ type: Node, tooltip: 'Loading 节点' })
-    loadingRoot: Node | null = null;
-
-    @property({ type: ProgressBar, tooltip: '进度条' })
-    progressBar: ProgressBar | null = null;
-
-    @property({ type: Label, tooltip: '进度文字' })
-    progressLabel: Label | null = null;
-
-    @property({ type: Label, tooltip: '进度数字' })
-    progressNumber: Label | null = null;
+export class TongitsEntry extends BaseGameEntry {
 
     private _model: TongitsModel | null = null;
     private _controller: TongitsController | null = null;
-    private _targetPercent = 0;
-    private _displayProgress = 0;
-    /** 等进度条动画追上目标后 resolve（在 update 里检测） */
-    private _waitDisplayProgressResolve: (() => void) | null = null;
 
-    async onEnter(params?: Record<string, unknown>): Promise<void> {
-        console.log('TongitsEntry onEnter');
-
-        await super.onEnter(params);
+    protected async onGameInit(params?: Record<string, unknown>): Promise<void> {
         Nexus.proto.registerSubgame(TONGITS_MSG_REGISTRY);
         Nexus.ui.registerPanels(TongitsUIPanelConfig);
 
         this._model = new TongitsModel();
         this._controller = new TongitsController(this._model);
         await this._controller.start(params);
-
-        await this.loadResources(params);
     }
 
-    /**
-     * 加载资源，按步骤更新进度条：
-     * 1. 加载公共资源 (0-30%)
-     * 2. 加载游戏 bundle 资源 (30-60%)
-     * 3. WebSocket 建立连接 + 发送 joinRoomReq，等待加入房间成功返回 (60-100%)
-     */
-    async loadResources(params?: Record<string, unknown>): Promise<void> {
-        this.setProgress(0, '加载公共资源...');
-
-        // 1. 加载公共资源 0-30%
-        const commonDirs = [
-            { dir: 'prefabs', type: Prefab },
-            { dir: 'emojis', type: sp.SkeletonData },
-            { dir: 'fonts', type: Font },
-            { dir: 'audios', type: AudioClip },
-            { dir: 'images', type: SpriteFrame },
+    protected async loadBundleResources(): Promise<void> {
+        const bundleName = 'tongits';
+        const dirs = [
+            { dir: 'res/audios', type: AudioClip },
+            { dir: 'res/font', type: Font },
+            { dir: 'res/image', type: SpriteFrame },
         ];
-        for (let i = 0; i < commonDirs.length; i++) {
-            const item = commonDirs[i];
-            const start = (i / commonDirs.length) * PROGRESS_COMMON_END;
-            const end = ((i + 1) / commonDirs.length) * PROGRESS_COMMON_END;
-            await Nexus.asset.loadDir('common', item.dir, item.type as any, (finished, total) => {
+        for (let i = 0; i < dirs.length; i++) {
+            const item = dirs[i];
+            const segStart = PROGRESS_COMMON_END + (i / dirs.length) * (PROGRESS_BUNDLE_END - PROGRESS_COMMON_END);
+            const segEnd = PROGRESS_COMMON_END + ((i + 1) / dirs.length) * (PROGRESS_BUNDLE_END - PROGRESS_COMMON_END);
+            await Nexus.asset.loadDir(bundleName, item.dir, item.type as any, (finished, total) => {
                 const ratio = total > 0 ? finished / total : 1;
-                this.setProgress(start + ratio * (end - start), '加载公共资源...');
+                this.setProgress(segStart + ratio * (segEnd - segStart), '加载游戏资源...');
             });
         }
-        this.setProgress(PROGRESS_COMMON_END, '加载游戏资源...');
+    }
 
-        // 2. 加载游戏 bundle 资源 30-60%
-        // TODO: 按需加载 tongits bundle 内的 prefab、图片等
-        this.setProgress(PROGRESS_BUNDLE_END, '连接服务器...');
-
-        // 3. WebSocket 连接 + joinRoom 60-100%
-        if (!Nexus.net.isConnected()) {
-            await new Promise<void>((resolve) => {
-                const onConnected = () => {
-                    Nexus.off(NexusEvents.NET_CONNECTED, onConnected, this);
-                    resolve();
-                };
-                Nexus.on(NexusEvents.NET_CONNECTED, onConnected, this);
-            });
-        }
-        this.setProgress(PROGRESS_CONNECT_END, '加入房间...');
-
-        // 发送 joinRoomReq，等待响应
+    protected async joinRoom(params?: Record<string, unknown>): Promise<void> {
         const roomId = Number(params?.room_id ?? 0);
         const res = await Nexus.net.wsRequest<JoinRoomRes>(
             MessageType.TONGITS_JOIN_ROOM_REQ,
             { roomId },
         );
-        console.log("joinRoomReq返回：",res);
-        this._model.joinRoom(res);
-        this.setProgress(PROGRESS_JOIN_END, '进入游戏...');
-        await this.waitUntilDisplayedProgressComplete();
-        await Nexus.bundle.runScene();
-        this.loadingRoot?.destroy();
-        // 跳转后主场景已就绪，关闭本组件的 tick，避免每帧空跑 update（onExit 仍由 Bundle 正常调用）
-        this.enabled = false;
+        console.log('joinRoomRes:', res);
+        this._model!.joinRoom(res);
+        await Nexus.audio.playMusic('res/audios/Tongtis_bg', true);
     }
 
-    protected update(dt: number): void {
-        const target = this._targetPercent / 100;
-        this._displayProgress += (target - this._displayProgress) * Math.min(1, 3 * dt);
-        const clamped = Math.min(1, Math.max(0, this._displayProgress));
-        if (this.progressBar?.isValid) this.progressBar.progress = clamped;
-        if (this.progressNumber?.isValid) this.progressNumber.string = Math.round(clamped * 100) + '%';
-        
-        const done = this._waitDisplayProgressResolve;
-        if (done && this._targetPercent >= PROGRESS_JOIN_END && clamped >= DISPLAY_PROGRESS_COMPLETE) {
-            this._waitDisplayProgressResolve = null;
-            done();
-        }
-    }
-
-    private setProgress(percent: number, tip?: string): void {
-        this._targetPercent = Math.min(100, Math.max(0, percent));
-        if (tip !== undefined && this.progressLabel?.isValid) {
-            this.progressLabel.string = tip;
-        }
-    }
-
-    /** 等待 update 里缓动进度达到 DISPLAY_PROGRESS_COMPLETE（目标需已为 100%） */
-    private waitUntilDisplayedProgressComplete(): Promise<void> {
-        if (this._targetPercent >= PROGRESS_JOIN_END && this._displayProgress >= DISPLAY_PROGRESS_COMPLETE) {
-            return Promise.resolve();
-        }
-        return new Promise((resolve) => {
-            this._waitDisplayProgressResolve = resolve;
-        });
-    }
-
-    protected onDestroy(): void {
-        this._waitDisplayProgressResolve = null;
-        super.onDestroy();
-    }
-
-    async onExit(): Promise<void> {
+    protected async onGameExit(): Promise<void> {
         this._controller?.destroy();
         this._controller = null;
         this._model = null;
-        Nexus.ui.unregisterPanels(tongitsUI);
-        await super.onExit();
+        Nexus.ui.unregisterPanels(TongitsUI);
     }
 }
