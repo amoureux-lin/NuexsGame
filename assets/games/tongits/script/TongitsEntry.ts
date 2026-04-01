@@ -1,4 +1,4 @@
-import { _decorator, AudioClip, Font, Prefab, ProgressBar, Label, sp, SpriteFrame } from 'cc';
+import { _decorator, AudioClip, Font, Prefab, ProgressBar, Label, Node, sp, SpriteFrame } from 'cc';
 import { Nexus, NexusBaseEntry, NexusEvents } from 'db://nexus-framework/index';
 import { tongitsUI, TongitsUIPanelConfig } from './config/TongitsUIConfig';
 import { TongitsController } from './game/TongitsController';
@@ -14,6 +14,8 @@ const PROGRESS_COMMON_END = 30;
 const PROGRESS_BUNDLE_END = 60;
 const PROGRESS_CONNECT_END = 80;
 const PROGRESS_JOIN_END = 100;
+/** 显示进度追赶到该比例（相对 0~1）后再切场景，避免条还没满就跳转 */
+const DISPLAY_PROGRESS_COMPLETE = 0.998;
 
 /**
  * Tongits 子游戏入口：Bundle 进入时由框架调用 onEnter/onExit。
@@ -21,6 +23,9 @@ const PROGRESS_JOIN_END = 100;
  */
 @ccclass('TongitsEntry')
 export class TongitsEntry extends NexusBaseEntry {
+
+    @property({ type: Node, tooltip: 'Loading 节点' })
+    loadingRoot: Node | null = null;
 
     @property({ type: ProgressBar, tooltip: '进度条' })
     progressBar: ProgressBar | null = null;
@@ -35,6 +40,8 @@ export class TongitsEntry extends NexusBaseEntry {
     private _controller: TongitsController | null = null;
     private _targetPercent = 0;
     private _displayProgress = 0;
+    /** 等进度条动画追上目标后 resolve（在 update 里检测） */
+    private _waitDisplayProgressResolve: (() => void) | null = null;
 
     async onEnter(params?: Record<string, unknown>): Promise<void> {
         console.log('TongitsEntry onEnter');
@@ -102,25 +109,48 @@ export class TongitsEntry extends NexusBaseEntry {
         );
         console.log("joinRoomReq返回：",res);
         this._model.joinRoom(res);
-        // this.setProgress(PROGRESS_JOIN_END, '进入游戏...');
-        //
-        // // 加载完成，跳转场景
-        // await Nexus.bundle.runScene();
+        this.setProgress(PROGRESS_JOIN_END, '进入游戏...');
+        await this.waitUntilDisplayedProgressComplete();
+        await Nexus.bundle.runScene();
+        this.loadingRoot?.destroy();
+        // 跳转后主场景已就绪，关闭本组件的 tick，避免每帧空跑 update（onExit 仍由 Bundle 正常调用）
+        this.enabled = false;
     }
 
     protected update(dt: number): void {
         const target = this._targetPercent / 100;
         this._displayProgress += (target - this._displayProgress) * Math.min(1, 3 * dt);
         const clamped = Math.min(1, Math.max(0, this._displayProgress));
-        if (this.progressBar) this.progressBar.progress = clamped;
-        if (this.progressNumber) this.progressNumber.string = Math.round(clamped * 100) + '%';
+        if (this.progressBar?.isValid) this.progressBar.progress = clamped;
+        if (this.progressNumber?.isValid) this.progressNumber.string = Math.round(clamped * 100) + '%';
+        
+        const done = this._waitDisplayProgressResolve;
+        if (done && this._targetPercent >= PROGRESS_JOIN_END && clamped >= DISPLAY_PROGRESS_COMPLETE) {
+            this._waitDisplayProgressResolve = null;
+            done();
+        }
     }
 
     private setProgress(percent: number, tip?: string): void {
         this._targetPercent = Math.min(100, Math.max(0, percent));
-        if (tip !== undefined && this.progressLabel) {
+        if (tip !== undefined && this.progressLabel?.isValid) {
             this.progressLabel.string = tip;
         }
+    }
+
+    /** 等待 update 里缓动进度达到 DISPLAY_PROGRESS_COMPLETE（目标需已为 100%） */
+    private waitUntilDisplayedProgressComplete(): Promise<void> {
+        if (this._targetPercent >= PROGRESS_JOIN_END && this._displayProgress >= DISPLAY_PROGRESS_COMPLETE) {
+            return Promise.resolve();
+        }
+        return new Promise((resolve) => {
+            this._waitDisplayProgressResolve = resolve;
+        });
+    }
+
+    protected onDestroy(): void {
+        this._waitDisplayProgressResolve = null;
+        super.onDestroy();
     }
 
     async onExit(): Promise<void> {

@@ -117,6 +117,10 @@ export class BundleServiceImpl extends IBundleService {
                     await this.invokeEnterHooks();
                     await ServiceRegistry.notifyBundleEnter(bundleName);
                     Nexus.event.emit(NexusEvents.BUNDLE_ENTER, bundleName);
+                    // Entry 挂在持久化 UI 的 LOADING 层，runScene 不会移除它，否则会一直挡在主场景之上
+                    if (this._runtimeEntryNode?.isValid) {
+                        this._runtimeEntryNode.active = false;
+                    }
                     resolve();
                 });
             });
