@@ -20,8 +20,8 @@ export class TongitsController extends MvcController {
         Nexus.net.onWsMsg(MessageType.TONGITS_JOIN_ROOM_RES, (msg) => {
             console.log('进入房间返回', msg);
         }, this);
-        
-       this.handle(TongitsEvents.CMD_OPEN_SETTINGS, () => this.onOpenSettings());
+
+        this.handle(TongitsEvents.CMD_OPEN_SETTINGS, () => this.onOpenSettings());
         this.handle(TongitsEvents.CMD_BACK_LOBBY, () => this.onBackLobby());
     }
 
