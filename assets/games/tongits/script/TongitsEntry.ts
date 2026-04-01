@@ -96,10 +96,12 @@ export class TongitsEntry extends NexusBaseEntry {
 
         // 发送 joinRoomReq，等待响应
         const roomId = Number(params?.room_id ?? 0);
-        await Nexus.net.wsRequest<JoinRoomRes>(
+        const res = await Nexus.net.wsRequest<JoinRoomRes>(
             MessageType.TONGITS_JOIN_ROOM_REQ,
             { roomId },
         );
+        console.log("joinRoomReq返回：",res);
+        this._model.joinRoom(res);
         // this.setProgress(PROGRESS_JOIN_END, '进入游戏...');
         //
         // // 加载完成，跳转场景

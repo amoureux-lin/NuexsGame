@@ -1,5 +1,6 @@
 import { MvcModel, Nexus } from 'db://nexus-framework/index';
 import { TongitsEvents } from '../config/TongitsEvents';
+import {JoinRoomRes} from "db://assets/games/tongits/script/proto/tongits";
 
 export interface SpinResult {
     win: number;
@@ -30,25 +31,16 @@ export class TongitsModel extends MvcModel {
         }
     }
 
-    /** 下注旋转，返回结果并通知 View */
-    async spin(bet: number): Promise<SpinResult> {
-        try {
-            // TODO: 替换为真实接口，如 Nexus.net.post<SpinResult>('/api/slot/spin', { bet })
-            const win = Math.random() > 0.7 ? bet * 2 : 0;
-            this._balance = this._balance - bet + win;
-            const result: SpinResult = { win, balance: this._balance };
-            this.notify(TongitsEvents.DATA_BALANCE_UPDATED, { balance: this._balance });
-            this.notify(TongitsEvents.DATA_SPIN_RESULT, result);
-            return result;
-        } catch (e) {
-            console.error('[TongitsModel] spin failed', e);
-            this.notify(TongitsEvents.DATA_BALANCE_UPDATED, { balance: this._balance });
-            return { win: 0, balance: this._balance };
-        }
-    }
-
     override destroy(): void {
         this._balance = 0;
         super.destroy();
+    }
+
+    /**
+     *
+     * @param res
+     */
+    joinRoom(res: JoinRoomRes) {
+
     }
 }

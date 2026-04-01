@@ -3,6 +3,7 @@ import { MvcController } from 'db://nexus-framework/index';
 import { TongitsEvents } from '../config/TongitsEvents';
 import { tongitsUI } from '../config/TongitsUIConfig';
 import type { TongitsModel } from './TongitsModel';
+import {MessageType} from "db://assets/games/tongits/script/proto/message_type";
 
 /**
  * 老虎机 Controller：处理旋转、返回大厅、设置等命令。
@@ -14,26 +15,18 @@ export class TongitsController extends MvcController {
     }
 
     protected registerCommands(): void {
-        this.handle<{ bet: number }>(TongitsEvents.CMD_SPIN, (data) => this.onSpin(data?.bet ?? 0));
-        this.handle(TongitsEvents.CMD_OPEN_SETTINGS, () => this.onOpenSettings());
+        console.log("registerCommands")
+        // 监听广播消息
+        Nexus.net.onWsMsg(MessageType.TONGITS_JOIN_ROOM_RES, (msg) => {
+            console.log('进入房间返回', msg);
+        }, this);
+        
+       this.handle(TongitsEvents.CMD_OPEN_SETTINGS, () => this.onOpenSettings());
         this.handle(TongitsEvents.CMD_BACK_LOBBY, () => this.onBackLobby());
     }
 
     override async start(params?: Record<string, unknown>): Promise<void> {
         await this._model.fetchBalance();
-    }
-
-    private async onSpin(bet: number): Promise<void> {
-        if (bet <= 0) return;
-        Nexus.ui.showLoading();
-        try {
-            const result = await this._model.spin(bet);
-            if (result.win > 0) {
-                await Nexus.ui.show(tongitsUI.RESULT, { win: result.win });
-            }
-        } finally {
-            Nexus.ui.hideLoading();
-        }
     }
 
     private onOpenSettings(): void {
@@ -47,5 +40,6 @@ export class TongitsController extends MvcController {
     override destroy(): void {
         this._model.destroy();
         super.destroy();
+        Nexus.net.offWsMsgByTarget(this);
     }
 }
