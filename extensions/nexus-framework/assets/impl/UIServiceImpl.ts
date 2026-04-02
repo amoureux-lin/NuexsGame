@@ -4,13 +4,19 @@ import { IUIService, UILayer, type UIPanelConfigMap, type UIPanelOptions } from 
 import { NexusEvents } from '../NexusEvents';
 import { UIPanel } from '../base/UIPanel';
 
+type AnimState = 'idle' | 'showing' | 'hiding';
+
 interface PanelRecord {
     node:  Node;
     layer: UILayer;
     /** 该面板对应的遮罩节点（mask: false 时为 null） */
     maskNode: Node | null;
-    /** 当前是否正在播放动画 */
-    animating: boolean;
+    /** 当前动画状态 */
+    animState: AnimState;
+    /** show 动画期间收到 hide 请求 */
+    pendingHide: boolean;
+    /** hide 动画期间收到 show 请求 */
+    pendingShow: { params?: unknown } | null;
 }
 
 const LAYER_DEFS: UILayer[] = [
@@ -100,11 +106,16 @@ export class UIServiceImpl extends IUIService {
         const targetLayer: UILayer = layer ?? cfg?.layer ?? UILayer.PANEL;
         const needMask = cfg?.mask === true;
 
-        // 已有节点：直接激活并透传参数
+        // 已有节点
         const existing = this._panels.get(name);
         if (existing) {
-            // 正在播放动画时忽略重复 show
-            if (existing.animating) return existing.node;
+            // 正在播放 show 动画：忽略重复 show
+            if (existing.animState === 'showing') return existing.node;
+            // 正在播放 hide 动画：标记待打开，hide 结束后自动 show
+            if (existing.animState === 'hiding') {
+                existing.pendingShow = { params };
+                return existing.node;
+            }
 
             if (!existing.node.active) {
                 existing.node.active = true;
@@ -112,10 +123,17 @@ export class UIServiceImpl extends IUIService {
             }
             this.dispatch(existing.node, 'onShow', params, name, existing.maskNode);
 
-            // 播放显示动画（复用节点时也需要重新播放）
-            existing.animating = true;
+            // 播放显示动画
+            existing.animState = 'showing';
             await this._playShowAnimation(existing.node);
-            existing.animating = false;
+            existing.animState = 'idle';
+
+            // 动画结束后检查是否有待执行的 hide
+            if (existing.pendingHide) {
+                existing.pendingHide = false;
+                this.hide(name);
+                return existing.node;
+            }
 
             if (needMask) this._pushModal(name);
             return existing.node;
@@ -151,14 +169,24 @@ export class UIServiceImpl extends IUIService {
         const node = instantiate(prefab!);
         layerNode.addChild(node);
 
-        const record: PanelRecord = { node, layer: targetLayer, maskNode, animating: false };
+        const record: PanelRecord = {
+            node, layer: targetLayer, maskNode,
+            animState: 'idle', pendingHide: false, pendingShow: null,
+        };
         this._panels.set(name, record);
         this.dispatch(node, 'onShow', params, name, maskNode);
 
         // 播放显示动画
-        record.animating = true;
+        record.animState = 'showing';
         await this._playShowAnimation(node);
-        record.animating = false;
+        record.animState = 'idle';
+
+        // 动画结束后检查是否有待执行的 hide
+        if (record.pendingHide) {
+            record.pendingHide = false;
+            this.hide(name);
+            return node;
+        }
 
         if (needMask) this._pushModal(name);
 
@@ -173,13 +201,26 @@ export class UIServiceImpl extends IUIService {
         const record = this._panels.get(name);
         if (!record || !record.node.active) return;
 
-        // 正在播放动画时忽略重复 hide
-        if (record.animating) return;
+        // 正在播放 hide 动画：忽略重复 hide
+        if (record.animState === 'hiding') return;
+        // 正在播放 show 动画：标记待关闭，show 结束后自动 hide
+        if (record.animState === 'showing') {
+            record.pendingHide = true;
+            return;
+        }
 
         // 播放隐藏动画
-        record.animating = true;
+        record.animState = 'hiding';
         await this._playHideAnimation(record.node);
-        record.animating = false;
+        record.animState = 'idle';
+
+        // 动画结束后检查是否有待执行的 show
+        if (record.pendingShow) {
+            const { params } = record.pendingShow;
+            record.pendingShow = null;
+            this.show(name, params);
+            return;
+        }
 
         record.node.active = false;
         if (record.maskNode) record.maskNode.active = false;
@@ -195,14 +236,18 @@ export class UIServiceImpl extends IUIService {
         const record = this._panels.get(name);
         if (!record) return;
 
-        // 正在播放动画时忽略重复 destroy
-        if (record.animating) return;
+        // 正在播放动画：标记待关闭，动画结束后由 hide/show 流程处理
+        if (record.animState !== 'idle') {
+            record.pendingHide = true;
+            record.pendingShow = null;
+            return;
+        }
 
         if (record.node.active) {
             // 播放隐藏动画
-            record.animating = true;
+            record.animState = 'hiding';
             await this._playHideAnimation(record.node);
-            record.animating = false;
+            record.animState = 'idle';
             this.dispatch(record.node, 'onHide');
         }
         if (record.maskNode) record.maskNode.destroy();
@@ -248,7 +293,11 @@ export class UIServiceImpl extends IUIService {
         this._pendingHide.clear();
         this._loadingPanelName = null;
         this._maskPanelName = null;
-        this._maskPrefab = null;
+        // 释放缓存的 mask prefab 资源
+        if (this._maskPrefab) {
+            this._maskPrefab.decRef();
+            this._maskPrefab = null;
+        }
         this._modalStack.length = 0;
         this._root = null;
         Nexus.offTarget(this);

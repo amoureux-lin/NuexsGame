@@ -48,15 +48,25 @@ export class TongitsController extends MvcController {
 
     // ── 游戏操作 ─────────────────────────────────────────
 
+    /** 统一 wsRequest 错误处理 */
+    private async safeRequest<T = unknown>(msgType: number, body: unknown): Promise<T | null> {
+        try {
+            return await this._model.wsRequest<T>(msgType, body);
+        } catch (err) {
+            console.error('[TongitsController] wsRequest failed:', msgType, err);
+            return null;
+        }
+    }
+
     /** 抽牌 */
     private async onDraw(): Promise<void> {
-        await this._model.wsRequest(MessageType.TONGITS_DRAW_REQ, {});
+        await this.safeRequest(MessageType.TONGITS_DRAW_REQ, {});
     }
 
     /** 出牌（组合） */
     private async onMeld(data: { cards: number[] }): Promise<void> {
         const req: MeldCardReq = { cards: data.cards };
-        await this._model.wsRequest(MessageType.TONGITS_MELD_REQ, req);
+        await this.safeRequest(MessageType.TONGITS_MELD_REQ, req);
     }
 
     /** 补牌/压牌 */
@@ -66,43 +76,43 @@ export class TongitsController extends MvcController {
             targetPlayerId: data.targetPlayerId,
             targetMeldId: data.targetMeldId,
         };
-        await this._model.wsRequest(MessageType.TONGITS_LAYOFF_REQ, req);
+        await this.safeRequest(MessageType.TONGITS_LAYOFF_REQ, req);
     }
 
     /** 打牌（弃牌） */
     private async onDiscard(data: { card: number }): Promise<void> {
         const req: DiscardCardReq = { card: data.card };
-        await this._model.wsRequest(MessageType.TONGITS_DISCARD_REQ, req);
+        await this.safeRequest(MessageType.TONGITS_DISCARD_REQ, req);
     }
 
     /** 吃牌 */
     private async onTake(data: { cardsFromHand: number[] }): Promise<void> {
         const req: TakeCardReq = { cardsFromHand: data.cardsFromHand };
-        await this._model.wsRequest(MessageType.TONGITS_TAKE_REQ, req);
+        await this.safeRequest(MessageType.TONGITS_TAKE_REQ, req);
     }
 
     /** 挑战操作 (2:发起 3:接受 4:拒绝) */
     private async onChallenge(data: { changeStatus: number }): Promise<void> {
         const req: ChallengeReq = { changeStatus: data.changeStatus };
-        await this._model.wsRequest(MessageType.TONGITS_CHALLENGE_ACTION_REQ, req);
+        await this.safeRequest(MessageType.TONGITS_CHALLENGE_ACTION_REQ, req);
     }
 
     /** 房主开始游戏 */
     private async onStartGame(): Promise<void> {
-        await this._model.wsRequest(MessageType.TONGITS_ROOM_OWNER_START_GAME_REQ, {});
+        await this.safeRequest(MessageType.TONGITS_ROOM_OWNER_START_GAME_REQ, {});
     }
 
     /** Tongits 胜利点击确认 */
     private async onTongitsClick(): Promise<void> {
-        await this._model.wsRequest(MessageType.TONGITS_WIN_CLICK_REQ, {});
+        await this.safeRequest(MessageType.TONGITS_WIN_CLICK_REQ, {});
     }
 
     /** 查看结算详情 */
     private async onResultDetails(): Promise<void> {
-        const res = await this._model.wsRequest<GameResultDetailsRes>(
+        const res = await this.safeRequest<GameResultDetailsRes>(
             MessageType.TONGITS_GAME_RESULT_DETAILS_REQ, {},
         );
-        Nexus.emit(TongitsEvents.RESULT_DETAILS, res);
+        if (res) Nexus.emit(TongitsEvents.RESULT_DETAILS, res);
     }
 
     // ── 页面操作 ─────────────────────────────────────────

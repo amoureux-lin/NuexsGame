@@ -13,6 +13,10 @@ export enum UILayer {
 export interface HttpOptions {
     headers?: Record<string, string>;
     timeout?: number;
+    /** 失败后重试次数（默认 0，不重试） */
+    retry?: number;
+    /** 重试间隔毫秒（默认 1000，每次翻倍） */
+    retryDelay?: number;
 }
 
 /** WebSocket 增强配置（initWs 时传入） */
@@ -27,6 +31,10 @@ export interface WsConfig {
     heartbeatIntervalMs?: number;
     /** 多久未收包主动断开毫秒 */
     receiveTimeoutMs?: number;
+    /** wsRequest 失败后重试次数（默认 0，不重试） */
+    requestRetry?: number;
+    /** wsRequest 重试间隔毫秒（默认 1000，每次翻倍） */
+    requestRetryDelay?: number;
 }
 
 /** 发包上下文：贯穿整条发送链，willSend 可修改 body / extra */
@@ -215,7 +223,7 @@ export abstract class INetService extends ServiceBase {
     /** 发起 GET 请求，成功时 resolve 仅返回响应体 data。 */
     abstract get<T>(path: string, options?: HttpOptions): Promise<T>;
     /** 发起 POST 请求，成功时 resolve 仅返回响应体 data。 */
-    abstract post<T>(path: string, body?: unknown): Promise<T>;
+    abstract post<T>(path: string, body?: unknown, options?: HttpOptions): Promise<T>;
     /** 设置 HTTP 基础地址。 */
     abstract setBaseUrl(url: string): void;
     /** 设置认证 token。 */

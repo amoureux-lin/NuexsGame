@@ -1,4 +1,5 @@
 import { IEventService } from '../services/contracts';
+import type { NexusConfig } from '../core/NexusConfig';
 
 interface ListenerRecord<T = unknown> {
     fn: (data: T) => void;
@@ -6,8 +7,16 @@ interface ListenerRecord<T = unknown> {
     target?: object;
 }
 
+/** 单事件监听器数量超过此值时，debug 模式下打印警告（可能是泄漏） */
+const LISTENER_WARN_THRESHOLD = 100;
+
 export class EventServiceImpl extends IEventService {
     private readonly _listeners = new Map<string, Set<ListenerRecord>>();
+    private _debug = false;
+
+    async onBoot(config: NexusConfig): Promise<void> {
+        this._debug = config.debug ?? false;
+    }
 
     /** 注册常规事件监听。 */
     on<T>(event: string, fn: (data: T) => void, target?: object): void {
@@ -87,10 +96,15 @@ export class EventServiceImpl extends IEventService {
             this._listeners.set(event, new Set());
         }
 
-        this._listeners.get(event)!.add({
+        const set = this._listeners.get(event)!;
+        set.add({
             fn: fn as (data: unknown) => void,
             once,
             target,
         });
+
+        if (this._debug && set.size > LISTENER_WARN_THRESHOLD) {
+            console.warn(`[Nexus][Event] event "${event}" has ${set.size} listeners, possible memory leak`);
+        }
     }
 }

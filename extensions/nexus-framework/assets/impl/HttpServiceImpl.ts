@@ -3,7 +3,7 @@ import { ServiceBase } from '../core/ServiceBase';
 import type { HttpOptions } from '../services/contracts';
 
 /**
- * 纯 HTTP 实现：GET/POST，BaseUrl，Token，超时。
+ * 纯 HTTP 实现：GET/POST，BaseUrl，Token，超时，重试。
  */
 export class HttpServiceImpl extends ServiceBase {
     private _baseUrl = '';
@@ -23,11 +23,44 @@ export class HttpServiceImpl extends ServiceBase {
     }
 
     async get<T>(path: string, options?: HttpOptions): Promise<T> {
-        return this.request<T>('GET', path, undefined, options);
+        return this.requestWithRetry<T>('GET', path, undefined, options);
     }
 
-    async post<T>(path: string, body?: unknown): Promise<T> {
-        return this.request<T>('POST', path, body);
+    async post<T>(path: string, body?: unknown, options?: HttpOptions): Promise<T> {
+        return this.requestWithRetry<T>('POST', path, body, options);
+    }
+
+    /**
+     * 带重试的请求入口：失败后按指数退避重试。
+     * 仅网络错误和超时会重试，HTTP 4xx/5xx 不重试（业务错误重试无意义）。
+     */
+    private async requestWithRetry<T>(
+        method: string,
+        path: string,
+        body?: unknown,
+        options?: HttpOptions,
+    ): Promise<T> {
+        const maxRetry = options?.retry ?? 0;
+        const baseDelay = options?.retryDelay ?? 1000;
+        let lastError: unknown;
+
+        for (let attempt = 0; attempt <= maxRetry; attempt++) {
+            try {
+                return await this.request<T>(method, path, body, options);
+            } catch (err) {
+                lastError = err;
+                // 仅网络错误和超时重试，HTTP 状态码错误不重试
+                const isRetryable = typeof err === 'string'
+                    && (err.includes('Network error') || err.includes('Request timeout'));
+                if (!isRetryable || attempt >= maxRetry) break;
+
+                const delay = baseDelay * Math.pow(2, attempt);
+                console.warn(`[Nexus] HTTP retry ${attempt + 1}/${maxRetry} in ${delay}ms`);
+                await this.sleep(delay);
+            }
+        }
+
+        return Promise.reject(lastError);
     }
 
     private request<T>(
@@ -76,6 +109,10 @@ export class HttpServiceImpl extends ServiceBase {
 
             xhr.send(body !== undefined ? JSON.stringify(body) : null);
         });
+    }
+
+    private sleep(ms: number): Promise<void> {
+        return new Promise(resolve => setTimeout(resolve, ms));
     }
 
     async onDestroy(): Promise<void> {

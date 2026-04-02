@@ -45,13 +45,18 @@ export class TongitsEntry extends BaseGameEntry {
 
     protected async joinRoom(params?: Record<string, unknown>): Promise<void> {
         const roomId = Number(params?.room_id ?? 0);
-        const res = await Nexus.net.wsRequest<JoinRoomRes>(
-            MessageType.TONGITS_JOIN_ROOM_REQ,
-            { roomId },
-        );
-        console.log('joinRoomRes:', res);
-        this._model!.joinRoom(res);
-        await Nexus.audio.playMusic('res/audios/Tongtis_bg', true);
+        try {
+            const res = await Nexus.net.wsRequest<JoinRoomRes>(
+                MessageType.TONGITS_JOIN_ROOM_REQ,
+                { roomId },
+            );
+            console.log('joinRoomRes:', res);
+            this._model!.joinRoom(res);
+            await Nexus.audio.playMusic('res/audios/Tongits_bg', true);
+        } catch (err) {
+            console.error('[TongitsEntry] joinRoom failed:', err);
+            throw err;
+        }
     }
 
     protected async onGameExit(): Promise<void> {

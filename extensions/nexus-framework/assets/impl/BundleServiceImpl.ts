@@ -97,7 +97,14 @@ export class BundleServiceImpl extends IBundleService {
 
         // 加载并挂载 Entry Prefab → onPreload → onEnter
         // Entry 在 onEnter 中完成资源加载等逻辑后，主动调用 Nexus.bundle.runScene() 跳转场景
-        await this.loadAndAttachEntryPrefab(bundleName, params);
+        try {
+            await this.loadAndAttachEntryPrefab(bundleName, params);
+        } catch (e) {
+            error(`[Nexus][BundleService] Failed to load entry for bundle: ${bundleName}`, e);
+            // 回退状态，避免框架卡在无 Bundle 可用的中间态
+            this._current = '';
+            await ServiceRegistry.notifyBundleExit(bundleName);
+        }
     }
 
     /** 由 Entry 在加载完成后主动调用，加载并切换到当前 Bundle 的主场景。 */

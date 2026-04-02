@@ -30,6 +30,8 @@ export class AudioServiceImpl extends IAudioService {
     private _audioNode:    Node        | null = null;
     private _musicSource:  AudioSource | null = null;
     private _sfxSources:   AudioSource[]      = [];
+    /** 已加载的 AudioClip 缓存，onBundleExit 时释放非 common 的 clip */
+    private readonly _clipCache = new Map<string, AudioClip>();
 
     /** 创建持久音频节点，并从 localStorage 恢复音量与开关状态。 */
     async onBoot(): Promise<void> {
@@ -173,6 +175,11 @@ export class AudioServiceImpl extends IAudioService {
     /** 销毁持久音频节点并清空引用。 */
     async onDestroy(): Promise<void> {
         this.stopMusic();
+        // 释放所有缓存的 AudioClip
+        for (const clip of this._clipCache.values()) {
+            clip.decRef();
+        }
+        this._clipCache.clear();
         if (this._audioNode) {
             game.removePersistRootNode(this._audioNode);
             this._audioNode.destroy();
@@ -182,18 +189,54 @@ export class AudioServiceImpl extends IAudioService {
         this._sfxSources  = [];
     }
 
+    /** Bundle 退出时释放该 Bundle 加载的 AudioClip 缓存 */
+    async onBundleExit(bundleName: string): Promise<void> {
+        const prefix = `${bundleName}:`;
+        for (const [key, clip] of this._clipCache) {
+            if (key.startsWith(prefix)) {
+                clip.decRef();
+                this._clipCache.delete(key);
+            }
+        }
+        // 如果当前音乐来自该 bundle，停止播放
+        if (this._musicSource?.playing) {
+            const musicClip = this._musicSource.clip;
+            if (musicClip && !this._clipCache.has(`common:${musicClip.name}`)) {
+                this._musicSource.stop();
+                this._musicSource.clip = null;
+            }
+        }
+    }
+
     /** 先从当前 bundle 加载 AudioClip，失败则 fallback 到 common，都失败返回 null。 */
     private async loadClip(path: string): Promise<AudioClip | null> {
         const current = Nexus.bundle.current;
+        // 先查缓存
+        if (current) {
+            const cacheKey = `${current}:${path}`;
+            const cached = this._clipCache.get(cacheKey);
+            if (cached) return cached;
+        }
+        const commonKey = `common:${path}`;
+        const commonCached = this._clipCache.get(commonKey);
+        if (commonCached) return commonCached;
+
+        // 加载并缓存
         if (current) {
             try {
-                return await Nexus.asset.load<AudioClip>(current, path, AudioClip);
+                const clip = await Nexus.asset.load<AudioClip>(current, path, AudioClip);
+                clip.addRef();
+                this._clipCache.set(`${current}:${path}`, clip);
+                return clip;
             } catch {
                 // 当前 bundle 加载失败，尝试 common
             }
         }
         try {
-            return await Nexus.asset.load<AudioClip>('common', path, AudioClip);
+            const clip = await Nexus.asset.load<AudioClip>('common', path, AudioClip);
+            clip.addRef();
+            this._clipCache.set(commonKey, clip);
+            return clip;
         } catch {
             // common 也失败
         }

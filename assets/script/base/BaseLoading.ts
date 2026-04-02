@@ -284,9 +284,11 @@ export abstract class BaseLoading extends NexusBaseLoading {
         if (this._netConnected) return Promise.resolve();
         if (this._netConnectedPromise) return this._netConnectedPromise;
         // 兜底：理论上 onShow 会初始化该 Promise；但为了安全，这里也提供降级逻辑
-        return new Promise<void>((r) => {
-            this._resolveNetConnected = r;
-            this._netConnectedPromise = r ? undefined : null as any; // 仅占位，实际由上面 Promise 解析
+        this._netConnectedPromise = new Promise<void>((resolve) => {
+            this._resolveNetConnected = resolve;
         });
+        // 再次检查：可能在创建 Promise 和赋值 resolver 之间已经连接
+        if (this._netConnected) this._resolveNetConnected?.();
+        return this._netConnectedPromise;
     }
 }

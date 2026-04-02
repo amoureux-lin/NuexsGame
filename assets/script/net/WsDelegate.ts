@@ -121,12 +121,11 @@ export class WsDelegate implements IWsDelegate {
             return true;
         }
 
-        // 服务端错误码：业务决定什么是错误、如何展示
+        // 服务端错误码：弹窗提示 + reject 对应的 wsRequest Promise
         if ((pkt.errorCode ?? 0) !== 0) {
             console.warn('[WsDelegate] 服务端错误码：', pkt.errorCode, pkt);
             Nexus.ui.show(CommonUI.ALERT, { content: `错误码: ${pkt.errorCode}` });
-            // return new Error(`Server error: ${pkt.errorCode}`);
-            console.error(`Server error: ${pkt.errorCode}`)
+            return new Error(`Server error: ${pkt.errorCode}`);
         }
 
         console.log('【ws】收到消息：', pkt.msgType, pkt);

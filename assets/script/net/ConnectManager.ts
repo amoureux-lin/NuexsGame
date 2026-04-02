@@ -1,50 +1,44 @@
-import { _decorator, Component } from 'cc';
 import {getQueryParam, Nexus} from 'db://nexus-framework/index';
 import { GameEvents } from '../config/GameEvents';
 
-const { ccclass } = _decorator;
+/** 服务器地址配置 */
+const BASE_URL_DEBUG = 'https://gwm.herondev.xin';
+const BASE_URL_PROD  = 'https://gwm.herondev.xin'; // TODO: 替换为生产地址
 
+const CONFIG_MAX_RETRY = 3;
+const CONFIG_RETRY_DELAY = 2000;
 
+/**
+ * 网络连接管理器（纯工具类，非组件）。
+ * 必须在 Nexus.init() 之后调用 init()。
+ */
+export class ConnectManager {
 
-@ccclass('ConnectManager')
-export class ConnectManager extends Component {
+    /**
+     * 初始化网络连接：设置 BaseUrl → 获取 token（debug）→ 请求配置 → 连接 WS。
+     * 由 GameLauncher 在框架初始化完成后主动调用。
+     */
+    static init(): void {
+        const isDebug = Nexus.config?.debug ?? false;
+        const baseUrl = isDebug ? BASE_URL_DEBUG : BASE_URL_PROD;
+        Nexus.net.setBaseUrl(baseUrl);
 
-    private _isReconnecting = false;
-
-    onLoad(): void {
-        // Nexus.on(GameEvents.NET_CONNECTED, this.onNetConnected, this);
-        Nexus.net.setBaseUrl("https://gwm.herondev.xin");
-        if (this.isLocal()) {
-            this.generateToken((token) => {
+        if (isDebug) {
+            ConnectManager.generateToken((token) => {
                 if (token) {
                     Nexus.net.setToken(token);
                     Nexus.data.set('token', token);
-                    this.requestConfig();
-                }
-                else {
+                    ConnectManager.requestConfig();
+                } else {
                     console.warn('[ConnectManager] generateToken 失败');
                 }
             });
         } else {
-            this.requestConfig();
+            ConnectManager.requestConfig();
         }
     }
 
-    onDestroy(): void {
-        Nexus.offTarget(this);
-    }
-
-    /** 是否本地/测试环境（按需改为从配置或 URL 读取） */
-    private isLocal(): boolean {
-        return true; // 可改为：Nexus.config?.debug ?? false，或根据 baseUrl 判断
-    }
-
-    /**
-     * 本地测试时先请求获取 Token，再执行 callback。
-     * 非本地环境不要调用此方法。
-     */
-    private generateToken(callback?: (token: string) => void): void {
-        /** 本地测试用的默认参数，可按需修改 */
+    private static generateToken(callback: (token: string) => void): void {
         const DEFAULT_LOCAL_TOKEN_PARAMS = {
             room_id: getQueryParam('room_id') || 88,
             room_name: '新手房-1',
@@ -56,44 +50,30 @@ export class ConnectManager extends Component {
             coin: 10000,
             is_guest: false,
         };
-        Nexus.net.post<{ code: number, data: { token: string } }>(GameEvents.HTTP_GENERATE_TOKEN as string, DEFAULT_LOCAL_TOKEN_PARAMS)
-            .then((res) => {
-                console.log("generateToken success", res);
-                const token = res?.data?.token ?? '';
-                if (callback) callback(token);
-            })
-            .catch((err) => {
-                console.warn('[ConnectManager] generateToken 失败', err);
-                if (callback) callback('');
-            });
+        Nexus.net.post<{ code: number, data: { token: string } }>(
+            GameEvents.HTTP_GENERATE_TOKEN as string,
+            DEFAULT_LOCAL_TOKEN_PARAMS,
+        ).then((res) => {
+            console.log('generateToken success', res);
+            callback(res?.data?.token ?? '');
+        }).catch((err) => {
+            console.warn('[ConnectManager] generateToken 失败', err);
+            callback('');
+        });
     }
 
-    private requestConfig(): void {
-        Nexus.net.get<{ 
-            code: number, 
-            data: { 
+    private static requestConfig(retryCount = 0): void {
+        Nexus.net.get<{
+            code: number,
+            data: {
                 gate_addr: string,
                 game_id: number,
                 user_id: string,
                 room_id: string,
                 voice_channel: string
-            } 
+            }
         }>(GameEvents.HTTP_GAME_CONFIG as string).then((res) => {
-            console.log("config", res);
-            // 返回数据格式：{
-            //     "code": 0,
-            //     "msg": "",
-            //     "data": {
-            //         "gate_addr": "wss://gwg.herondev.xin/ws",
-            //         "agora_app_id": "4d5b5a3bd6634c489bb36018e5d1a324",
-            //         "agora_token": "0064d5b5a3bd6634c489bb36018e5d1a324IAA0WjUxrkE3wpirEFcJyJvujRrGiSJSDy/3IcUyiVAwAwmqk7S379yDEAB8ZZADZPm3aQEAAQBk+bdp",
-            //         "user_id": "1",
-            //         "room_id": "1",
-            //         "game_id": 1,
-            //         "voice_channel": "room_1_1"
-            //     }
-            // }
-
+            console.log('config', res);
             const gate_addr = res?.data?.gate_addr ?? '';
             const token = Nexus.data.get<string>('token') ?? '';
             const game_id = Number(res?.data?.game_id) ?? 0;
@@ -101,27 +81,27 @@ export class ConnectManager extends Component {
             const room_id = Number(res?.data?.room_id) ?? 0;
             const voice_channel = res?.data?.voice_channel ?? '';
             Nexus.data.set('user_id', user_id);
-            this.connectWs(gate_addr, token, game_id, user_id, room_id, voice_channel);
+            ConnectManager.connectWs(gate_addr, token, game_id, user_id, room_id, voice_channel);
         }).catch((err) => {
-            console.log("config请求失败", err);
+            console.error('[ConnectManager] config请求失败', err);
+            if (retryCount < CONFIG_MAX_RETRY) {
+                console.warn(`[ConnectManager] 将在 ${CONFIG_RETRY_DELAY}ms 后重试 (${retryCount + 1}/${CONFIG_MAX_RETRY})`);
+                setTimeout(() => ConnectManager.requestConfig(retryCount + 1), CONFIG_RETRY_DELAY);
+            } else {
+                console.error('[ConnectManager] config请求重试次数耗尽');
+            }
         });
     }
 
-    /**
-     * ws网络开始连接
-     */
-    private connectWs(gate_addr: string, token: string, game_id: number, user_id: number, room_id: number, voice_channel: string): void {
-        //url += `?token=${token}&game_id=${this.game_id}&user_id=${this.user_id}&room_id=${this.room_id}`;
+    private static connectWs(
+        gate_addr: string, token: string,
+        game_id: number, user_id: number, room_id: number, voice_channel: string,
+    ): void {
         const url = `${gate_addr}?token=${token}&game_id=${game_id}&user_id=${user_id}&room_id=${room_id}&voice_channel=${voice_channel}`;
         Nexus.net.connectWs(url).then(() => {
-            console.log("ws连接成功");
+            console.log('ws连接成功');
         }).catch((err) => {
-            console.log("ws连接失败", err);
+            console.log('ws连接失败', err);
         });
-    }
-
-    private finishReconnecting(): void {
-        this._isReconnecting = false;
-        Nexus.ui.hideLoading();
     }
 }

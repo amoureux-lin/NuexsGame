@@ -9,6 +9,8 @@ import type { SlotGameModel } from './SlotGameModel';
  */
 export class SlotGameController extends MvcController {
 
+    private _spinning = false;
+
     constructor(private readonly _model: SlotGameModel) {
         super();
     }
@@ -24,7 +26,8 @@ export class SlotGameController extends MvcController {
     }
 
     private async onSpin(bet: number): Promise<void> {
-        if (bet <= 0) return;
+        if (bet <= 0 || this._spinning) return;
+        this._spinning = true;
         Nexus.ui.showLoading();
         try {
             const result = await this._model.spin(bet);
@@ -32,6 +35,7 @@ export class SlotGameController extends MvcController {
                 await Nexus.ui.show(slotGameUI.RESULT, { win: result.win });
             }
         } finally {
+            this._spinning = false;
             Nexus.ui.hideLoading();
         }
     }

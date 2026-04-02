@@ -43,6 +43,8 @@ export class WsServiceImpl extends ServiceBase {
     private _receiveTimer: number | null = null;
     private _nextRequestId = 1;
     private readonly _pending = new Map<number, PendingRequest>();
+    /** 连接中的 Promise，防止并发 connectWs 创建多个 WebSocket */
+    private _connectingPromise: Promise<void> | null = null;
 
     async onBoot(_config: NexusConfig): Promise<void> {}
 
@@ -63,14 +65,33 @@ export class WsServiceImpl extends ServiceBase {
 
     connectWs(url: string): Promise<void> {
         this._lastUrl = url;
-        return new Promise((resolve, reject) => {
+
+        // 防止并发连接：已有连接中的 Promise 直接返回
+        if (this._connectingPromise) return this._connectingPromise;
+
+        // 已连接且 URL 相同时，不重复创建
+        if (this.isConnected() && this._lastUrl === url) return Promise.resolve();
+
+        // 关闭旧连接（如果有）
+        if (this._ws) {
+            this._ws.onopen = null;
+            this._ws.onmessage = null;
+            this._ws.onerror = null;
+            this._ws.onclose = null;
+            try { this._ws.close(); } catch { /* ignore */ }
+            this._ws = null;
+            this._connected = false;
+        }
+
+        this._connectingPromise = new Promise<void>((resolve, reject) => {
             this._ws = new WebSocket(url);
 
             this._ws.onopen = () => {
+                this._connectingPromise = null;
                 this._connected = true;
                 this._autoReconnect = this._autoReconnectInitial; // 重置重连次数
                 this._delegate?.onConnected?.();
-                // 统一抛出框架事件，供 Loading/业务按“已建立连接”推进流程
+                // 统一抛出框架事件，供 Loading/业务按”已建立连接”推进流程
                 Nexus.emit(NexusEvents.NET_CONNECTED);
                 this.startHeartbeat();
                 this.resetReceiveTimer();
@@ -78,12 +99,14 @@ export class WsServiceImpl extends ServiceBase {
             };
 
             this._ws.onerror = (e) => {
+                this._connectingPromise = null;
                 this._connected = false;
                 this._delegate?.onConnectError?.(e);
                 reject(e);
             };
 
             this._ws.onclose = () => {
+                this._connectingPromise = null;
                 console.log('【ws】onclose');
                 this._connected = false;
                 this.clearTimers();
@@ -97,6 +120,8 @@ export class WsServiceImpl extends ServiceBase {
                 });
             };
         });
+
+        return this._connectingPromise;
     }
 
     private tryReconnect(): void {
@@ -142,6 +167,42 @@ export class WsServiceImpl extends ServiceBase {
     }
 
     wsRequest<T = unknown>(msgType: number, body: unknown, timeoutMs?: number): Promise<T> {
+        const maxRetry = this._config.requestRetry ?? 0;
+        const baseDelay = this._config.requestRetryDelay ?? 1000;
+        return this._wsRequestWithRetry<T>(msgType, body, timeoutMs, maxRetry, baseDelay);
+    }
+
+    private async _wsRequestWithRetry<T>(
+        msgType: number,
+        body: unknown,
+        timeoutMs: number | undefined,
+        maxRetry: number,
+        baseDelay: number,
+    ): Promise<T> {
+        let lastError: unknown;
+
+        for (let attempt = 0; attempt <= maxRetry; attempt++) {
+            try {
+                return await this._wsRequestOnce<T>(msgType, body, timeoutMs);
+            } catch (err) {
+                lastError = err;
+                // 仅超时重试，服务端错误（Error 实例）不重试
+                const isTimeout = typeof err === 'string' && err.includes('timeout');
+                if (!isTimeout || attempt >= maxRetry) break;
+
+                const delay = baseDelay * Math.pow(2, attempt);
+                console.warn(`[Nexus] WS request retry ${attempt + 1}/${maxRetry} in ${delay}ms, msgType: ${msgType}`);
+                await new Promise<void>(r => setTimeout(r, delay));
+
+                // 重试前检查连接状态
+                if (!this.isConnected()) break;
+            }
+        }
+
+        return Promise.reject(lastError);
+    }
+
+    private _wsRequestOnce<T>(msgType: number, body: unknown, timeoutMs?: number): Promise<T> {
         if (!this._delegate) {
             console.error('[Nexus] initWs required for wsRequest');
             return Promise.reject('[Nexus] initWs required for wsRequest');
@@ -151,7 +212,7 @@ export class WsServiceImpl extends ServiceBase {
             return Promise.reject('[Nexus] WebSocket not connected');
         }
 
-        const requestId = this._nextRequestId++;
+        const requestId = this._nextRequestId = (this._nextRequestId % 0x7FFFFFFF) + 1;
         return new Promise<T>((resolve, reject) => {
             const ms = timeoutMs ?? this._config.requestTimeoutMs ?? 10000;
             const timeoutId = setTimeout(() => {
@@ -352,6 +413,7 @@ export class WsServiceImpl extends ServiceBase {
             this._ws = null;
         }
         this._connected = false;
+        this._connectingPromise = null;
         this._lastUrl = '';
     }
 }
