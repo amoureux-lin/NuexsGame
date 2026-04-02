@@ -11,6 +11,7 @@ import type {
     ChallengeReq,
     GameResultDetailsRes,
 } from '../proto/tongits';
+import {CommonUI} from "db://assets/script/config/UIConfig";
 
 /**
  * Tongits Controller：
@@ -107,7 +108,7 @@ export class TongitsController extends MvcController {
     // ── 页面操作 ─────────────────────────────────────────
 
     private onOpenSettings(): void {
-        Nexus.ui.show(TongitsUI.SETTING);
+        Nexus.ui.show(CommonUI.SETTING);
     }
 
     private async onBackLobby(): Promise<void> {

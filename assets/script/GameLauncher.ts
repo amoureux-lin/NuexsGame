@@ -27,6 +27,7 @@ export class GameLauncher extends Component {
         Nexus.ui.setRoot(this.canvasRoot);
         Nexus.ui.registerPanels(UIPanelConfig);
         Nexus.ui.setLoadingPanel(CommonUI.NET_LOADING);
+        Nexus.ui.setMaskPanel(CommonUI.MASK);
         await Nexus.start(params);
 
     }

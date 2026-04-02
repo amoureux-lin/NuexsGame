@@ -1,5 +1,5 @@
-import { _decorator, Component, Label, Node, Sprite, Button } from 'cc';
-import { Nexus } from 'db://nexus-framework/index';
+import { _decorator, Label, Node, Sprite, Button } from 'cc';
+import { UIPanel } from 'db://nexus-framework/index';
 
 const { ccclass, property } = _decorator;
 
@@ -9,7 +9,7 @@ export interface AlertParams {
     content: string;
     /** 是否显示图标节点（为 false 时隐藏 iconNode） */
     showIcon?: boolean;
-    /** 图标 SpriteFrame 路径（相对 common 或当前 Bundle），可选；不填且 showIcon 为 true 时用预制体默认图 */
+    /** 图标 SpriteFrame 路径（相对 common 或当前 Bundle），可选 */
     iconPath?: string;
     /** 确认按钮文案，默认「确认」 */
     confirmText?: string;
@@ -19,19 +19,18 @@ export interface AlertParams {
     showConfirm?: boolean;
     /** 是否显示取消按钮，默认 false */
     showCancel?: boolean;
-    /** 点击确认后回调（可在此内关闭弹窗或做后续逻辑） */
+    /** 点击确认后回调 */
     onConfirm?: () => void;
     /** 点击取消/遮罩后回调 */
     onCancel?: () => void;
 }
 
 /**
- * 通用弹窗：挂到 alert 预制体根节点。
- * 在 onShow(params) 中根据 params 设置文案、图标、确认/取消按钮的显示与回调。
- * 使用：Nexus.ui.show(CommonUI.ALERT, { content: '确定退出？', showCancel: true, onConfirm: () => {}, onCancel: () => {} });
+ * 通用弹窗：继承 UIPanel，由框架自动注入 panelName。
+ * 使用：Nexus.ui.show(CommonUI.ALERT, { content: '确定退出？', showCancel: true, onConfirm: () => {} });
  */
 @ccclass('Alert')
-export class Alert extends Component {
+export class Alert extends UIPanel {
 
     @property(Label)
     contentLabel: Label | null = null;
@@ -54,7 +53,6 @@ export class Alert extends Component {
     private _params: AlertParams | null = null;
 
     onShow(params?: AlertParams): void {
-        console.log("params: " , params);
         const p = (params ?? {}) as AlertParams;
         this._params = p;
 
@@ -62,9 +60,6 @@ export class Alert extends Component {
 
         if (this.iconNode) {
             this.iconNode.active = p.showIcon === true;
-            if (p.showIcon && p.iconPath && this.iconNode.getComponent(Sprite)) {
-                // TODO: 若需动态换图，可在此 Nexus.asset.load('common', p.iconPath, SpriteFrame) 后赋给 sprite.spriteFrame
-            }
         }
 
         const showConfirm = p.showConfirm !== false;
@@ -104,15 +99,11 @@ export class Alert extends Component {
 
     private _onConfirm(): void {
         this._params?.onConfirm?.();
-        this._close();
+        this.close();  // 使用基类方法，不再硬编码 name
     }
 
     private _onCancel(): void {
         this._params?.onCancel?.();
-        this._close();
-    }
-
-    private _close(): void {
-        Nexus.ui.hide('alert');
+        this.close();
     }
 }

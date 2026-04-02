@@ -10,6 +10,7 @@ export type { WsSendContext, IWsDelegate } from './services/contracts';
 export * from './NexusEvents';
 export * from './base/NexusBaseEntry';
 export * from './base/NexusBaseLoading';
+export * from './base/UIPanel';
 export * from './patterns/mvc/MvcModel';
 export * from './patterns/mvc/MvcView';
 export * from './patterns/mvc/MvcController';

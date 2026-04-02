@@ -37,17 +37,17 @@
     "_active": true,
     "_components": [
       {
-        "__id__": 73
+        "__id__": 74
       },
       {
-        "__id__": 75
+        "__id__": 76
       },
       {
-        "__id__": 77
+        "__id__": 78
       }
     ],
     "_prefab": {
-      "__id__": 79
+      "__id__": 80
     },
     "_lpos": {
       "__type__": "cc.Vec3",
@@ -87,7 +87,7 @@
       "__id__": 1
     },
     "_children": [],
-    "_active": true,
+    "_active": false,
     "_components": [
       {
         "__id__": 3
@@ -453,7 +453,7 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 143.97276574654643,
+      "width": 144,
       "height": 50.4
     },
     "_anchorPoint": {
@@ -492,7 +492,7 @@
     "_string": "声音设置",
     "_horizontalAlign": 1,
     "_verticalAlign": 1,
-    "_actualFontSize": 37.7271364317841,
+    "_actualFontSize": 36,
     "_fontSize": 36,
     "_fontFamily": "Arial",
     "_lineHeight": 40,
@@ -1417,7 +1417,7 @@
       }
     ],
     "_prefab": {
-      "__id__": 72
+      "__id__": 73
     },
     "_lpos": {
       "__type__": "cc.Vec3",
@@ -1551,7 +1551,7 @@
     "_string": "sure",
     "_horizontalAlign": 1,
     "_verticalAlign": 1,
-    "_actualFontSize": 37.7271364317841,
+    "_actualFontSize": 36,
     "_fontSize": 36,
     "_fontFamily": "Arial",
     "_lineHeight": 40,
@@ -1692,7 +1692,11 @@
     "__prefab": {
       "__id__": 71
     },
-    "clickEvents": [],
+    "clickEvents": [
+      {
+        "__id__": 72
+      }
+    ],
     "_interactable": true,
     "_transition": 3,
     "_normalColor": {
@@ -1751,6 +1755,16 @@
     "fileId": "1ffMM2VLpGJYDzQgYFk6v7"
   },
   {
+    "__type__": "cc.ClickEvent",
+    "target": {
+      "__id__": 1
+    },
+    "component": "",
+    "_componentId": "6d484CQjIBHFpF/Y3dhsMS/",
+    "handler": "onClickClose",
+    "customEventData": ""
+  },
+  {
     "__type__": "cc.PrefabInfo",
     "root": {
       "__id__": 1
@@ -1773,7 +1787,7 @@
     },
     "_enabled": true,
     "__prefab": {
-      "__id__": 74
+      "__id__": 75
     },
     "_contentSize": {
       "__type__": "cc.Size",
@@ -1801,7 +1815,7 @@
     },
     "_enabled": true,
     "__prefab": {
-      "__id__": 76
+      "__id__": 77
     },
     "_alignFlags": 45,
     "_target": null,
@@ -1837,7 +1851,7 @@
     },
     "_enabled": true,
     "__prefab": {
-      "__id__": 78
+      "__id__": 79
     },
     "musicSlider": {
       "__id__": 36

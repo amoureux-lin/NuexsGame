@@ -134,8 +134,12 @@ export interface UIPanelOptions {
     layer?: UILayer;
     /** 覆盖加载所用的 Bundle 名；不填则使用当前 Bundle，并在失败时回退到 common。 */
     bundle?: string;
-    /** 是否需要遮罩等附加语义（由业务自定义解释）。 */
+    /** 是否需要遮罩（默认 false）。为 true 时框架自动在面板前创建全屏半透明遮罩。 */
     mask?: boolean;
+    /** 遮罩颜色，十六进制 RRGGBBAA（默认 '000000AA'）。 */
+    maskColor?: string;
+    /** 点击遮罩是否关闭面板（默认 false，仅拦截穿透）。 */
+    maskClose?: boolean;
     /** 是否单实例 / 可复用等语义（由业务自定义解释）。 */
     vacancy?: boolean;
 }
@@ -184,13 +188,13 @@ export abstract class IUIService extends ServiceBase {
     /** 显示一个 UI 面板，返回面板根节点。 */
     abstract show(name: string, params?: unknown, layer?: UILayer): Promise<Node>;
     /** 隐藏一个已显示的 UI 面板。 */
-    abstract hide(name: string): void;
+    abstract hide(name: string): Promise<void>;
     /** 销毁一个已创建的 UI 面板。 */
-    abstract destroy(name: string): void;
+    abstract destroy(name: string): Promise<void>;
     /** 显示全局 Loading，透传 text 参数给面板组件的 onShow。 */
     abstract showLoading(text?: string): void;
     /** 隐藏全局 Loading。 */
-    abstract hideLoading(): void;
+    abstract hideLoading(): Promise<void>;
     /** 设置 UI 根节点。 */
     abstract setRoot(root: object): void;
     /** 获取指定层级的容器节点。 */
@@ -200,6 +204,11 @@ export abstract class IUIService extends ServiceBase {
      * 未设置时 showLoading/hideLoading 无效并打印警告。
      */
     abstract setLoadingPanel(name: string): void;
+    /**
+     * 指定用于遮罩的面板 key（需已通过 registerPanels 注册）。
+     * mask: true 的面板 show 时会加载此 prefab 作为遮罩。
+     */
+    abstract setMaskPanel(name: string): void;
 }
 
 export abstract class INetService extends ServiceBase {
