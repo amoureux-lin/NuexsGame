@@ -251,7 +251,7 @@ export class PlayerSeat extends Component {
         const info = this._data!.playerInfo;
 
         // 头像
-        this._loadAvatar(info?.avatar ?? '');
+        // this._loadAvatar(info?.avatar ?? '');
 
         // 昵称
         if (this.nameLabel) {

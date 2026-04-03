@@ -10,7 +10,7 @@
 import type { DecodedPacket, IWsDelegate, WsSendContext } from 'db://nexus-framework/index';
 import { Nexus } from 'db://nexus-framework/index';
 import { MessageType } from '../proto/message_type';
-import type { PingMessage } from '../proto/gateway';
+import type { PingMessage, PongMessage } from '../proto/gateway';
 import { CommonUI } from '../config/UIConfig';
 
 const HEADER_SIZE = 16;
@@ -115,9 +115,14 @@ export class WsDelegate implements IWsDelegate {
     // ── 收包拦截 ───────────────────────────────────────────
 
     willReceive(pkt: DecodedPacket): true | Error | void {
-        // 过滤心跳响应，不分发给业务
+        // 过滤心跳响应：校准服务端时间，不分发给业务
         if (pkt.msgType === HEARTBEAT_RES) {
-            // console.log('【ws】心跳响应：', pkt);
+            const pong = pkt.body as PongMessage;
+            if (pong?.timestamp) {
+                const serverTimeSec = Math.floor(new Date(pong.timestamp).getTime() / 1000);
+                const rttMs = pong.roundTripTimeMs ?? 0;
+                Nexus.time.calibrate(serverTimeSec, rttMs);
+            }
             return true;
         }
 

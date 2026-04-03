@@ -1,5 +1,6 @@
-import { _decorator, Button, Component } from 'cc';
+import { _decorator, Button, Component, Label } from 'cc';
 import { Nexus } from 'db://nexus-framework/index';
+import type { CountdownHandle } from 'db://nexus-framework/index';
 import { GameEvents } from 'db://assets/script/config/GameEvents';
 import { PLAYER_STATE } from 'db://assets/script/base/BaseGameModel';
 import { TongitsEvents } from '../../config/TongitsEvents';
@@ -10,20 +11,9 @@ const { ccclass, property } = _decorator;
 /**
  * WaitingPanel — 游戏开始前的操作面板
  *
- * 按钮显示规则：
- *   房主
- *     ├── startGameBtn  显示
- *     └── costBtn       显示
- *   非房主 + 未入座      → 全部隐藏
- *   非房主 + 已入座 + 未准备 → readyBtn 显示
- *   非房主 + 已入座 + 已准备 → cancelReadyBtn 显示
- *
- * 节点结构建议：
- *   WaitingPanel
- *   ├── startGameBtn    (Button) 开始游戏
- *   ├── costBtn         (Button) 费用/底注设置
- *   ├── readyBtn        (Button) 准备
- *   └── cancelReadyBtn  (Button) 取消准备
+ * readyBtn 倒计时：
+ *   坐下后服务端返回 waitReadyExpiredTime（Unix 时间戳秒），
+ *   按钮上显示剩余秒数，时间到未准备服务端会踢下座位。
  */
 @ccclass('WaitingPanel')
 export class WaitingPanel extends Component {
@@ -37,33 +27,38 @@ export class WaitingPanel extends Component {
     @property({ type: Button, tooltip: '准备按钮（非房主 + 已入座 + 未准备时显示）' })
     readyBtn: Button = null!;
 
+    @property({ type: Label, tooltip: '准备按钮上的倒计时文字' })
+    readyCountdownLabel: Label = null!;
+
     @property({ type: Button, tooltip: '取消准备按钮（非房主 + 已入座 + 已准备时显示）' })
     cancelReadyBtn: Button = null!;
 
+    private _countdown: CountdownHandle | null = null;
+
     // ── 公开方法（由 TongitsView 驱动） ──────────────────
 
-    /**
-     * 刷新面板按钮可见性。
-     * @param self    本地玩家数据（null 表示纯旁观者）
-     * @param isOwner 本地玩家是否为房主
-     */
     refresh(self: TongitsPlayerInfo | null, isOwner: boolean): void {
         const isSeated = (self?.playerInfo?.seat ?? 0) > 0;
         const isReady  = (self?.playerInfo?.state ?? 0) === PLAYER_STATE.READY;
+        const expiredTime = self?.playerInfo?.waitReadyExpiredTime ?? 0;
 
         if (isOwner) {
-            // 房主：显示开始游戏 + 费用按钮，隐藏准备相关
             this._setActive(this.startGameBtn,   true);
             this._setActive(this.costBtn,        true);
             this._setActive(this.readyBtn,       false);
             this._setActive(this.cancelReadyBtn, false);
+            this._stopCountdown();
         } else {
-            // 非房主：隐藏房主按钮
             this._setActive(this.startGameBtn,   false);
             this._setActive(this.costBtn,        false);
-            // 未入座：全隐藏；入座后根据准备状态切换
             this._setActive(this.readyBtn,       isSeated && !isReady);
             this._setActive(this.cancelReadyBtn, isSeated && isReady);
+
+            if (isSeated && !isReady && expiredTime > 0) {
+                this._startCountdown(expiredTime);
+            } else {
+                this._stopCountdown();
+            }
         }
     }
 
@@ -77,10 +72,42 @@ export class WaitingPanel extends Component {
     }
 
     protected onDestroy(): void {
+        this._stopCountdown();
         this.startGameBtn?.node.off(Button.EventType.CLICK,   this._onStartGame,   this);
         this.costBtn?.node.off(Button.EventType.CLICK,        this._onCost,        this);
         this.readyBtn?.node.off(Button.EventType.CLICK,       this._onReady,       this);
         this.cancelReadyBtn?.node.off(Button.EventType.CLICK, this._onCancelReady, this);
+    }
+
+    // ── 倒计时 ──────────────────────────────────────────
+
+    private _startCountdown(expiredTime: number): void {
+        // 避免重复创建
+        if (this._countdown?.running) return;
+
+        this._countdown = Nexus.time.createCountdown(expiredTime, {
+            onTick: (remaining) => {
+                if (this.readyCountdownLabel) {
+                    this.readyCountdownLabel.string = `${remaining}`;
+                }
+            },
+            onComplete: () => {
+                if (this.readyCountdownLabel) {
+                    this.readyCountdownLabel.string = '';
+                }
+                this._countdown = null;
+            },
+        });
+    }
+
+    private _stopCountdown(): void {
+        if (this._countdown) {
+            this._countdown.stop();
+            this._countdown = null;
+        }
+        if (this.readyCountdownLabel) {
+            this.readyCountdownLabel.string = '';
+        }
     }
 
     // ── 私有工具 ─────────────────────────────────────────
@@ -89,7 +116,7 @@ export class WaitingPanel extends Component {
         if (btn) btn.node.active = active;
     }
 
-    // ── 私有：按钮回调 ────────────────────────────────────
+    // ── 按钮回调 ─────────────────────────────────────────
 
     private _onStartGame(): void {
         Nexus.emit(TongitsEvents.CMD_START_GAME);

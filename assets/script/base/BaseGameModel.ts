@@ -300,6 +300,8 @@ export abstract class BaseGameModel<
         this.updatePlayerById(this.myUserId, {
             playerInfo: { ...this._self?.playerInfo, ...updates },
         } as Partial<P>);
+        this.notify(BaseGameEvents.SELF_UPDATED, { self: this._self });
+        this.notify(BaseGameEvents.PLAYERS_UPDATED, { players: this._players });
     }
 
     // ── 广播处理（直接接收 proto 类型） ──────────────────

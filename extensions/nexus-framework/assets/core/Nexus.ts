@@ -1,6 +1,9 @@
+import { game, Game } from 'cc';
 import type { BundleConfig, NexusConfig } from './NexusConfig';
 import { ProtoManager } from '../manager/protoManager';
 import { ServiceRegistry } from './ServiceRegistry';
+import { TimeService } from './TimeService';
+import { NexusEvents } from '../NexusEvents';
 import { getQueryParam } from '../utils/url';
 import {
     IAssetService,
@@ -23,6 +26,10 @@ export class Nexus {
         Nexus._config = config;
         await ServiceRegistry.bootAll(config);
         Nexus._initialized = true;
+
+        // 监听应用前后台切换
+        game.on(Game.EVENT_HIDE, () => Nexus.emit(NexusEvents.APP_HIDE));
+        game.on(Game.EVENT_SHOW, () => Nexus.emit(NexusEvents.APP_SHOW));
     }
 
     /** 进入配置中的入口 Bundle（未配置时根据 enableLobby 与 bundles 自动推导）。 */
@@ -118,6 +125,11 @@ export class Nexus {
     /** Proto 消息类型映射：registerCommon 启动时调用，registerSubgame 子游戏 Loading 时调用。 */
     static get proto(): typeof ProtoManager {
         return ProtoManager;
+    }
+
+    /** 时间服务：服务端时间校准 + 倒计时工具。 */
+    static get time(): typeof TimeService {
+        return TimeService;
     }
 
     /** 监听全局事件。 */
