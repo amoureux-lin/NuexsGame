@@ -45,7 +45,7 @@ export class ConnectManager {
             game_id: getQueryParam('game_id') || 6,
             score: 10,
             user_id: getQueryParam('user_id') || '123456',
-            nick_name: 'Alice',
+            nick_name: 'Alice'+getQueryParam('user_id') || '123456',
             user_avatar: 'https://p-web.herontest.xin/img/avatar/7.png',
             coin: 10000,
             is_guest: false,

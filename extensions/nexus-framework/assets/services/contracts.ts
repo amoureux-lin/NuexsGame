@@ -335,4 +335,11 @@ export abstract class IAssetService extends ServiceBase {
     abstract releaseBundle(bundle: string): void;
     /** 预加载一组资源路径。 */
     abstract preload(bundle: string, paths: string[]): Promise<void>;
+    /**
+     * 加载远程 URL 资源（图片、音频等）。
+     * 底层使用 assetManager.loadRemote，结果不归属任何 Bundle，需手动释放。
+     * @param url 完整资源地址
+     * @param options 可选参数，如 { ext: '.png' } 指定扩展名
+     */
+    abstract loadRemote<T extends Asset>(url: string, options?: Record<string, unknown>): Promise<T>;
 }

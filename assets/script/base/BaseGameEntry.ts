@@ -75,17 +75,23 @@ export abstract class BaseGameEntry extends NexusBaseEntry {
         await this.loadBundleResources(params);
         this.setProgress(PROGRESS_BUNDLE_END, '连接服务器...');
 
-        // 3. 等待 WS 连接 60-80%
+        // 3. 提前打开场景（Loading UI 仍覆盖在上层）
+        //    此时 View 完成 onLoad → registerEvents，后续事件可正常接收
+        await Nexus.bundle.runScene();
+        // runScene 完成后框架会隐藏 Entry 节点（含 loadingRoot），重新激活保持进度条可见
+        this.node.active = true;
+
+        // 4. 等待 WS 连接 60-80%
         await this.waitWsConnected();
         this.setProgress(PROGRESS_CONNECT_END, '加入房间...');
 
-        // 4. 进房 80-100%
+        // 5. 进房 80-100%
         await this.joinRoom(params);
         this.setProgress(PROGRESS_JOIN_END, '进入游戏...');
 
-        // 5. 等进度条动画跑满 → 跳转场景 → 清理
+        // 6. 等进度条动画跑满 → 隐藏 Entry 节点 → 清理
         await this.waitUntilDisplayComplete();
-        await Nexus.bundle.runScene();
+        this.node.active = false;
         this.loadingRoot?.destroy();
         this.enabled = false;
     }

@@ -1,7 +1,9 @@
 import { _decorator } from 'cc';
-import { MvcView } from 'db://nexus-framework/index';
-import { BaseGameEvents } from 'db://assets/script/base/BaseGameModel';
+import { BaseGameView } from 'db://assets/script/base/BaseGameView';
 import { TongitsEvents } from '../config/TongitsEvents';
+import { PlayerSeatManager } from '../views/player/PlayerSeatManager';
+import { WaitingPanel } from '../views/panel/WaitingPanel';
+import { ActionPanel } from '../views/panel/ActionPanel';
 import type {
     TongitsPlayerInfo,
     GameInfo,
@@ -21,152 +23,215 @@ import type {
     GameResultDetailsRes,
 } from '../proto/tongits';
 
-const { ccclass } = _decorator;
+const { ccclass, property } = _decorator;
 
 /**
- * Tongits View：挂到 tongitsMain 场景的主界面节点。
+ * TongitsView — Tongits 主场景视图
  *
  * 职责：
- *   - 监听 Model 事件 → 刷新 UI（on* 方法）
- *   - 用户操作 → dispatch CMD 给 Controller
- *
- * 所有 on* 方法默认空实现，子类或直接在此填充 UI 逻辑。
+ *   - 继承 BaseGameView，registerGameEvents() 注册 Tongits 特有事件
+ *   - 实现所有 on* 回调刷新 UI，协调 PlayerSeatManager 更新座位
+ *   - 提供 dispatch 快捷方法供子节点 UI 调用
+ *   - 挂到 tongitsMain.scene 根节点，Inspector 中拖入各子组件
  */
 @ccclass('TongitsView')
-export class TongitsView extends MvcView {
+export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
+
+    // ── 子组件引用（Inspector 中拖入） ──────────────────────
+
+    /** 座位管理器 */
+    @property({ type: PlayerSeatManager, tooltip: '座位管理器组件' })
+    seatManager: PlayerSeatManager = null!;
+
+    /** 游戏前操作面板（准备/开始游戏） */
+    @property({ type: WaitingPanel, tooltip: '游戏开始前面板' })
+    waitingPanel: WaitingPanel = null!;
+
+    /** 游戏中操作面板（抽牌/出牌等） */
+    @property({ type: ActionPanel, tooltip: '游戏进行中面板' })
+    actionPanel: ActionPanel = null!;
+
+    // ── 缓存本地状态 ─────────────────────────────────────
+
+    private _selfUserId: number = 0;
+    private _players: TongitsPlayerInfo[] = [];
+    private _gameInfo: GameInfo | null = null;
+    private _isLocalOwner: boolean = false;
+    private _isGameStarted: boolean = false;
 
     // ── 事件注册 ─────────────────────────────────────────
 
-    protected registerEvents(): void {
-        // BaseGameModel 通用事件
-        this.listen<JoinRoomRes>(BaseGameEvents.ROOM_JOINED, (d) => this.onRoomJoined(d));
-        this.listen<{ players: TongitsPlayerInfo[] }>(BaseGameEvents.PLAYERS_UPDATED, (d) => this.onPlayersUpdated(d.players));
-        this.listen<{ gameInfo: GameInfo }>(BaseGameEvents.GAME_INFO_UPDATED, (d) => this.onGameInfoUpdated(d.gameInfo));
-        this.listen<{ self: TongitsPlayerInfo }>(BaseGameEvents.SELF_UPDATED, (d) => this.onSelfUpdated(d.self));
-
-        // Tongits 游戏广播事件
-        this.listen<GameStartBroadcast>(TongitsEvents.GAME_START, (d) => this.onGameStart(d));
+    protected override registerGameEvents(): void {
+        this.listen<GameStartBroadcast>(TongitsEvents.GAME_START,       (d) => this.onGameStart(d));
         this.listen<ActionChangeBroadcast>(TongitsEvents.ACTION_CHANGE, (d) => this.onActionChange(d));
-        this.listen<DrawCardBroadcast>(TongitsEvents.DRAW, (d) => this.onDraw(d));
-        this.listen<MeldCardBroadcast>(TongitsEvents.MELD, (d) => this.onMeld(d));
-        this.listen<LayOffCardBroadcast>(TongitsEvents.LAY_OFF, (d) => this.onLayOff(d));
-        this.listen<DiscardCardBroadcast>(TongitsEvents.DISCARD, (d) => this.onDiscard(d));
-        this.listen<TakeCardBroadcast>(TongitsEvents.TAKE, (d) => this.onTake(d));
-        this.listen<ChallengeBroadcast>(TongitsEvents.CHALLENGE, (d) => this.onChallenge(d));
-        this.listen<PKBroadcast>(TongitsEvents.PK, (d) => this.onPK(d));
+        this.listen<DrawCardBroadcast>(TongitsEvents.DRAW,              (d) => this.onDraw(d));
+        this.listen<MeldCardBroadcast>(TongitsEvents.MELD,              (d) => this.onMeld(d));
+        this.listen<LayOffCardBroadcast>(TongitsEvents.LAY_OFF,         (d) => this.onLayOff(d));
+        this.listen<DiscardCardBroadcast>(TongitsEvents.DISCARD,        (d) => this.onDiscard(d));
+        this.listen<TakeCardBroadcast>(TongitsEvents.TAKE,              (d) => this.onTake(d));
+        this.listen<ChallengeBroadcast>(TongitsEvents.CHALLENGE,        (d) => this.onChallenge(d));
+        this.listen<PKBroadcast>(TongitsEvents.PK,                      (d) => this.onPK(d));
         this.listen<BeforeResultBroadcast>(TongitsEvents.BEFORE_RESULT, (d) => this.onBeforeResult(d));
-        this.listen<GameResultBroadcast>(TongitsEvents.GAME_RESULT, (d) => this.onGameResult(d));
-        this.listen<RoomResetBroadcast>(TongitsEvents.ROOM_RESET, (d) => this.onRoomReset(d));
+        this.listen<GameResultBroadcast>(TongitsEvents.GAME_RESULT,     (d) => this.onGameResult(d));
+        this.listen<RoomResetBroadcast>(TongitsEvents.ROOM_RESET,       (d) => this.onRoomReset(d));
         this.listen<GameResultDetailsRes>(TongitsEvents.RESULT_DETAILS, (d) => this.onResultDetails(d));
     }
 
-    // ── Model → View 事件回调（填充 UI 逻辑） ────────────
+    // ── Model → View 事件回调 ─────────────────────────────
 
-    /** 进房数据就绪：初始化房间 UI、玩家头像、游戏状态 */
-    protected onRoomJoined(_data: JoinRoomRes): void {}
+    protected onRoomJoined(data: JoinRoomRes): void {
+        this._selfUserId = data.self?.playerInfo?.userId ?? 0;
+        this._players = data.players ?? [];
+        this._gameInfo = (data.gameInfo as GameInfo) ?? null;
+        this._isLocalOwner = (data.self?.playerInfo?.post ?? 0) === 1;
+        this._isGameStarted = false;
+        this.seatManager?.setContext(this._isLocalOwner, false);
+        this._refreshAllSeats();
+        // 面板：游戏前显示，游戏中隐藏
+        if (this.waitingPanel) this.waitingPanel.node.active = true;
+        if (this.actionPanel) this.actionPanel.node.active = false;
+        this.waitingPanel?.refresh(data.self ?? null, this._isLocalOwner);
+    }
 
-    /** 玩家列表变化：刷新座位、头像、手牌数等 */
-    protected onPlayersUpdated(_players: TongitsPlayerInfo[]): void {}
+    protected onPlayersUpdated(players: TongitsPlayerInfo[]): void {
+        this._players = players;
+        this._refreshAllSeats();
+    }
 
-    /** 游戏状态变化：牌堆数、弃牌堆、底池等 */
-    protected onGameInfoUpdated(_gameInfo: GameInfo): void {}
+    protected onGameInfoUpdated(gameInfo: GameInfo): void {
+        this._gameInfo = gameInfo;
+    }
 
-    /** 自己的数据变化：手牌、状态等 */
-    protected onSelfUpdated(_self: TongitsPlayerInfo): void {}
+    protected onSelfUpdated(self: TongitsPlayerInfo): void {
+        const newIsOwner = (self.playerInfo?.post ?? 0) === 1;
+        if (newIsOwner !== this._isLocalOwner) {
+            this._isLocalOwner = newIsOwner;
+            this.seatManager?.setContext(this._isLocalOwner, this._isGameStarted);
+        }
+        const idx = this._players.findIndex(p => p.playerInfo?.userId === self.playerInfo?.userId);
+        if (idx >= 0) {
+            this._players = [
+                ...this._players.slice(0, idx),
+                self,
+                ...this._players.slice(idx + 1),
+            ];
+        }
+        this._refreshAllSeats();
+        // 准备状态变化时刷新 WaitingPanel
+        if (!this._isGameStarted) {
+            this.waitingPanel?.refresh(self, this._isLocalOwner);
+        }
+    }
 
-    /** 游戏开始：发牌动画、初始化牌桌 */
-    protected onGameStart(_data: GameStartBroadcast): void {}
+    protected onGameStart(data: GameStartBroadcast): void {
+        this._isGameStarted = true;
+        this.seatManager?.setContext(this._isLocalOwner, true);
+        if (data.players) {
+            this._players = data.players;
+            this._refreshAllSeats();
+        }
+        if (this.waitingPanel) this.waitingPanel.node.active = false;
+        if (this.actionPanel) this.actionPanel.node.active = true;
+        this.actionPanel?.hideAll();
+    }
 
-    /** 操作轮转：高亮当前操作玩家、显示倒计时 */
-    protected onActionChange(_data: ActionChangeBroadcast): void {}
+    protected onActionChange(data: ActionChangeBroadcast): void {
+        this.seatManager?.updateActionPlayer(data.actionPlayerId);
+        this.seatManager?.updateCountdown(data.actionPlayerId, data.countdown);
+        // 刷新操作按钮（轮到自己时才显示可操作按钮）
+        const self = this._players.find(p => p.playerInfo?.userId === this._selfUserId) ?? null;
+        this.actionPanel?.refresh(self, data.actionPlayerId, this._selfUserId, this._gameInfo);
+    }
 
-    /** 抽牌：抽牌动画、更新牌堆数 */
-    protected onDraw(_data: DrawCardBroadcast): void {}
+    protected onDraw(data: DrawCardBroadcast): void {
+        this._syncPlayerField(data.playerId, { handCardCount: data.handCardCount });
+    }
 
-    /** 出牌（组合）：显示新牌组、更新手牌数 */
-    protected onMeld(_data: MeldCardBroadcast): void {}
+    protected onMeld(data: MeldCardBroadcast): void {
+        this._syncPlayerField(data.playerId, { handCardCount: data.handCardCount });
+    }
 
-    /** 补牌/压牌：将牌加入目标牌组动画 */
-    protected onLayOff(_data: LayOffCardBroadcast): void {}
+    protected onLayOff(data: LayOffCardBroadcast): void {
+        this._syncPlayerField(data.actionPlayerId, { handCardCount: data.handCardCount });
+    }
 
-    /** 打牌（弃牌）：弃牌动画、更新弃牌堆 */
-    protected onDiscard(_data: DiscardCardBroadcast): void {}
+    protected onDiscard(data: DiscardCardBroadcast): void {
+        this._syncPlayerField(data.playerId, { handCardCount: data.handCardCount });
+    }
 
-    /** 吃牌：吃牌动画、更新弃牌堆 */
-    protected onTake(_data: TakeCardBroadcast): void {}
+    protected onTake(data: TakeCardBroadcast): void {
+        this._syncPlayerField(data.playerId, { handCardCount: data.handCardCount });
+    }
 
-    /** 挑战：显示挑战 UI */
-    protected onChallenge(_data: ChallengeBroadcast): void {}
+    protected onChallenge(_data: ChallengeBroadcast): void {
+        this._refreshAllSeats();
+    }
 
-    /** PK：显示 PK 状态 */
-    protected onPK(_data: PKBroadcast): void {}
+    protected onPK(_data: PKBroadcast): void {
+        this._refreshAllSeats();
+    }
 
-    /** 结算前比牌：翻牌动画、显示各玩家手牌 */
-    protected onBeforeResult(_data: BeforeResultBroadcast): void {}
+    protected onBeforeResult(data: BeforeResultBroadcast): void {
+        if (data.players) {
+            this._players = data.players;
+            this._refreshAllSeats();
+        }
+    }
 
-    /** 游戏结算：显示输赢结果、金额变化 */
-    protected onGameResult(_data: GameResultBroadcast): void {}
+    protected onGameResult(_data: GameResultBroadcast): void {
+        this.seatManager?.updateActionPlayer(0);
+        this.actionPanel?.hideAll();
+    }
 
-    /** 房间重置：重置牌桌、准备下一局 */
-    protected onRoomReset(_data: RoomResetBroadcast): void {}
+    protected onRoomReset(data: RoomResetBroadcast): void {
+        this._isGameStarted = false;
+        this.seatManager?.setContext(this._isLocalOwner, false);
+        if (data.players) this._players = data.players;
+        this.seatManager?.updateActionPlayer(0);
+        this._refreshAllSeats();
+        // 回到等待状态
+        if (this.waitingPanel) this.waitingPanel.node.active = true;
+        if (this.actionPanel) this.actionPanel.node.active = false;
+        const self = this._players.find(p => p.playerInfo?.userId === this._selfUserId) ?? null;
+        this.waitingPanel?.refresh(self, this._isLocalOwner);
+    }
 
-    /** 结算详情（主动请求返回） */
-    protected onResultDetails(_data: GameResultDetailsRes): void {}
+    protected onResultDetails(_data: GameResultDetailsRes): void {
+        // 留给结算详情面板处理
+    }
 
     // ── View → Controller 命令（由 UI 事件调用） ─────────
 
-    /** 抽牌 */
-    protected draw(): void {
-        this.dispatch(TongitsEvents.CMD_DRAW);
-    }
-
-    /** 出牌（组合） */
-    protected meld(cards: number[]): void {
-        this.dispatch(TongitsEvents.CMD_MELD, { cards });
-    }
-
-    /** 补牌/压牌 */
+    protected draw(): void { this.dispatch(TongitsEvents.CMD_DRAW); }
+    protected meld(cards: number[]): void { this.dispatch(TongitsEvents.CMD_MELD, { cards }); }
     protected layOff(card: number, targetPlayerId: number, targetMeldId: number): void {
         this.dispatch(TongitsEvents.CMD_LAY_OFF, { card, targetPlayerId, targetMeldId });
     }
+    protected discard(card: number): void { this.dispatch(TongitsEvents.CMD_DISCARD, { card }); }
+    protected take(cardsFromHand: number[]): void { this.dispatch(TongitsEvents.CMD_TAKE, { cardsFromHand }); }
+    protected challenge(changeStatus: number): void { this.dispatch(TongitsEvents.CMD_CHALLENGE, { changeStatus }); }
+    protected startGame(): void { this.dispatch(TongitsEvents.CMD_START_GAME); }
+    protected tongitsClick(): void { this.dispatch(TongitsEvents.CMD_TONGITS_CLICK); }
+    protected resultDetails(): void { this.dispatch(TongitsEvents.CMD_RESULT_DETAILS); }
+    // openSettings() / backLobby() 继承自 BaseGameView
 
-    /** 打牌（弃牌） */
-    protected discard(card: number): void {
-        this.dispatch(TongitsEvents.CMD_DISCARD, { card });
+    // ── 私有工具 ─────────────────────────────────────────
+
+    private _refreshAllSeats(): void {
+        this.seatManager?.refreshFromPlayers(this._players, this._selfUserId);
     }
 
-    /** 吃牌 */
-    protected take(cardsFromHand: number[]): void {
-        this.dispatch(TongitsEvents.CMD_TAKE, { cardsFromHand });
-    }
-
-    /** 挑战操作 (2:发起 3:接受 4:拒绝) */
-    protected challenge(changeStatus: number): void {
-        this.dispatch(TongitsEvents.CMD_CHALLENGE, { changeStatus });
-    }
-
-    /** 房主开始游戏 */
-    protected startGame(): void {
-        this.dispatch(TongitsEvents.CMD_START_GAME);
-    }
-
-    /** Tongits 胜利确认 */
-    protected tongitsClick(): void {
-        this.dispatch(TongitsEvents.CMD_TONGITS_CLICK);
-    }
-
-    /** 查看结算详情 */
-    protected resultDetails(): void {
-        this.dispatch(TongitsEvents.CMD_RESULT_DETAILS);
-    }
-
-    /** 打开设置 */
-    protected openSettings(): void {
-        this.dispatch(TongitsEvents.CMD_OPEN_SETTINGS);
-    }
-
-    /** 返回大厅 */
-    protected backLobby(): void {
-        this.dispatch(TongitsEvents.CMD_BACK_LOBBY);
+    private _syncPlayerField(playerId: number, patch: Partial<TongitsPlayerInfo>): void {
+        const idx = this._players.findIndex(p => p.playerInfo?.userId === playerId);
+        if (idx < 0) return;
+        this._players = [
+            ...this._players.slice(0, idx),
+            { ...this._players[idx], ...patch },
+            ...this._players.slice(idx + 1),
+        ];
+        this.seatManager?.getSeatByUserId(playerId)?.setData(
+            this._players[idx],
+            this._players[idx].playerInfo?.userId === this._selfUserId,
+        );
     }
 }

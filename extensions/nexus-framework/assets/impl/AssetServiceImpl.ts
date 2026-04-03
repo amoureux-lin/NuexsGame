@@ -1,4 +1,4 @@
-import { Asset, AssetManager, assetManager } from 'cc';
+import { Asset, AssetManager, assetManager, ImageAsset, SpriteFrame, Texture2D } from 'cc';
 import { AssetCtor, IAssetService } from '../services/contracts';
 
 /**
@@ -67,6 +67,31 @@ export class AssetServiceImpl extends IAssetService {
                 b.preload(path, (err) => err ? reject(err) : resolve());
             }))
         );
+    }
+
+    /**
+     * 加载远程 URL 资源。
+     * - 若为图片（ImageAsset），自动转换为 SpriteFrame 返回，方便直接赋给 Sprite.spriteFrame。
+     * - 其他类型原样返回。
+     */
+    loadRemote<T extends Asset>(url: string, options?: Record<string, unknown>): Promise<T> {
+        return new Promise<T>((resolve, reject) => {
+            const cb = (err: Error | null, asset: Asset) => {
+                if (err) { reject(err); return; }
+                if (asset instanceof ImageAsset) {
+                    const texture = new Texture2D();
+                    texture.image = asset;
+                    const sf = new SpriteFrame();
+                    sf.texture = texture;
+                    resolve(sf as unknown as T);
+                } else {
+                    resolve(asset as T);
+                }
+            };
+            options
+                ? assetManager.loadRemote(url, options, cb)
+                : assetManager.loadRemote(url, cb);
+        });
     }
 
     /** 已存在则直接返回，否则先 loadBundle */

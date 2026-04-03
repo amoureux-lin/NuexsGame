@@ -173,7 +173,7 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
 
     // ── WS 广播注册 ──────────────────────────────────────
 
-    registerHandlers(): void {
+    protected override registerGameHandlers(): void {
         Nexus.net.onWsMsg(MessageType.TONGITS_START_GAME_BROADCAST, this._onGameStart.bind(this), this);
         Nexus.net.onWsMsg(MessageType.TONGITS_ACTION_CHANGE_BROADCAST, this._onActionChange.bind(this), this);
         Nexus.net.onWsMsg(MessageType.TONGITS_DRAW_BROADCAST, this._onDrawBroadcast.bind(this), this);

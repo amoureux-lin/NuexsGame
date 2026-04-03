@@ -51,8 +51,4 @@ export const TongitsEvents = {
     CMD_TONGITS_CLICK: 'tongits:cmd:tongitsClick',
     /** 查看结算详情 */
     CMD_RESULT_DETAILS: 'tongits:cmd:resultDetails',
-    /** 打开设置 */
-    CMD_OPEN_SETTINGS: 'tongits:cmd:openSettings',
-    /** 返回大厅 */
-    CMD_BACK_LOBBY: 'tongits:cmd:backLobby',
 } as const;

@@ -11,6 +11,22 @@ const GameEventDefines = {
     GAME_JOIN_FAIL: 'GAME.JOIN.FAIL',
     /** 重连后由 ReconnectManager 发出，当前 bundle 收到后发送 joinGame */
     RECONNECT_NEED_JOIN: 'RECONNECT.NEED_JOIN',
+
+    // ---------- 公共 View → Controller 命令（所有子游戏共用） ----------
+    /** 坐下，data: { seat: number } */
+    CMD_SIT_DOWN: 'game:cmd:sitDown',
+    /** 站起（自己主动离座） */
+    CMD_STAND_UP: 'game:cmd:standUp',
+    /** 准备/取消准备，data: { ready: boolean } */
+    CMD_READY: 'game:cmd:ready',
+    /** 房主踢人下座，data: { userId: number } */
+    CMD_KICK_OFF_SEAT: 'game:cmd:kickOffSeat',
+    /** 查看玩家信息，data: { userId: number } */
+    CMD_VIEW_PLAYER_INFO: 'game:cmd:viewPlayerInfo',
+    /** 打开设置面板 */
+    CMD_OPEN_SETTINGS: 'game:cmd:openSettings',
+    /** 返回大厅 */
+    CMD_BACK_LOBBY: 'game:cmd:backLobby',
 } as const;
 
 /**

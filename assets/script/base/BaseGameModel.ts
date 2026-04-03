@@ -1,4 +1,5 @@
 import { MvcModel, Nexus } from 'db://nexus-framework/index';
+import { MessageType } from 'db://assets/script/proto/message_type';
 import type { PlayerInfo } from 'db://assets/script/proto/game_common_room';
 import type {
     UserOfflineBroadcast,
@@ -629,7 +630,42 @@ export abstract class BaseGameModel<
 
     // ── WS 监听模板 ──────────────────────────────────────
 
-    abstract registerHandlers(): void;
+    /**
+     * 注册公共广播监听。由 registerHandlers() 自动调用，子类无需手动调用。
+     */
+    protected registerCommonHandlers(): void {
+        const net = Nexus.net;
+        net.onWsMsg(MessageType.COMMON_OFFLINE_BROADCAST,              this.onOfflineBroadcast.bind(this),          this);
+        net.onWsMsg(MessageType.COMMON_JOIN_ROOM_BROADCAST,            this.onJoinRoomBroadcast.bind(this),         this);
+        net.onWsMsg(MessageType.COMMON_LEAVE_ROOM_BROADCAST,           this.onLeaveRoomBroadcast.bind(this),        this);
+        net.onWsMsg(MessageType.COMMON_SIT_DOWN_BROADCAST,             this.onSitDownBroadcast.bind(this),          this);
+        net.onWsMsg(MessageType.COMMON_STAND_UP_BROADCAST,             this.onStandUpBroadcast.bind(this),          this);
+        net.onWsMsg(MessageType.COMMON_READY_BROADCAST,                this.onReadyBroadcast.bind(this),            this);
+        net.onWsMsg(MessageType.COMMON_SEND_BARRAGE_BROADCAST,         this.onBarrageBroadcast.bind(this),          this);
+        net.onWsMsg(MessageType.COMMON_USER_UPDATE_BROADCAST,          this.onUserInfoUpdateBroadcast.bind(this),   this);
+        net.onWsMsg(MessageType.COMMON_SERVER_CLOSED_BROADCAST,        this.onServerClosedBroadcast.bind(this),     this);
+        net.onWsMsg(MessageType.COMMON_ROOM_NEW_OWNER_BROADCAST,       this.onNewOwnerBroadcast.bind(this),         this);
+        net.onWsMsg(MessageType.ROOM_SET_ROOM_MODE_BROADCAST,          this.onSetRoomModeBroadcast.bind(this),      this);
+        net.onWsMsg(MessageType.ROOM_OWNER_KICK_OUT_OF_ROOM_BROADCAST, this.onKickOutOfRoomBroadcast.bind(this),   this);
+        net.onWsMsg(MessageType.ROOM_OWNER_KICK_OFF_SEAT_BROADCAST,    this.onKickOffSeatBroadcast.bind(this),      this);
+        net.onWsMsg(MessageType.ROOM_OWNER_CHANGE_SCORE_BROADCAST,     this.onChangeScoreBroadcast.bind(this),      this);
+        net.onWsMsg(MessageType.ROOM_APPLY_ALLOW_MIC_BROADCAST,        this.onApplyAllowMicBroadcast.bind(this),    this);
+        net.onWsMsg(MessageType.ROOM_APPROVE_ALLOW_MIC_BROADCAST,      this.onApproveAllowMicBroadcast.bind(this),  this);
+        net.onWsMsg(MessageType.ROOM_OPEN_MIC_BROADCAST,               this.onOpenMicBroadcast.bind(this),          this);
+        net.onWsMsg(MessageType.ROOM_ALLOW_MIC_BROADCAST,              this.onAllowMicBroadcast.bind(this),         this);
+        net.onWsMsg(MessageType.ROOM_OWNER_CLOSE_MIC_BROADCAST,        this.onOwnerCloseMicBroadcast.bind(this),    this);
+        net.onWsMsg(MessageType.ROOM_ALLOW_MIC_CHANGED_BROADCAST,      this.onAllowMicChangedBroadcast.bind(this),  this);
+        net.onWsMsg(MessageType.ROOM_AGREE_ALLOW_MIC_BROADCAST,        this.onAgreeAllowMicBroadcast.bind(this),    this);
+    }
+
+    /** 子类在此注册游戏特有消息监听。 */
+    protected abstract registerGameHandlers(): void;
+
+    /** 对外入口，Entry 调用此方法启动所有监听。 */
+    registerHandlers(): void {
+        this.registerCommonHandlers();
+        this.registerGameHandlers();
+    }
 
     // ── 生命周期 ─────────────────────────────────────────
 
