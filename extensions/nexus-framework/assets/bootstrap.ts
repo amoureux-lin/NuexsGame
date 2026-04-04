@@ -5,7 +5,9 @@ import { DataStoreServiceImpl } from './impl/DataStoreServiceImpl';
 import { EventServiceImpl } from './impl/EventServiceImpl';
 import { I18nServiceImpl } from './impl/I18nServiceImpl';
 import { NetServiceImpl } from './impl/NetServiceImpl';
+import { ObjectPoolServiceImpl } from './impl/ObjectPoolServiceImpl';
 import { StorageServiceImpl } from './impl/StorageServiceImpl';
+import { ToastServiceImpl } from './impl/ToastServiceImpl';
 import { UIServiceImpl } from './impl/UIServiceImpl';
 import { ServiceRegistry } from './core/ServiceRegistry';
 import {
@@ -16,7 +18,9 @@ import {
     IEventService,
     II18nService,
     INetService,
+    IObjectPoolService,
     IStorageService,
+    IToastService,
     IUIService,
 } from './services/contracts';
 
@@ -36,6 +40,8 @@ export function bootstrapNexus(): void {
     ServiceRegistry.register(IBundleService, new BundleServiceImpl());
     ServiceRegistry.register(IUIService, new UIServiceImpl());
     ServiceRegistry.register(IAudioService, new AudioServiceImpl());
+    ServiceRegistry.register(IObjectPoolService, new ObjectPoolServiceImpl());
+    ServiceRegistry.register(IToastService, new ToastServiceImpl());
     // ServiceRegistry.register(II18nService, new I18nServiceImpl());
     ServiceRegistry.register(INetService, new NetServiceImpl());
 }

@@ -2,7 +2,7 @@ import type { NexusConfig } from '../core/NexusConfig';
 import { Nexus } from '../core/Nexus';
 import { NexusEvents } from '../NexusEvents';
 import { ServiceBase } from '../core/ServiceBase';
-import type { DecodedPacket, IWsDelegate, WsConfig, WsSendContext } from '../services/contracts';
+import type { DecodedPacket, IWsDelegate, WsConfig, WsSendContext, WsMsgCtx } from '../services/contracts';
 
 interface PendingRequest {
     resolve: (data: unknown) => void;
@@ -11,7 +11,7 @@ interface PendingRequest {
     msgType: number;
 }
 
-type WsHandler = (msg: unknown) => void;
+type WsHandler = (msg: unknown, ctx: WsMsgCtx) => void;
 interface WsHandlerEntry {
     fn: WsHandler;
     target?: object;
@@ -45,8 +45,13 @@ export class WsServiceImpl extends ServiceBase {
     private readonly _pending = new Map<number, PendingRequest>();
     /** 连接中的 Promise，防止并发 connectWs 创建多个 WebSocket */
     private _connectingPromise: Promise<void> | null = null;
+    /** 切后台时间戳，用于判断后台时长 */
+    private _backgroundAt = 0;
 
-    async onBoot(_config: NexusConfig): Promise<void> {}
+    async onBoot(_config: NexusConfig): Promise<void> {
+        Nexus.on(NexusEvents.APP_HIDE, this._onAppHide, this);
+        Nexus.on(NexusEvents.APP_SHOW, this._onAppShow, this);
+    }
 
     // ── 初始化 ────────────────────────────────────────────
 
@@ -271,8 +276,18 @@ export class WsServiceImpl extends ServiceBase {
 
     private dispatch(cmd: string | number, msg: unknown): void {
         const handlers = this._wsHandlers.get(cmd);
-        if (handlers) {
-            for (const { fn } of handlers) fn(msg);
+        if (!handlers) return;
+        const ctx: WsMsgCtx = {
+            isBackground: this._backgroundAt > 0,
+            processedAt: Date.now(),
+            msgType: cmd,
+        };
+        for (const { fn } of handlers) {
+            try {
+                fn(msg, ctx);
+            } catch (err) {
+                console.error(`[Nexus] WS handler threw for msgType ${String(cmd)}:`, err);
+            }
         }
     }
 
@@ -317,6 +332,13 @@ export class WsServiceImpl extends ServiceBase {
             }
         }
         if (handlers.size === 0) this._wsHandlers.delete(cmd);
+    }
+
+    /** 取消所有等待响应的 WS 请求，reject 对应的 Promise。 */
+    cancelAllWsRequests(reason = '[Nexus] WS requests cancelled'): void {
+        for (const requestId of [...this._pending.keys()]) {
+            this.rejectPending(requestId, reason);
+        }
     }
 
     offWsMsgByTarget(target: object): void {
@@ -383,6 +405,45 @@ export class WsServiceImpl extends ServiceBase {
         this.tryReconnect();
     }
 
+    // ── 前后台切换 ──────────────────────────────────────────
+
+    /** 切后台：暂停心跳和收包超时，防止后台期间误判断连 */
+    private _onAppHide(): void {
+        this._backgroundAt = Date.now();
+        // 暂停心跳（后台发不出去）
+        if (this._heartbeatTimer !== null) {
+            clearInterval(this._heartbeatTimer);
+            this._heartbeatTimer = null;
+        }
+        // 暂停收包超时（后台不执行 JS，回前台后会立即超时误判）
+        if (this._receiveTimer !== null) {
+            clearTimeout(this._receiveTimer);
+            this._receiveTimer = null;
+        }
+    }
+
+    /** 回前台：检测连接状态，探活或重连 */
+    private _onAppShow(): void {
+        const backgroundMs = Date.now() - this._backgroundAt;
+        this._backgroundAt = 0;
+
+        if (!this._lastUrl) return; // 从未连接过
+
+        if (this._ws && this._ws.readyState === WebSocket.OPEN) {
+            // 连接看起来还在 → 立即发心跳探活 + 恢复定时器
+            this.startHeartbeat();
+            this.resetReceiveTimer();
+            // 发一次心跳，Pong 回来会自动校准时间
+            const hb = this._delegate?.heartbeat();
+            if (hb) this._ws.send(hb);
+        } else {
+            // 连接已断 → 触发重连
+            this._connected = false;
+            this._autoReconnect = this._autoReconnectInitial;
+            this.tryReconnect();
+        }
+    }
+
     private clearTimers(): void {
         if (this._heartbeatTimer !== null) {
             clearInterval(this._heartbeatTimer);
@@ -399,6 +460,8 @@ export class WsServiceImpl extends ServiceBase {
     }
 
     async onDestroy(): Promise<void> {
+        Nexus.off(NexusEvents.APP_HIDE, this._onAppHide, this);
+        Nexus.off(NexusEvents.APP_SHOW, this._onAppShow, this);
         this.clearTimers();
         for (const requestId of this._pending.keys()) {
             this.rejectPending(requestId, '[Nexus] WS destroyed');

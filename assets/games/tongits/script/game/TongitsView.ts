@@ -200,27 +200,6 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         // 留给结算详情面板处理
     }
 
-    // ── 前后台切换 ─────────────────────────────────────────
-
-    /**
-     * 回前台时自动调用：根据 Model 当前数据做一次全量 UI 刷新。
-     * 后台期间 View 的 listen 回调被拦截，Model 数据已是最新，这里只需重绘 UI。
-     */
-    protected override onForeground(): void {
-        this._refreshAllSeats();
-        this.seatManager?.setContext(this._isLocalOwner, this._isGameStarted);
-
-        if (this._isGameStarted) {
-            if (this.waitingPanel) this.waitingPanel.node.active = false;
-            if (this.actionPanel) this.actionPanel.node.active = true;
-        } else {
-            if (this.waitingPanel) this.waitingPanel.node.active = true;
-            if (this.actionPanel) this.actionPanel.node.active = false;
-            const self = this._players.find(p => p.playerInfo?.userId === this._selfUserId) ?? null;
-            this.waitingPanel?.refresh(self, this._isLocalOwner);
-        }
-    }
-
     // ── View → Controller 命令（由 UI 事件调用） ─────────
 
     protected draw(): void { this.dispatch(TongitsEvents.CMD_DRAW); }

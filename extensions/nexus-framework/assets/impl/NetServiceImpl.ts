@@ -1,5 +1,5 @@
 import type { NexusConfig } from '../core/NexusConfig';
-import { HttpOptions, INetService, IWsDelegate, WsConfig } from '../services/contracts';
+import { HttpOptions, INetService, IWsDelegate, WsConfig, WsMsgCtx } from '../services/contracts';
 import { HttpServiceImpl } from './HttpServiceImpl';
 import { WsServiceImpl } from './WsServiceImpl';
 
@@ -43,11 +43,11 @@ export class NetServiceImpl extends INetService {
         this._ws.sendWs(cmd, data);
     }
 
-    onWsMsg(cmd: string | number, fn: (msg: unknown) => void, target?: object): void {
+    onWsMsg(cmd: string | number, fn: (msg: unknown, ctx: WsMsgCtx) => void, target?: object): void {
         this._ws.onWsMsg(cmd, fn, target);
     }
 
-    offWsMsg(cmd: string | number, fn: (msg: unknown) => void): void {
+    offWsMsg(cmd: string | number, fn: (msg: unknown, ctx: WsMsgCtx) => void): void {
         this._ws.offWsMsg(cmd, fn);
     }
 
@@ -65,6 +65,14 @@ export class NetServiceImpl extends INetService {
 
     isConnected(): boolean {
         return this._ws.isConnected();
+    }
+
+    cancelAllHttpRequests(): void {
+        this._http.cancelAllHttpRequests();
+    }
+
+    cancelAllWsRequests(reason?: string): void {
+        this._ws.cancelAllWsRequests(reason);
     }
 
     async onDestroy(): Promise<void> {

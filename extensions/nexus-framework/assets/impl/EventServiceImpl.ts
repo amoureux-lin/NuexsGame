@@ -69,7 +69,11 @@ export class EventServiceImpl extends IEventService {
         }
 
         for (const record of [...listeners]) {
-            record.fn(data);
+            if (record.target) {
+                record.fn.call(record.target, data);
+            } else {
+                record.fn(data);
+            }
             if (record.once) {
                 listeners.delete(record);
             }

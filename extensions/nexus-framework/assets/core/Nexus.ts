@@ -13,7 +13,9 @@ import {
     IEventService,
     II18nService,
     INetService,
+    IObjectPoolService,
     IStorageService,
+    IToastService,
     IUIService,
 } from '../services/contracts';
 
@@ -30,6 +32,18 @@ export class Nexus {
         // 监听应用前后台切换
         game.on(Game.EVENT_HIDE, () => Nexus.emit(NexusEvents.APP_HIDE));
         game.on(Game.EVENT_SHOW, () => Nexus.emit(NexusEvents.APP_SHOW));
+
+        // 全局错误边界：捕获未处理的 Promise rejection 和同步错误
+        if (typeof window !== 'undefined') {
+            window.addEventListener('unhandledrejection', (e) => {
+                console.error('[Nexus] Unhandled Promise rejection:', e.reason);
+                try { Nexus.emit(NexusEvents.ERROR_UNHANDLED, { reason: e.reason }); } catch { /* ignore */ }
+            });
+            window.addEventListener('error', (e) => {
+                console.error('[Nexus] Uncaught error:', e.message, e.error);
+                try { Nexus.emit(NexusEvents.ERROR_UNCAUGHT, { message: e.message, error: e.error }); } catch { /* ignore */ }
+            });
+        }
     }
 
     /** 进入配置中的入口 Bundle（未配置时根据 enableLobby 与 bundles 自动推导）。 */
@@ -120,6 +134,16 @@ export class Nexus {
     /** 资源服务快捷入口。 */
     static get asset(): IAssetService {
         return ServiceRegistry.get(IAssetService);
+    }
+
+    /** 对象池服务快捷入口。 */
+    static get pool(): IObjectPoolService {
+        return ServiceRegistry.get(IObjectPoolService);
+    }
+
+    /** Toast 全局提示服务快捷入口。 */
+    static get toast(): IToastService {
+        return ServiceRegistry.get(IToastService);
     }
 
     /** Proto 消息类型映射：registerCommon 启动时调用，registerSubgame 子游戏 Loading 时调用。 */

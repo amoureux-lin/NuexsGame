@@ -1,4 +1,4 @@
-import type { Asset, Node } from 'cc';
+import type { Asset, Node, Prefab } from 'cc';
 import { ServiceBase } from '../core/ServiceBase';
 
 export enum UILayer {
@@ -35,6 +35,19 @@ export interface WsConfig {
     requestRetry?: number;
     /** wsRequest 重试间隔毫秒（默认 1000，每次翻倍） */
     requestRetryDelay?: number;
+}
+
+/**
+ * WS 收包上下文：随每条消息一起传给 handler，携带消息到达时的元信息。
+ * handler 不关心时可直接忽略第二参数。
+ */
+export interface WsMsgCtx {
+    /** JS 处理该消息时 app 是否仍在后台（_backgroundAt > 0 表示仍在后台） */
+    isBackground: boolean;
+    /** JS 实际处理该消息的时间戳（ms） */
+    processedAt: number;
+    /** 消息类型 */
+    msgType: string | number;
 }
 
 /** 发包上下文：贯穿整条发送链，willSend 可修改 body / extra */
@@ -233,9 +246,9 @@ export abstract class INetService extends ServiceBase {
     /** 发送 WebSocket 消息（单向，不关心响应）。 */
     abstract sendWs(cmd: string | number, data: unknown): void;
     /** 监听指定命令的 WebSocket 消息；传 target 时可用 offWsMsgByTarget(target) 统一解绑。 */
-    abstract onWsMsg(cmd: string | number, fn: (msg: unknown) => void, target?: object): void;
+    abstract onWsMsg(cmd: string | number, fn: (msg: unknown, ctx: WsMsgCtx) => void, target?: object): void;
     /** 移除指定命令的 WebSocket 消息监听。 */
-    abstract offWsMsg(cmd: string | number, fn: (msg: unknown) => void): void;
+    abstract offWsMsg(cmd: string | number, fn: (msg: unknown, ctx: WsMsgCtx) => void): void;
     /** 移除该 target 下所有 WebSocket 消息监听（与事件 offTarget 一致）。 */
     abstract offWsMsgByTarget(target: object): void;
 
@@ -245,6 +258,10 @@ export abstract class INetService extends ServiceBase {
     abstract wsRequest<T = unknown>(msgType: number, body: unknown, timeoutMs?: number): Promise<T>;
     /** 当前 WebSocket 是否已连接。 */
     abstract isConnected(): boolean;
+    /** 取消所有进行中的 HTTP 请求（abort XHR）。 */
+    abstract cancelAllHttpRequests(): void;
+    /** 取消所有等待响应的 WS 请求（reject pending promises）。 */
+    abstract cancelAllWsRequests(reason?: string): void;
 }
 
 export abstract class IAudioService extends ServiceBase {
@@ -342,4 +359,43 @@ export abstract class IAssetService extends ServiceBase {
      * @param options 可选参数，如 { ext: '.png' } 指定扩展名
      */
     abstract loadRemote<T extends Asset>(url: string, options?: Record<string, unknown>): Promise<T>;
+}
+
+// ── 对象池 ──────────────────────────────────────────────────────────────────
+
+export abstract class IObjectPoolService extends ServiceBase {
+    /**
+     * 从池中取一个节点，池为空时若传入 prefab 则 instantiate 新节点，否则返回 null。
+     * 取出的节点 active 已设为 true。
+     */
+    abstract get(key: string, prefab?: Prefab): Node | null;
+    /**
+     * 将节点归还到池。框架自动设置 active = false 并 removeFromParent。
+     */
+    abstract put(key: string, node: Node): void;
+    /**
+     * 预热：提前 instantiate 指定数量的节点存入池。
+     */
+    abstract preload(key: string, prefab: Prefab, count: number): Promise<void>;
+    /** 返回指定 key 的当前池中节点数量。 */
+    abstract size(key: string): number;
+    /** 销毁指定 key 下所有池节点。 */
+    abstract clear(key: string): void;
+    /** 销毁全部池节点。 */
+    abstract clearAll(): void;
+}
+
+// ── Toast ────────────────────────────────────────────────────────────────────
+
+export type ToastType = 'info' | 'success' | 'error' | 'warn';
+
+export abstract class IToastService extends ServiceBase {
+    /** 普通提示（蓝灰色背景）。 */
+    abstract show(msg: string, duration?: number): void;
+    /** 成功提示（绿色背景）。 */
+    abstract success(msg: string, duration?: number): void;
+    /** 错误提示（红色背景，默认 3s）。 */
+    abstract error(msg: string, duration?: number): void;
+    /** 警告提示（橙色背景）。 */
+    abstract warn(msg: string, duration?: number): void;
 }

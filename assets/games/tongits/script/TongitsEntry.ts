@@ -44,7 +44,8 @@ export class TongitsEntry extends BaseGameEntry {
     }
 
     protected async joinRoom(params?: Record<string, unknown>): Promise<void> {
-        const roomId = Number(params?.room_id ?? 0);
+        const roomId = Number(params?.room_id ?? Nexus.data.get<number>('room_id') ?? 0);
+        Nexus.data.set('room_id', roomId);
         try {
             const res = await Nexus.net.wsRequest<JoinRoomRes>(
                 MessageType.TONGITS_JOIN_ROOM_REQ,

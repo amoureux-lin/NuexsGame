@@ -48,6 +48,10 @@ export abstract class BaseGameEntry extends NexusBaseEntry {
     private _targetPercent = 0;
     private _displayProgress = 0;
     private _waitDisplayResolve: (() => void) | null = null;
+    /** 首次进房是否已完成（区分首次进房和重连） */
+    private _enteredRoom = false;
+    /** 是否正在 resync 中（防止并发） */
+    private _resyncing = false;
 
     // ── 模板流程 ─────────────────────────────────────────────
 
@@ -55,6 +59,9 @@ export abstract class BaseGameEntry extends NexusBaseEntry {
         await super.onEnter(params);
         await this.onGameInit(params);
         await this.loadResources(params);
+        // 首次进房完成，开始监听重连
+        this._enteredRoom = true;
+        Nexus.on(NexusEvents.NET_CONNECTED, this._onReconnected, this);
     }
 
     /**
@@ -103,6 +110,8 @@ export abstract class BaseGameEntry extends NexusBaseEntry {
 
     protected onDestroy(): void {
         this._waitDisplayResolve = null;
+        this._enteredRoom = false;
+        Nexus.off(NexusEvents.NET_CONNECTED, this._onReconnected, this);
         super.onDestroy();
     }
 
@@ -133,6 +142,33 @@ export abstract class BaseGameEntry extends NexusBaseEntry {
      * 由 onExit 调用。
      */
     protected abstract onGameExit(): Promise<void>;
+
+    // ── 重连同步 ───────────────────────────────────────────────
+
+    /**
+     * WS 重连成功回调。首次进房完成后才生效。
+     * 自动调用 resyncRoom() 拉全量状态。
+     */
+    private async _onReconnected(): Promise<void> {
+        if (!this._enteredRoom || this._resyncing) return;
+        this._resyncing = true;
+        try {
+            console.log('[BaseGameEntry] reconnected, resyncing room...');
+            await this.resyncRoom();
+        } catch (err) {
+            console.error('[BaseGameEntry] resync failed:', err);
+        } finally {
+            this._resyncing = false;
+        }
+    }
+
+    /**
+     * 子类覆写：发同步请求拉全量房间状态，用返回数据重置 Model 并通知 View。
+     * 默认复用 joinRoom()，子类可覆写为更轻量的同步接口。
+     */
+    protected async resyncRoom(): Promise<void> {
+        await this.joinRoom();
+    }
 
     // ── 公共资源加载 ─────────────────────────────────────────
 

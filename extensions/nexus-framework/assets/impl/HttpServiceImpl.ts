@@ -9,6 +9,8 @@ export class HttpServiceImpl extends ServiceBase {
     private _baseUrl = '';
     private _token = '';
     private _timeout = 10000;
+    /** 当前活跃的 XHR 实例，用于 cancelAllHttpRequests */
+    private readonly _activeXhrs = new Set<XMLHttpRequest>();
 
     async onBoot(config: NexusConfig): Promise<void> {
         this._timeout = config.networkTimeout;
@@ -88,7 +90,12 @@ export class HttpServiceImpl extends ServiceBase {
                 xhr.setRequestHeader('Content-Type', 'application/json');
             }
 
+            this._activeXhrs.add(xhr);
+
+            const cleanup = () => this._activeXhrs.delete(xhr);
+
             xhr.onload = () => {
+                cleanup();
                 let data: T;
                 try {
                     data = JSON.parse(xhr.responseText);
@@ -104,8 +111,9 @@ export class HttpServiceImpl extends ServiceBase {
                 }
             };
 
-            xhr.onerror = () => { const msg = `[Nexus] Network error: ${url}`; console.error(msg); reject(msg); };
-            xhr.ontimeout = () => { const msg = `[Nexus] Request timeout: ${url}`; console.error(msg); reject(msg); };
+            xhr.onerror = () => { cleanup(); const msg = `[Nexus] Network error: ${url}`; console.error(msg); reject(msg); };
+            xhr.ontimeout = () => { cleanup(); const msg = `[Nexus] Request timeout: ${url}`; console.error(msg); reject(msg); };
+            xhr.onabort = () => { cleanup(); reject('[Nexus] HTTP request cancelled'); };
 
             xhr.send(body !== undefined ? JSON.stringify(body) : null);
         });
@@ -115,7 +123,16 @@ export class HttpServiceImpl extends ServiceBase {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 
+    /** 中止所有进行中的 HTTP 请求。 */
+    cancelAllHttpRequests(): void {
+        for (const xhr of this._activeXhrs) {
+            xhr.abort();
+        }
+        this._activeXhrs.clear();
+    }
+
     async onDestroy(): Promise<void> {
+        this.cancelAllHttpRequests();
         this._baseUrl = '';
         this._token = '';
     }
