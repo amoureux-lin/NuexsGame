@@ -67,7 +67,7 @@ const LAYOUT_DUR         = 0.14;
  * factor = 1 - pow(LERP_SMOOTHING, dt)
  * 值越小越柔和：0.0001 ≈ 0.25s 到位，0.00001 ≈ 0.4s 到位
  */
-const LERP_SMOOTHING = 0.0001;
+const LERP_SMOOTHING = 0.00001;
 /** 发牌后"按组重排"动画时长（更长，有仪式感） */
 const DEAL_REORDER_DUR   = 0.30;
 /** 发牌每张飞行时长 */
