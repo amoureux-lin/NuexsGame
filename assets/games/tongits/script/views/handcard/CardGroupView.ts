@@ -88,9 +88,10 @@ export class CardGroupView {
 
     // ── 公开 API ──────────────────────────────────────────
 
-    get groupId(): string   { return this._groupData.id; }
-    get groupData(): GroupData { return this._groupData; }
-    get width(): number     { return this._groupWidth(); }
+    get groupId(): string               { return this._groupData.id; }
+    get groupData(): GroupData          { return this._groupData; }
+    get width(): number                 { return this._groupWidth(); }
+    get cardNodes(): readonly CardNode[] { return this._cardNodes; }
 
     /** 更新组数据（牌变化时调用，保留已有节点复用） */
     update(groupData: GroupData, cardPrefabFactory: (value: number) => Node): void {
@@ -147,6 +148,17 @@ export class CardGroupView {
 
     /** 重排牌位置（带动画） */
     relayout(): void { this._relayout(true); }
+
+    /**
+     * 拖拽开始时从组内移除一张牌（不销毁节点，由调用方管理）。
+     * 移除后立即重排剩余牌的显示位置（不含动画，由预览逻辑接管）。
+     */
+    removeCard(cardValue: number): void {
+        const idx = this._cardNodes.findIndex(cn => cn.cardValue === cardValue);
+        if (idx < 0) return;
+        this._cardNodes.splice(idx, 1);
+        // 不调 _relayout，让 HandCardPanel._applyPreviewLayout 统一处理位置
+    }
 
     destroy(): void { this.node.destroy(); }
 

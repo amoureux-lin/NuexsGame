@@ -9,7 +9,7 @@
 
 import {
     _decorator, Component, Node, UITransform, Graphics,
-    Color, Vec3, tween, Tween, UIOpacity, SpriteAtlas, SpriteFrame, Sprite,
+    Color, Vec3, Vec2, tween, Tween, UIOpacity, SpriteAtlas, SpriteFrame, Sprite, EventTouch,
 } from 'cc';
 
 const { ccclass, property } = _decorator;
@@ -47,16 +47,34 @@ export class CardNode extends Component {
     /** 点击回调（由父节点赋值） */
     onClick: ((cardValue: number) => void) | null = null;
 
+    /** 拖拽开始（已超过阈值） */
+    onDragStart: ((cardValue: number, uiPos: Vec2) => void) | null = null;
+    /** 拖拽移动 */
+    onDragMove:  ((uiPos: Vec2) => void) | null = null;
+    /** 拖拽结束 / 取消 */
+    onDragEnd:   ((uiPos: Vec2) => void) | null = null;
+
+    private _touchStartPos: Vec2 | null = null;
+    private _dragging      = false;
+    private _lastUIPos     = new Vec2();
+
     // ── 生命周期 ──────────────────────────────────────────
 
     onLoad(): void {
         this._ensureVisuals();
-        this.node.on(Node.EventType.TOUCH_END, this._onTap, this);
+        this.node.on(Node.EventType.TOUCH_START,  this._onTouchStart,  this);
+        this.node.on(Node.EventType.TOUCH_MOVE,   this._onTouchMove,   this);
+        this.node.on(Node.EventType.TOUCH_END,    this._onTouchEnd,    this);
+        this.node.on(Node.EventType.TOUCH_CANCEL, this._onTouchCancel, this);
     }
 
     onDestroy(): void {
         this._liftTween?.stop();
         this._moveTween?.stop();
+        this.node.off(Node.EventType.TOUCH_START,  this._onTouchStart,  this);
+        this.node.off(Node.EventType.TOUCH_MOVE,   this._onTouchMove,   this);
+        this.node.off(Node.EventType.TOUCH_END,    this._onTouchEnd,    this);
+        this.node.off(Node.EventType.TOUCH_CANCEL, this._onTouchCancel, this);
     }
 
     // ── 公开 API ──────────────────────────────────────────
@@ -111,8 +129,46 @@ export class CardNode extends Component {
 
     // ── 私有 ──────────────────────────────────────────────
 
-    private _onTap(): void {
-        this.onClick?.(this._cardValue);
+    private _onTouchStart(e: EventTouch): void {
+        const loc = e.getUILocation();
+        this._touchStartPos = new Vec2(loc.x, loc.y);
+        this._dragging      = false;
+    }
+
+    private _onTouchMove(e: EventTouch): void {
+        if (!this._touchStartPos) return;
+        const loc = e.getUILocation();
+        this._lastUIPos.set(loc.x, loc.y);
+        if (!this._dragging) {
+            const dx = loc.x - this._touchStartPos.x;
+            const dy = loc.y - this._touchStartPos.y;
+            if (dx * dx + dy * dy >= 64) {   // 8px 阈值
+                this._dragging = true;
+                this.onDragStart?.(this._cardValue, new Vec2(loc.x, loc.y));
+            }
+        } else {
+            this.onDragMove?.(new Vec2(loc.x, loc.y));
+        }
+    }
+
+    private _onTouchEnd(e: EventTouch): void {
+        const loc = e.getUILocation();
+        if (this._dragging) {
+            this._dragging      = false;
+            this._touchStartPos = null;
+            this.onDragEnd?.(new Vec2(loc.x, loc.y));
+        } else {
+            this._touchStartPos = null;
+            this.onClick?.(this._cardValue);
+        }
+    }
+
+    private _onTouchCancel(_e: EventTouch): void {
+        if (this._dragging) {
+            this._dragging = false;
+            this.onDragEnd?.(new Vec2(this._lastUIPos.x, this._lastUIPos.y));
+        }
+        this._touchStartPos = null;
     }
 
     private _updateLift(): void {

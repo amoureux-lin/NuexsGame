@@ -19,7 +19,7 @@
 
 import {
     _decorator, Component, Node, Prefab, instantiate,
-    UITransform, Vec3, tween,
+    UITransform, Vec2, Vec3, tween,
 } from 'cc';
 import { HandCardState, ButtonStates, HandCardSnapshot } from '../../utils/HandCardState';
 
@@ -43,6 +43,18 @@ import { CardGroupView }                                 from './CardGroupView';
 import { CardNode, CARD_W, CARD_H, CARD_SPACING }         from './CardNode';
 
 const { ccclass, property } = _decorator;
+
+// ── 拖拽状态 ──────────────────────────────────────────────
+
+interface DragState {
+    cardValue:      number;
+    floatNode:      Node;
+    sourceKind:     'ungroup' | 'group';
+    sourceGroupId?: string;
+    hoverKind:      'ungroup' | 'group' | null;
+    hoverGroupId?:  string;
+    hoverIndex:     number;
+}
 
 // ── 布局常量 ──────────────────────────────────────────────
 
@@ -110,6 +122,11 @@ export class HandCardPanel extends Component {
     private _unsubscribe: (() => void) | null = null;
     /** 发牌后第一次 _doLayout 使用更长的重排时长，之后自动还原 */
     private _dealReorderDur: number = LAYOUT_DUR;
+
+    /** 拖拽状态（null = 无拖拽） */
+    private _drag: DragState | null = null;
+    /** 散牌区第一张牌在 _ungroupRoot 坐标系中的 X（_doLayout 中缓存，供预览逻辑使用） */
+    private _ungroupStartX = 0;
 
     // ── 生命周期 ──────────────────────────────────────────
 
@@ -336,6 +353,10 @@ export class HandCardPanel extends Component {
                 gv.update(g, (v) => this._createCardNode(v));
             }
             gv.setSelected(selectedIds.has(g.id));
+            // 绑定（或重绑）所有组内牌的拖拽回调
+            for (const cn of gv.cardNodes) {
+                this._bindCardDrag(cn, 'group', g.id);
+            }
         }
     }
 
@@ -360,6 +381,7 @@ export class HandCardPanel extends Component {
                 const n  = this._createCardNode(val);
                 const cn = n.getComponent(CardNode) ?? n.addComponent(CardNode);
                 cn.onClick = (v) => this._state.toggleUngroupCard(v);
+                this._bindCardDrag(cn, 'ungroup');
                 this._ungroupRoot.addChild(n);
                 cn.setFaceDown(false);       // 正常显示时翻到正面
                 this._ungroupNodes.set(val, cn);
@@ -397,6 +419,7 @@ export class HandCardPanel extends Component {
         if (ungroup.length > 0) {
             if (groups.length > 0) curX += GROUP_GAP;
             const startX = curX;
+            this._ungroupStartX = startX; // 供拖拽预览使用
 
             for (let i = 0; i < ungroup.length; i++) {
                 const val = ungroup[i];
@@ -519,5 +542,183 @@ export class HandCardPanel extends Component {
         if (tf) return tf.convertToNodeSpaceAR(worldPos);
         const self = this.node.getWorldPosition();
         return new Vec3(worldPos.x - self.x, worldPos.y - self.y, 0);
+    }
+
+    // ── 拖拽 ──────────────────────────────────────────────
+
+    private _bindCardDrag(cn: CardNode, kind: 'ungroup' | 'group', groupId?: string): void {
+        cn.onDragStart = (val, uiPos) => this._onCardDragStart(cn, val, uiPos, kind, groupId);
+        cn.onDragMove  = (uiPos)      => this._onCardDragMove(uiPos);
+        cn.onDragEnd   = (uiPos)      => this._onCardDragEnd(uiPos);
+    }
+
+    private _onCardDragStart(
+        cn: CardNode, cardValue: number, uiPos: Vec2,
+        sourceKind: 'ungroup' | 'group', sourceGroupId?: string,
+    ): void {
+        if (this._drag) return;
+
+        // 从映射中移除，避免 _applyPreviewLayout 重复处理
+        if (sourceKind === 'ungroup') {
+            this._ungroupNodes.delete(cardValue);
+        } else if (sourceKind === 'group' && sourceGroupId) {
+            this._groupViews.get(sourceGroupId)?.removeCard(cardValue);
+        }
+
+        // 将牌节点重挂到 panel 顶层（维持世界坐标）
+        const worldPos = cn.node.getWorldPosition();
+        this.node.addChild(cn.node);
+        cn.node.setWorldPosition(worldPos);
+        cn.node.setSiblingIndex(this.node.children.length - 1);
+
+        this._drag = {
+            cardValue,
+            floatNode:    cn.node,
+            sourceKind,
+            sourceGroupId,
+            hoverKind:    null,
+            hoverIndex:   0,
+        };
+
+        // 初始预览（仅关闭来源缺口，无悬停目标）
+        this._applyPreviewLayout(null, null, 0);
+    }
+
+    private _onCardDragMove(uiPos: Vec2): void {
+        const drag = this._drag;
+        if (!drag) return;
+
+        // 移动 floatNode 跟随手指
+        const local = this._worldToLocal(new Vec3(uiPos.x, uiPos.y, 0));
+        drag.floatNode.setPosition(local.x, local.y, 0);
+
+        // 检测悬停目标
+        const { kind, groupId, index } = this._findDropTarget(local.x);
+
+        if (kind !== drag.hoverKind || groupId !== drag.hoverGroupId || index !== drag.hoverIndex) {
+            drag.hoverKind    = kind;
+            drag.hoverGroupId = groupId;
+            drag.hoverIndex   = index;
+            this._applyPreviewLayout(kind, groupId ?? null, index);
+        }
+    }
+
+    private _onCardDragEnd(_uiPos: Vec2): void {
+        const drag = this._drag;
+        if (!drag) return;
+        this._drag = null;
+
+        // 销毁 floatNode（_onStateChange 会重建该牌的节点）
+        if (drag.floatNode.isValid) drag.floatNode.destroy();
+
+        // 提交移牌（触发 _onStateChange → 重建视图 → 调用 _doLayout）
+        const target = drag.hoverKind === 'group' && drag.hoverGroupId
+            ? drag.hoverGroupId
+            : 'ungroup';
+        this._state.moveCard(drag.cardValue, target, drag.hoverIndex);
+    }
+
+    /**
+     * 根据拖拽牌的 panelLocalX，找出最近的落点区域和插入位置。
+     * 以所有可见牌节点的中心 X 为基准，选最近的一张，再按左右决定插前/后。
+     */
+    private _findDropTarget(panelX: number): { kind: 'ungroup' | 'group'; groupId?: string; index: number } {
+        const drag      = this._drag!;
+        const cardValue = drag.cardValue;
+        const groupRX   = this._groupRoot.position.x;
+        const ungRX     = this._ungroupRoot.position.x;
+
+        interface Candidate {
+            kind:    'ungroup' | 'group';
+            groupId?: string;
+            panelX:  number;
+            index:   number;
+            total:   number;
+        }
+
+        const cands: Candidate[] = [];
+
+        // 散牌区各张牌
+        const ungroupVals = [...this._state.ungroup].filter(c => c !== cardValue);
+        for (let i = 0; i < ungroupVals.length; i++) {
+            cands.push({
+                kind:   'ungroup',
+                panelX: ungRX + this._ungroupStartX + i * CARD_SPACING,
+                index:  i,
+                total:  ungroupVals.length,
+            });
+        }
+
+        // 各组牌
+        for (const [id, gv] of this._groupViews) {
+            const gCards  = gv.groupData.cards.filter(c => c !== cardValue);
+            const gCenterX = gv.node.position.x + groupRX;
+            for (let i = 0; i < gCards.length; i++) {
+                const localX = (i - (gCards.length - 1) / 2) * CARD_SPACING;
+                cands.push({
+                    kind:    'group',
+                    groupId: id,
+                    panelX:  gCenterX + localX,
+                    index:   i,
+                    total:   gCards.length,
+                });
+            }
+        }
+
+        if (cands.length === 0) {
+            return { kind: 'ungroup', index: 0 };
+        }
+
+        // 最近的一张
+        let best    = cands[0];
+        let bestDist = Math.abs(panelX - best.panelX);
+        for (const c of cands) {
+            const d = Math.abs(panelX - c.panelX);
+            if (d < bestDist) { bestDist = d; best = c; }
+        }
+
+        // 在最近牌左侧 → 插前；右侧 → 插后
+        const insertIdx = panelX >= best.panelX
+            ? Math.min(best.index + 1, best.total)
+            : best.index;
+
+        return { kind: best.kind, groupId: best.groupId, index: insertIdx };
+    }
+
+    /**
+     * 实时预览：将散牌区和各组牌节点移到含空缺的位置（直接 setPosition，无 tween）。
+     * hoverKind=null 时仅关闭来源空缺，不打开目标空缺。
+     */
+    private _applyPreviewLayout(
+        hoverKind:    'ungroup' | 'group' | null,
+        hoverGroupId: string | null,
+        hoverIndex:   number,
+    ): void {
+        const drag      = this._drag!;
+        const cardValue = drag.cardValue;
+
+        // ── 散牌区 ──
+        const ungroupVals = [...this._state.ungroup].filter(c => c !== cardValue);
+        for (let i = 0; i < ungroupVals.length; i++) {
+            const cn = this._ungroupNodes.get(ungroupVals[i]);
+            if (!cn) continue;
+            const displayI = (hoverKind === 'ungroup' && i >= hoverIndex) ? i + 1 : i;
+            cn.node.setPosition(this._ungroupStartX + displayI * CARD_SPACING, cn.node.position.y, 0);
+        }
+
+        // ── 各组 ──
+        for (const [id, gv] of this._groupViews) {
+            const gCards = gv.groupData.cards.filter(c => c !== cardValue);
+            const isTarget = hoverKind === 'group' && hoverGroupId === id;
+            const total    = isTarget ? gCards.length + 1 : gCards.length;
+
+            for (let i = 0; i < gCards.length; i++) {
+                const cn = gv.cardNodes.find(c => c.cardValue === gCards[i]);
+                if (!cn) continue;
+                const displayI = (isTarget && i >= hoverIndex) ? i + 1 : i;
+                const targetX  = (displayI - (total - 1) / 2) * CARD_SPACING;
+                cn.node.setPosition(targetX, cn.node.position.y, 0);
+            }
+        }
     }
 }

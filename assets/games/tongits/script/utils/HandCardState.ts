@@ -261,6 +261,69 @@ export class HandCardState {
         return group;
     }
 
+    // ── 拖拽移牌 ──────────────────────────────────────────
+
+    /**
+     * 拖拽结束时提交：将 cardValue 从当前位置移动到 target 的 insertIndex 处。
+     * target = 'ungroup' 插入散牌区；否则为 groupId。
+     */
+    moveCard(cardValue: number, target: 'ungroup' | string, insertIndex: number): void {
+        let found = false;
+
+        // 从散牌区移除
+        const ui = this._ungroup.indexOf(cardValue);
+        if (ui >= 0) {
+            this._ungroup = this._ungroup.filter(c => c !== cardValue);
+            found = true;
+        }
+
+        // 从组中移除
+        if (!found) {
+            for (let i = 0; i < this._groups.length; i++) {
+                const g   = this._groups[i];
+                const idx = g.cards.indexOf(cardValue);
+                if (idx < 0) continue;
+                const newCards = g.cards.filter(c => c !== cardValue);
+                if (newCards.length === 0) {
+                    this._groups.splice(i, 1);
+                } else {
+                    this._groups[i] = {
+                        ...g,
+                        cards:  newCards,
+                        type:   judgeGroupType(newCards),
+                        isAuto: false,
+                    };
+                }
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) return;
+
+        // 插入目标位置
+        if (target === 'ungroup') {
+            const arr = [...this._ungroup];
+            arr.splice(Math.max(0, Math.min(insertIndex, arr.length)), 0, cardValue);
+            this._ungroup = arr;
+        } else {
+            const g = this._groups.find(x => x.id === target);
+            if (g) {
+                const arr = [...g.cards];
+                arr.splice(Math.max(0, Math.min(insertIndex, arr.length)), 0, cardValue);
+                g.cards  = arr;
+                g.type   = judgeGroupType(arr);
+                g.isAuto = false;
+            } else {
+                // 目标组已消失，退回散牌区
+                this._ungroup = [...this._ungroup, cardValue];
+            }
+        }
+
+        this._clearSelSilent();
+        this._notify();
+    }
+
     // ── 自动排列开关 ──────────────────────────────────────
 
     toggleAutoGroup(): void {
