@@ -21,7 +21,7 @@ export const CARD_H       = 110;
 /** 牌与牌之间的叠牌间距（px），散牌与分组统一使用 */
 export const CARD_SPACING = 64;
 
-const LIFT_Y        = 18;
+const LIFT_Y        = 30; //上移距离
 const LIFT_DURATION = 0.1;
 
 // ── 组件 ──────────────────────────────────────────────────
@@ -98,12 +98,13 @@ export class CardNode extends Component {
 
     get isHinted(): boolean { return this._hinted; }
 
-    /** 动画移动到目标 X 位置（布局重排时调用） */
+    /** 动画移动到目标 X 位置（布局重排时调用），同时保持正确的 lift Y */
     tweenToX(x: number, duration: number): void {
         this._moveTween?.stop();
-        const pos = this.node.position;
+        this._liftTween?.stop(); // 统一由此 tween 负责 Y，避免两个 tween 冲突
+        const y = (this._selected || this._hinted) ? LIFT_Y : 0;
         this._moveTween = tween(this.node)
-            .to(duration, { position: new Vec3(x, pos.y, pos.z) }, { easing: 'quadOut' })
+            .to(duration, { position: new Vec3(x, y, 0) }, { easing: 'quadOut' })
             .call(() => { this._moveTween = null; })
             .start();
     }
@@ -115,6 +116,8 @@ export class CardNode extends Component {
     }
 
     private _updateLift(): void {
+        // 如果 tweenToX 正在运行，它已包含正确的 Y，无需再单独 tween
+        if (this._moveTween) return;
         this._liftTween?.stop();
         const offsetY = (this._selected || this._hinted) ? LIFT_Y : 0;
         const pos     = this.node.position;

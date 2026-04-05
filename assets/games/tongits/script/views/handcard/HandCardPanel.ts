@@ -22,6 +22,21 @@ import {
     UITransform, Vec3, tween,
 } from 'cc';
 import { HandCardState, ButtonStates, HandCardSnapshot } from '../../utils/HandCardState';
+
+// ── 选中信息（对外统一出口） ───────────────────────────────
+
+export interface SelectionInfo {
+    /** 当前选中的散牌值列表 */
+    selectedCards:  readonly number[];
+    /** 当前选中的牌组数据列表 */
+    selectedGroups: readonly GroupData[];
+    /** 按钮可用状态（canDrop / canDump / canSapaw 等） */
+    buttons:        ButtonStates;
+}
+
+// 预留：上一家弃牌 → 可压牌候选组合切换
+// export type MeldCandidateInfo = { candidates: GroupData[][] };
+// onMeldCandidateChange: ((info: MeldCandidateInfo) => void) | null = null;
 import { autoGroup, GroupData }                           from '../../utils/GroupAlgorithm';
 import { SortMode }                                      from '../../utils/CardDef';
 import { CardGroupView }                                 from './CardGroupView';
@@ -75,8 +90,11 @@ export class HandCardPanel extends Component {
 
     // ── 对外回调 ──────────────────────────────────────────
 
-    /** 每次按钮状态变化时通知 ActionPanel */
-    onButtonStates: ((states: ButtonStates) => void) | null = null;
+    /**
+     * 选中状态变化时的统一出口（每次状态变化都触发）
+     * ActionPanel / TongitsView 通过此回调决定按钮显示
+     */
+    onSelectionChange: ((info: SelectionInfo) => void) | null = null;
 
     // ── 私有状态 ──────────────────────────────────────────
 
@@ -268,7 +286,25 @@ export class HandCardPanel extends Component {
         this._syncGroupViews(snap.groups, snap.selectedGroupIds);
         this._syncUngroupNodes(snap.ungroup, snap.selectedUngroupCards);
         this._doLayout(snap.groups, snap.ungroup);
-        this.onButtonStates?.(snap.buttonStates);
+        this._emitSelection(snap);
+    }
+
+    /** 构建 SelectionInfo 并触发回调，同时输出调试日志 */
+    private _emitSelection(snap: HandCardSnapshot): void {
+        const selectedCards  = [...snap.selectedUngroupCards];
+        const selectedGroups = snap.groups.filter(g => snap.selectedGroupIds.has(g.id));
+
+        console.log('[Selection]', {
+            cards:   selectedCards,
+            groups:  selectedGroups.map(g => ({ type: g.type, cards: g.cards })),
+            buttons: snap.buttonStates,
+        });
+
+        this.onSelectionChange?.({
+            selectedCards,
+            selectedGroups,
+            buttons: snap.buttonStates,
+        });
     }
 
     // ── 视图同步 ──────────────────────────────────────────

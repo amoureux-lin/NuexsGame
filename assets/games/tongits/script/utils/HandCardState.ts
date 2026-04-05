@@ -115,7 +115,12 @@ export class HandCardState {
 
         const totalSel = selGroupCardTotal + selCards.size;
 
-        const canGroup   = totalSel >= 2;
+        // 选中内容中有 VALID/SPECIAL 组时不允许再"组合"
+        const hasValidGroup = selGIds.size > 0 && [...selGIds].some(id => {
+            const g = this._groups.find(x => x.id === id);
+            return g?.type === GroupType.VALID || g?.type === GroupType.SPECIAL;
+        });
+        const canGroup   = totalSel >= 2 && !hasValidGroup;
         const canUngroup = selGIds.size === 1 && selCards.size === 0;
         const canDrop    = selGIds.size === 1 && selCards.size === 0
                         && (selGroupType === GroupType.VALID || selGroupType === GroupType.SPECIAL);
