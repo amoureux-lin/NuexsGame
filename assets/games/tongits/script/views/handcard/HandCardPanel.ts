@@ -62,6 +62,12 @@ interface DragState {
 const GROUP_GAP          = 48;
 /** 布局重排动画时长（正常交互） */
 const LAYOUT_DUR         = 0.14;
+/**
+ * 拖拽预览 Lerp 平滑系数（指数差值）
+ * factor = 1 - pow(LERP_SMOOTHING, dt)
+ * 值越小越柔和：0.0001 ≈ 0.25s 到位，0.00001 ≈ 0.4s 到位
+ */
+const LERP_SMOOTHING = 0.0001;
 /** 发牌后"按组重排"动画时长（更长，有仪式感） */
 const DEAL_REORDER_DUR   = 0.30;
 /** 发牌每张飞行时长 */
@@ -125,8 +131,13 @@ export class HandCardPanel extends Component {
 
     /** 拖拽状态（null = 无拖拽） */
     private _drag: DragState | null = null;
+    /** Lerp 预览目标：CardNode → 目标 X（在各自父容器坐标系中） */
+    private _previewTargets = new Map<CardNode, number>();
     /** 散牌区第一张牌在 _ungroupRoot 坐标系中的 X（_doLayout 中缓存，供预览逻辑使用） */
     private _ungroupStartX = 0;
+    /** 拖拽释放时 floatNode 的世界坐标（新节点起飞点），-1 表示无待处理 */
+    private _spawnCardValue  = -1;
+    private _spawnWorldPos3  = new Vec3();
 
     // ── 生命周期 ──────────────────────────────────────────
 
@@ -142,6 +153,22 @@ export class HandCardPanel extends Component {
     onDestroy(): void {
         this._unsubscribe?.();
         this.clear();
+    }
+
+    /**
+     * 拖拽预览 Lerp 驱动：每帧将各牌的当前 X 差值趋近目标 X。
+     * 仅在拖拽进行时运行，无拖拽时零开销。
+     */
+    update(dt: number): void {
+        if (!this._drag || this._previewTargets.size === 0) return;
+        // 指数差值系数：帧率无关
+        const factor = 1 - Math.pow(LERP_SMOOTHING, dt);
+        for (const [cn, targetX] of this._previewTargets) {
+            if (!cn.node.isValid) continue;
+            const pos  = cn.node.position;
+            const newX = pos.x + (targetX - pos.x) * factor;
+            cn.node.setPosition(newX, pos.y, 0);
+        }
     }
 
     // ── 公开 API（TongitsView 调用） ──────────────────────
@@ -383,6 +410,8 @@ export class HandCardPanel extends Component {
                 cn.onClick = (v) => this._state.toggleUngroupCard(v);
                 this._bindCardDrag(cn, 'ungroup');
                 this._ungroupRoot.addChild(n);
+                // 按数组顺序设置 sibling index，保证叠牌 Z 序正确
+                n.setSiblingIndex(ungroup.indexOf(val));
                 cn.setFaceDown(false);       // 正常显示时翻到正面
                 this._ungroupNodes.set(val, cn);
             }
@@ -396,14 +425,55 @@ export class HandCardPanel extends Component {
     /**
      * 计算并应用所有组 + UNGROUP 散牌的目标位置，使用 tween 平滑过渡。
      * 发牌后首次调用会使用 _dealReorderDur（更长），之后自动还原为 LAYOUT_DUR。
+     *
+     * 关键顺序：
+     *   1. 预算总宽 → 定位容器（setPosition 或 tween）
+     *   2. 应用拖拽释放起飞点（需在容器定位后，牌 tween 启动前）
+     *   3. 启动各组容器 tween + 散牌 tween
      */
     private _doLayout(groups: readonly GroupData[], ungroup: readonly number[]): void {
         const dur = this._dealReorderDur;
-        this._dealReorderDur = LAYOUT_DUR; // 一次性消费，之后还原
+        this._dealReorderDur = LAYOUT_DUR;
 
+        // ── 1. 预算总宽度 ─────────────────────────────────────
+        let totalW = 0;
+        for (const g of groups) {
+            const gv = this._groupViews.get(g.id);
+            if (!gv) continue;
+            totalW += gv.width + GROUP_GAP;
+        }
+        let ungroupStartX = totalW;
+        if (ungroup.length > 0) {
+            if (groups.length > 0) totalW += GROUP_GAP;
+            ungroupStartX = totalW;
+            totalW += (ungroup.length - 1) * CARD_SPACING + CARD_W;
+        }
+        this._ungroupStartX = ungroupStartX;
+
+        const targetX = -totalW / 2;
+
+        // ── 2. 容器定位（先于个体 tween，保证起飞点坐标转换正确）──
+        if (dur > LAYOUT_DUR) {
+            // 展开动画：容器从中心 tween 展开
+            tween(this._groupRoot)  .to(dur, { position: new Vec3(targetX, 0, 0) }, { easing: 'quadOut' }).start();
+            tween(this._ungroupRoot).to(dur, { position: new Vec3(targetX, 0, 0) }, { easing: 'quadOut' }).start();
+        } else {
+            this._groupRoot.setPosition(targetX, 0, 0);
+            this._ungroupRoot.setPosition(targetX, 0, 0);
+        }
+
+        // ── 3. 应用拖拽释放起飞点（仅普通 layout，仅散牌目标）──
+        if (this._spawnCardValue >= 0 && dur <= LAYOUT_DUR) {
+            const spawnCn = this._ungroupNodes.get(this._spawnCardValue);
+            if (spawnCn) {
+                // 容器已就位，setWorldPosition 可正确转换到容器本地坐标
+                spawnCn.node.setWorldPosition(this._spawnWorldPos3);
+            }
+            this._spawnCardValue = -1;
+        }
+
+        // ── 4. 各组容器 tween ─────────────────────────────────
         let curX = 0;
-
-        // 各组从左到右排列
         for (const g of groups) {
             const gv = this._groupViews.get(g.id);
             if (!gv) continue;
@@ -415,34 +485,11 @@ export class HandCardPanel extends Component {
             curX += halfW + GROUP_GAP;
         }
 
-        // UNGROUP 散牌
-        if (ungroup.length > 0) {
-            if (groups.length > 0) curX += GROUP_GAP;
-            const startX = curX;
-            this._ungroupStartX = startX; // 供拖拽预览使用
-
-            for (let i = 0; i < ungroup.length; i++) {
-                const val = ungroup[i];
-                const cn  = this._ungroupNodes.get(val);
-                if (!cn) continue;
-                cn.tweenToX(startX + i * CARD_SPACING, dur);
-            }
-
-            // 更新 curX 到 UNGROUP 区末尾（最后一张牌右边缘）
-            curX = startX + (ungroup.length - 1) * CARD_SPACING + CARD_W;
-        }
-
-        // 整体以 panel 中心对齐
-        // 展开模式（dur > LAYOUT_DUR）：容器也做 tween，
-        // 配合节点从 (0,0) 出发，实现视觉上"从中心向两侧展开"的效果
-        const totalContentW = curX;
-        const targetX = -totalContentW / 2;
-        if (dur > LAYOUT_DUR) {
-            tween(this._groupRoot)  .to(dur, { position: new Vec3(targetX, 0, 0) }, { easing: 'quadOut' }).start();
-            tween(this._ungroupRoot).to(dur, { position: new Vec3(targetX, 0, 0) }, { easing: 'quadOut' }).start();
-        } else {
-            this._groupRoot.setPosition(targetX, 0, 0);
-            this._ungroupRoot.setPosition(targetX, 0, 0);
+        // ── 5. 散牌 tween ─────────────────────────────────────
+        for (let i = 0; i < ungroup.length; i++) {
+            const cn = this._ungroupNodes.get(ungroup[i]);
+            if (!cn) continue;
+            cn.tweenToX(ungroupStartX + i * CARD_SPACING, dur);
         }
     }
 
@@ -608,14 +655,22 @@ export class HandCardPanel extends Component {
         if (!drag) return;
         this._drag = null;
 
-        // 销毁 floatNode（_onStateChange 会重建该牌的节点）
-        if (drag.floatNode.isValid) drag.floatNode.destroy();
+        // 记录释放点（世界坐标），供 _doLayout 设置新节点起飞位置
+        drag.floatNode.getWorldPosition(this._spawnWorldPos3);
+        this._spawnCardValue = drag.cardValue;
 
-        // 提交移牌（触发 _onStateChange → 重建视图 → 调用 _doLayout）
         const target = drag.hoverKind === 'group' && drag.hoverGroupId
             ? drag.hoverGroupId
             : 'ungroup';
+
+        // 先提交状态（_onStateChange 同步创建新节点并设好起飞点）
         this._state.moveCard(drag.cardValue, target, drag.hoverIndex);
+
+        // 清空 Lerp 目标表，停止 update() 差值驱动
+        this._previewTargets.clear();
+
+        // 再销毁 floatNode：新节点已就位，不会出现空白帧
+        if (drag.floatNode.isValid) drag.floatNode.destroy();
     }
 
     /**
@@ -686,8 +741,9 @@ export class HandCardPanel extends Component {
     }
 
     /**
-     * 实时预览：将散牌区和各组牌节点移到含空缺的位置（直接 setPosition，无 tween）。
-     * hoverKind=null 时仅关闭来源空缺，不打开目标空缺。
+     * 更新 Lerp 预览目标表：重算所有散牌和组内牌的目标 X，
+     * 实际位移由 update() 每帧驱动，天然平滑、无 tween 打断问题。
+     * hoverKind=null 时仅收拢来源空缺，不打开目标空缺。
      */
     private _applyPreviewLayout(
         hoverKind:    'ungroup' | 'group' | null,
@@ -697,18 +753,20 @@ export class HandCardPanel extends Component {
         const drag      = this._drag!;
         const cardValue = drag.cardValue;
 
+        this._previewTargets.clear();
+
         // ── 散牌区 ──
         const ungroupVals = [...this._state.ungroup].filter(c => c !== cardValue);
         for (let i = 0; i < ungroupVals.length; i++) {
             const cn = this._ungroupNodes.get(ungroupVals[i]);
             if (!cn) continue;
             const displayI = (hoverKind === 'ungroup' && i >= hoverIndex) ? i + 1 : i;
-            cn.node.setPosition(this._ungroupStartX + displayI * CARD_SPACING, cn.node.position.y, 0);
+            this._previewTargets.set(cn, this._ungroupStartX + displayI * CARD_SPACING);
         }
 
         // ── 各组 ──
         for (const [id, gv] of this._groupViews) {
-            const gCards = gv.groupData.cards.filter(c => c !== cardValue);
+            const gCards   = gv.groupData.cards.filter(c => c !== cardValue);
             const isTarget = hoverKind === 'group' && hoverGroupId === id;
             const total    = isTarget ? gCards.length + 1 : gCards.length;
 
@@ -716,8 +774,7 @@ export class HandCardPanel extends Component {
                 const cn = gv.cardNodes.find(c => c.cardValue === gCards[i]);
                 if (!cn) continue;
                 const displayI = (isTarget && i >= hoverIndex) ? i + 1 : i;
-                const targetX  = (displayI - (total - 1) / 2) * CARD_SPACING;
-                cn.node.setPosition(targetX, cn.node.position.y, 0);
+                this._previewTargets.set(cn, (displayI - (total - 1) / 2) * CARD_SPACING);
             }
         }
     }
