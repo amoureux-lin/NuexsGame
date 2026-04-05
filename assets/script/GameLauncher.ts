@@ -1,5 +1,5 @@
 import { _decorator, Component, Node, sys } from 'cc';
-import { bootstrapNexus, getCurrentSearch, getQueryParams, Nexus } from 'db://nexus-framework/index';
+import { bootstrapNexus, getQueryParams, Nexus } from 'db://nexus-framework/index';
 import type { NexusConfig } from 'db://nexus-framework/index';
 import { bundles } from './config/BundleConfig';
 import { CommonUI, UIPanelConfig } from './config/UIConfig';
@@ -60,6 +60,14 @@ export class GameLauncher extends Component {
         await Nexus.init(config);
         // 注册公共 Proto 消息映射，供 WS 收发时 getDecoder/getEncoder 查表
         Nexus.proto.registerCommon(COMMON_MSG_REGISTRY);
+
+        // ?mock=true：纯本地 mock 模式，跳过 WS 连接
+        if (getQueryParams()['mock'] === 'true') {
+            Nexus.data.set('mock_mode', true);
+            console.log('[GameLauncher] mock mode — skipping ConnectManager');
+            return;
+        }
+
         // 框架初始化完成后，启动网络连接
         ConnectManager.init();
     }

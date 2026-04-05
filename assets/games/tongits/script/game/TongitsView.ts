@@ -4,6 +4,7 @@ import { TongitsEvents } from '../config/TongitsEvents';
 import { PlayerSeatManager } from '../views/player/PlayerSeatManager';
 import { WaitingPanel } from '../views/panel/WaitingPanel';
 import { ActionPanel } from '../views/panel/ActionPanel';
+import { HandCardPanel } from '../views/handcard/HandCardPanel';
 import type {
     TongitsPlayerInfo,
     GameInfo,
@@ -22,6 +23,7 @@ import type {
     JoinRoomRes,
     GameResultDetailsRes,
 } from '../proto/tongits';
+import {GameEvents} from "db://assets/script/config/GameEvents";
 
 const { ccclass, property } = _decorator;
 
@@ -51,6 +53,10 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     @property({ type: ActionPanel, tooltip: '游戏进行中面板' })
     actionPanel: ActionPanel = null!;
 
+    /** 本地玩家手牌区（底部），仅自己可见发牌动画 */
+    @property({ type: HandCardPanel, tooltip: '本地玩家手牌区组件' })
+    handCardPanel: HandCardPanel = null!;
+
     // ── 缓存本地状态 ─────────────────────────────────────
 
     private _selfUserId: number = 0;
@@ -77,6 +83,11 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         this.listen<GameResultDetailsRes>(TongitsEvents.RESULT_DETAILS, (d) => this.onResultDetails(d));
     }
 
+
+    protected openMock(){
+        this.dispatch(TongitsEvents.CMD_OPEN_MOCK);
+    }
+
     // ── Model → View 事件回调 ─────────────────────────────
 
     protected onRoomJoined(data: JoinRoomRes): void {
@@ -91,6 +102,11 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         if (this.waitingPanel) this.waitingPanel.node.active = true;
         if (this.actionPanel) this.actionPanel.node.active = false;
         this.waitingPanel?.refresh(data.self ?? null, this._isLocalOwner);
+        // 重连/中途加入：若游戏已在进行则立即显示自己手牌（无动画）
+        if (this._gameInfo) {
+            const selfPlayer = this._players.find(p => p.playerInfo?.userId === this._selfUserId);
+            this.handCardPanel?.showCards(selfPlayer?.handCards ?? []);
+        }
     }
 
     protected onPlayersUpdated(players: TongitsPlayerInfo[]): void {
@@ -124,6 +140,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     }
 
     protected onGameStart(data: GameStartBroadcast): void {
+        console.log('onGameStart', data);
         this._isGameStarted = true;
         this.seatManager?.setContext(this._isLocalOwner, true);
         if (data.players) {
@@ -133,6 +150,9 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         if (this.waitingPanel) this.waitingPanel.node.active = false;
         if (this.actionPanel) this.actionPanel.node.active = true;
         this.actionPanel?.hideAll();
+        // 发牌动画（仅自己可见）
+        const selfPlayer = this._players.find(p => p.playerInfo?.userId === this._selfUserId);
+        this.handCardPanel?.dealCards(selfPlayer?.handCards ?? []);
     }
 
     protected onActionChange(data: ActionChangeBroadcast): void {
@@ -145,6 +165,10 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
 
     protected onDraw(data: DrawCardBroadcast): void {
         this._syncPlayerField(data.playerId, { handCardCount: data.handCardCount });
+        // 自己抽牌：drawnCard 有值时追加到手牌区
+        if (data.userId === this._selfUserId && data.drawnCard) {
+            this.handCardPanel?.addCard(data.drawnCard);
+        }
     }
 
     protected onMeld(data: MeldCardBroadcast): void {
@@ -157,6 +181,10 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
 
     protected onDiscard(data: DiscardCardBroadcast): void {
         this._syncPlayerField(data.playerId, { handCardCount: data.handCardCount });
+        // 自己出牌：从手牌区移除对应节点
+        if (data.userId === this._selfUserId && data.discardedCard) {
+            this.handCardPanel?.removeCard(data.discardedCard);
+        }
     }
 
     protected onTake(data: TakeCardBroadcast): void {
@@ -194,6 +222,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         if (this.actionPanel) this.actionPanel.node.active = false;
         const self = this._players.find(p => p.playerInfo?.userId === this._selfUserId) ?? null;
         this.waitingPanel?.refresh(self, this._isLocalOwner);
+        this.handCardPanel?.clear();
     }
 
     protected onResultDetails(_data: GameResultDetailsRes): void {

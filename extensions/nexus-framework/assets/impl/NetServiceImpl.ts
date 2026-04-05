@@ -75,6 +75,10 @@ export class NetServiceImpl extends INetService {
         this._ws.cancelAllWsRequests(reason);
     }
 
+    simulateWsReceive(msgType: string | number, data: unknown): void {
+        this._ws.simulateReceive(msgType, data);
+    }
+
     async onDestroy(): Promise<void> {
         await this._http.onDestroy();
         await this._ws.onDestroy();

@@ -6,7 +6,8 @@ import { TongitsController } from './game/TongitsController';
 import { TongitsModel } from './game/TongitsModel';
 import { TONGITS_MSG_REGISTRY } from './proto/msg_registry_tongits';
 import { MessageType } from './proto/message_type';
-import type { JoinRoomRes } from './proto/tongits';
+import type { JoinRoomRes, TongitsPlayerInfo } from './proto/tongits';
+import type { PlayerInfo } from 'db://assets/script/proto/game_common_room';
 
 const { ccclass } = _decorator;
 
@@ -58,6 +59,40 @@ export class TongitsEntry extends BaseGameEntry {
             console.error('[TongitsEntry] joinRoom failed:', err);
             throw err;
         }
+    }
+
+    protected async mockJoinRoom(): Promise<void> {
+        const SELF_ID = 1001, P2_ID = 1002, P3_ID = 1003;
+
+        const mkPlayer = (userId: number, post = 0, seat = 0): PlayerInfo => ({
+            userId, nickname: `Player_${userId}`, avatar: '',
+            coin: 100000, seat, role: 2, post, state: 1,
+            coinChanged: 0, micAllowStatus: 0, micOn: false,
+            nextMicRequestTime: 0, micRequestExpiredTime: 0, waitReadyExpiredTime: 0,
+        });
+
+        const mkTongitsPlayer = (userId: number, isDealer = false, post = 0, seat = 0): TongitsPlayerInfo => ({
+            playerInfo: mkPlayer(userId, post, seat),
+            handCardCount: 0, isDealer,
+            displayedMelds: [], handCards: [],
+            isFight: false, countdown: 25,
+            changeStatus: 1, status: 1, isWin: false, cardPoint: 0,
+        });
+
+        const res: JoinRoomRes = {
+            roomInfo: { roomId: 9999, roomName: 'Mock Room', roomStatus: 1, maxSeat: 3 },
+            players: [
+                mkTongitsPlayer(SELF_ID, false, 0, 1),
+                mkTongitsPlayer(P2_ID,   false, 0, 2),
+                mkTongitsPlayer(P3_ID,   false, 0, 3),
+            ],
+            watchers: [], playersCount: 3, speakers: [],
+            self: mkTongitsPlayer(SELF_ID, false, 1, 1),
+            gameInfo: undefined,
+        };
+
+        this._model!.joinRoom(res);
+        console.log('[TongitsEntry] mock join room complete');
     }
 
     protected async onGameExit(): Promise<void> {

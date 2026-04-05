@@ -11,6 +11,9 @@ import type {
     ChallengeReq,
     GameResultDetailsRes,
 } from '../proto/tongits';
+import {SlotGameEvents} from "db://assets/games/slotGame/script/config/SlotGameEvents";
+import {CommonUI} from "db://assets/script/config/UIConfig";
+import {TongitsUI} from "db://assets/games/tongits/script/config/TongitsUIConfig";
 
 /**
  * Tongits Controller：
@@ -42,6 +45,14 @@ export class TongitsController extends BaseGameController {
         this.handle(TongitsEvents.CMD_START_GAME, () => this.onStartGame());
         this.handle(TongitsEvents.CMD_TONGITS_CLICK, () => this.onTongitsClick());
         this.handle(TongitsEvents.CMD_RESULT_DETAILS, () => this.onResultDetails());
+
+        this.handle(TongitsEvents.CMD_OPEN_MOCK, () => this.onOpenMock());
+    }
+
+
+    protected async onOpenMock(): Promise<void>{
+        console.log("Starting Tongits Controller");
+        await  Nexus.ui.show(TongitsUI.MOCK_VIEW);
     }
 
     // ── Tongits 游戏操作 ──────────────────────────────────

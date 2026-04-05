@@ -274,6 +274,11 @@ export class WsServiceImpl extends ServiceBase {
 
     // ── 分发 ──────────────────────────────────────────────
 
+    /** 模拟收到服务端消息，仅供 MockView 测试使用 */
+    simulateReceive(cmd: string | number, data: unknown): void {
+        this.dispatch(cmd, data);
+    }
+
     private dispatch(cmd: string | number, msg: unknown): void {
         const handlers = this._wsHandlers.get(cmd);
         if (!handlers) return;

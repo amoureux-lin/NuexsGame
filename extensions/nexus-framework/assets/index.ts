@@ -21,4 +21,6 @@ export * from './patterns/ecs/ECSComponent';
 export * from './patterns/ecs/ECSSystem';
 export * from './patterns/ecs/Entity';
 export * from './patterns/ecs/World';
+export * from './patterns/ActionQueue';
+export * from './patterns/FSM';
 export * from './utils';

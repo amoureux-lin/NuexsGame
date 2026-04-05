@@ -50,6 +50,8 @@ export class UIServiceImpl extends IUIService {
     private readonly _pendingHide   = new Set<string>();
     /** 模态栈：记录带遮罩面板的打开顺序，用于刷新遮罩可见性 */
     private readonly _modalStack: string[] = [];
+    /** 导航栈：记录 showWithStack 推入的面板顺序，用于 back() 返回上一层 */
+    private readonly _navStack: string[] = [];
 
     async onBoot(): Promise<void> {
         Nexus.on<{ id: string; params?: unknown; layer?: UILayer }>(
@@ -256,6 +258,30 @@ export class UIServiceImpl extends IUIService {
         this._removeModal(name);
     }
 
+    // ── 导航栈 ───────────────────────────────────────────
+
+    async showWithStack(name: string, params?: unknown, layer?: UILayer): Promise<Node> {
+        this._navStack.push(name);
+        return this.show(name, params, layer);
+    }
+
+    async back(): Promise<void> {
+        if (this._navStack.length === 0) return;
+        const current = this._navStack.pop()!;
+        await this.hide(current);
+        // 重新激活上一层（如果有）
+        const prev = this._navStack[this._navStack.length - 1];
+        if (prev) await this.show(prev);
+    }
+
+    async clearStack(): Promise<void> {
+        const stack = [...this._navStack];
+        this._navStack.length = 0;
+        for (const name of stack) {
+            await this.hide(name);
+        }
+    }
+
     showLoading(text = ''): void {
         if (!this._loadingPanelName) {
             console.warn('[Nexus] showLoading: 请先调用 setLoadingPanel(name) 指定 Loading 面板');
@@ -280,6 +306,7 @@ export class UIServiceImpl extends IUIService {
             this._panels.delete(name);
         }
         this._modalStack.length = 0;
+        this._navStack.length = 0;
     }
 
     async onDestroy(): Promise<void> {
@@ -299,6 +326,7 @@ export class UIServiceImpl extends IUIService {
             this._maskPrefab = null;
         }
         this._modalStack.length = 0;
+        this._navStack.length = 0;
         this._root = null;
         Nexus.offTarget(this);
     }

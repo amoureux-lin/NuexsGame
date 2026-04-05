@@ -88,12 +88,20 @@ export abstract class BaseGameEntry extends NexusBaseEntry {
         // runScene 完成后框架会隐藏 Entry 节点（含 loadingRoot），重新激活保持进度条可见
         this.node.active = true;
 
-        // 4. 等待 WS 连接 60-80%
-        await this.waitWsConnected();
+        const isMock = Nexus.data.get<boolean>('mock_mode') ?? false;
+
+        // 4. 等待 WS 连接 60-80%（mock 模式跳过）
+        if (!isMock) {
+            await this.waitWsConnected();
+        }
         this.setProgress(PROGRESS_CONNECT_END, '加入房间...');
 
-        // 5. 进房 80-100%
-        await this.joinRoom(params);
+        // 5. 进房 80-100%（mock 模式使用本地数据）
+        if (isMock) {
+            await this.mockJoinRoom(params);
+        } else {
+            await this.joinRoom(params);
+        }
         this.setProgress(PROGRESS_JOIN_END, '进入游戏...');
 
         // 6. 等进度条动画跑满 → 隐藏 Entry 节点 → 清理
@@ -136,6 +144,13 @@ export abstract class BaseGameEntry extends NexusBaseEntry {
      * 默认空实现，无进房需求时可不覆写。
      */
     protected async joinRoom(_params?: Record<string, unknown>): Promise<void> {}
+
+    /**
+     * mock 模式下的进房（?mock=true）。
+     * 子类覆写以注入本地 mock 数据，跳过所有网络请求。
+     * 默认空实现。
+     */
+    protected async mockJoinRoom(_params?: Record<string, unknown>): Promise<void> {}
 
     /**
      * 游戏退出清理：销毁 MVC、反注册面板等。

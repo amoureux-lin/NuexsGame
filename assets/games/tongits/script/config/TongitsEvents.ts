@@ -4,6 +4,7 @@
  *   View -> Controller（用户命令）用 CMD_ 前缀
  */
 export const TongitsEvents = {
+    CMD_OPEN_MOCK:"tongits-open-mock",
     // ---------- Model -> View（服务端广播） ----------
     /** 游戏开始 */
     GAME_START: 'tongits:gameStart',

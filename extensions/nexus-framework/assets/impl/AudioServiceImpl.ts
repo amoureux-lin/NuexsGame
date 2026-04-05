@@ -77,6 +77,35 @@ export class AudioServiceImpl extends IAudioService {
         this._musicSource?.stop();
     }
 
+    /** 淡出当前 BGM 再淡入新 BGM。 */
+    async playMusicFade(path: string, fadeDuration = 0.5, loop = true): Promise<void> {
+        if (!this._musicEnabled || !this._musicSource) return;
+        const clip = await this.loadClip(path);
+        if (!clip) return;
+        const src = this._musicSource;
+        // 淡出旧音乐
+        if (src.playing) {
+            await this._fadeVolume(src, src.volume, 0, fadeDuration * 1000);
+            src.stop();
+        }
+        // 淡入新音乐
+        src.clip   = clip;
+        src.loop   = loop;
+        src.volume = 0;
+        src.play();
+        await this._fadeVolume(src, 0, this._musicVolume, fadeDuration * 1000);
+    }
+
+    /** 淡出并停止当前背景音乐。 */
+    async stopMusicFade(fadeDuration = 0.5): Promise<void> {
+        const src = this._musicSource;
+        if (!src?.playing) return;
+        const target = this._musicVolume;
+        await this._fadeVolume(src, src.volume, 0, fadeDuration * 1000);
+        src.stop();
+        src.volume = target; // 恢复音量，避免影响下次播放
+    }
+
     /** 播放音效，自动从当前 bundle 查找，失败 fallback 到 common。 */
     async playSfx(path: string): Promise<void> {
         if (!this._sfxEnabled) return;
@@ -247,5 +276,25 @@ export class AudioServiceImpl extends IAudioService {
     /** 将数值限制在 0 到 1 之间。 */
     private clamp01(v: number): number {
         return Math.min(1, Math.max(0, v));
+    }
+
+    /** 在 durationMs 内将 AudioSource 的 volume 从 from 线性过渡到 to。 */
+    private _fadeVolume(src: AudioSource, from: number, to: number, durationMs: number): Promise<void> {
+        return new Promise<void>((resolve) => {
+            const STEPS    = 20;
+            const stepMs   = durationMs / STEPS;
+            const stepDelta = (to - from) / STEPS;
+            src.volume = from;
+            let step = 0;
+            const timer = setInterval(() => {
+                step++;
+                src.volume = this.clamp01(from + stepDelta * step);
+                if (step >= STEPS) {
+                    clearInterval(timer);
+                    src.volume = to;
+                    resolve();
+                }
+            }, stepMs);
+        });
     }
 }

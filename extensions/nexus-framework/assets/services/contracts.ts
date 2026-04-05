@@ -230,6 +230,19 @@ export abstract class IUIService extends ServiceBase {
      * mask: true 的面板 show 时会加载此 prefab 作为遮罩。
      */
     abstract setMaskPanel(name: string): void;
+
+    /**
+     * 显示面板并将其名称推入导航栈。
+     * 适用于多层嵌套的面板流程（如：主界面 → 背包 → 物品详情）。
+     */
+    abstract showWithStack(name: string, params?: unknown, layer?: UILayer): Promise<Node>;
+    /**
+     * 关闭栈顶面板，并将上一个面板重新显示。
+     * 若栈为空则无操作。
+     */
+    abstract back(): Promise<void>;
+    /** 清空导航栈并关闭所有栈内面板。 */
+    abstract clearStack(): Promise<void>;
 }
 
 export abstract class INetService extends ServiceBase {
@@ -262,6 +275,11 @@ export abstract class INetService extends ServiceBase {
     abstract cancelAllHttpRequests(): void;
     /** 取消所有等待响应的 WS 请求（reject pending promises）。 */
     abstract cancelAllWsRequests(reason?: string): void;
+    /**
+     * 模拟收到一条 WS 服务端消息，直接走 dispatch 流程。
+     * 仅供开发测试使用（MockView）。
+     */
+    simulateWsReceive?(msgType: string | number, data: unknown): void;
 }
 
 export abstract class IAudioService extends ServiceBase {
@@ -293,6 +311,18 @@ export abstract class IAudioService extends ServiceBase {
     abstract isSfxEnabled(): boolean;
     /** 背景音乐是否正在播放。 */
     abstract isMusicPlaying(): boolean;
+    /**
+     * 淡出当前 BGM 再淡入新 BGM（无缝切换）。
+     * @param path 音频资源路径
+     * @param fadeDuration 淡出+淡入各自的时长（秒），默认 0.5
+     * @param loop 是否循环，默认 true
+     */
+    abstract playMusicFade(path: string, fadeDuration?: number, loop?: boolean): Promise<void>;
+    /**
+     * 淡出并停止当前背景音乐。
+     * @param fadeDuration 淡出时长（秒），默认 0.5
+     */
+    abstract stopMusicFade(fadeDuration?: number): Promise<void>;
     /** 暂停所有音频。 */
     abstract pauseAll(): void;
     /** 恢复所有音频。 */
