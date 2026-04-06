@@ -709,12 +709,19 @@ export class HandCardPanel extends Component {
     /**
      * 根据拖拽牌的 panelLocalX，找出落点区域和插入位置。
      *
-     * 第一步：区段归属（组间中点分区）
-     *   将所有组和散牌区按中心 X 排成有序区段，相邻区段的中点为分界线。
-     *   手指 X 落在哪个区段，就认定为那个目标——不会因边界附近某张牌更近而跳组。
+     * 核心原则：全程使用"稳定参考中心"（_origGroupLocalX + sourceDelta），
+     * 不依赖 lerp 中的 gv.node.position.x，避免区段边界抖动和插位来回翻转。
      *
-     * 第二步：组内插位（就近牌左右判断）
-     *   确定目标区段后，再在该区段内找最近的牌，按左/右决定插前还是插后。
+     *   稳定中心 = 来源组收缩后的中心（delta 公式保证非拖拽牌绝对坐标不变），
+     *             非来源组保持原始中心。
+     *   目标组的 targetDelta 不计入——其均值为 0，纳入反而引入循环依赖。
+     *
+     * 第一步：区段归属（中点分区）
+     *   以各组稳定中心作为区段代表，相邻中点为分界线。
+     *
+     * 第二步：组内插位
+     *   以稳定参考中心 + 原始 m 张布局计算各牌参考位置，找插入边界。
+     *   （对边缘插入完全准确；中间插入误差 ≤ CARD_SPACING/2，视觉可接受）
      */
     private _findDropTarget(panelX: number): { kind: 'ungroup' | 'group'; groupId?: string; index: number } {
         const drag      = this._drag!;
@@ -722,44 +729,48 @@ export class HandCardPanel extends Component {
         const groupRX   = this._groupRoot.position.x;
         const ungRX     = this._ungroupRoot.position.x;
 
-        // ── 第一步：构建区段列表并按中心 X 排序 ─────────────────────
+        // ── 辅助：计算某组的稳定参考中心（panel 坐标）────────────────
+
+        const stableCenter = (id: string, gv: import('./CardGroupView').CardGroupView): number => {
+            const origX = this._origGroupLocalX.get(id) ?? gv.node.position.x;
+            let delta = 0;
+            if (drag.sourceGroupId === id) {
+                const n = gv.groupData.cards.length; // 含被拖拽牌的原始总数
+                if (n > 1) {
+                    delta -= ((drag.sourceIndex - (n - 1) / 2) / (n - 1)) * CARD_SPACING;
+                }
+            }
+            return origX + delta + groupRX;
+        };
+
+        // ── 第一步：构建区段列表并按稳定中心排序 ────────────────────
 
         interface Zone {
-            kind:     'ungroup' | 'group';
-            groupId?: string;
-            centerX:  number; // 绝对 panel X
+            kind:      'ungroup' | 'group';
+            groupId?:  string;
+            refCenter: number; // 稳定中心 X（panel 坐标，不受 lerp 影响）
         }
 
         const zones: Zone[] = [];
 
         for (const [id, gv] of this._groupViews) {
-            zones.push({
-                kind:    'group',
-                groupId: id,
-                centerX: gv.node.position.x + groupRX,
-            });
+            zones.push({ kind: 'group', groupId: id, refCenter: stableCenter(id, gv) });
         }
 
         const ungroupVals = [...this._state.ungroup].filter(c => c !== cardValue);
-        if (ungroupVals.length > 0) {
-            // 散牌区中心 = 第一张到最后一张的中点
-            const ungCenterX = ungRX + this._ungroupStartX + (ungroupVals.length - 1) / 2 * CARD_SPACING;
-            zones.push({ kind: 'ungroup', centerX: ungCenterX });
-        } else {
-            // 散牌区为空时仍作为有效落点（放在最右侧）
-            zones.push({ kind: 'ungroup', centerX: ungRX + this._ungroupStartX });
-        }
+        const ungRefCenter = ungroupVals.length > 0
+            ? ungRX + this._ungroupStartX + (ungroupVals.length - 1) / 2 * CARD_SPACING
+            : ungRX + this._ungroupStartX;
+        zones.push({ kind: 'ungroup', refCenter: ungRefCenter });
 
-        zones.sort((a, b) => a.centerX - b.centerX);
+        zones.sort((a, b) => a.refCenter - b.refCenter);
 
-        if (zones.length === 0) {
-            return { kind: 'ungroup', index: 0 };
-        }
+        if (zones.length === 0) return { kind: 'ungroup', index: 0 };
 
-        // 按区段中点分界确定目标区段
+        // 中点分界确定目标区段
         let zone = zones[0];
         for (let i = 0; i < zones.length - 1; i++) {
-            const midX = (zones[i].centerX + zones[i + 1].centerX) / 2;
+            const midX = (zones[i].refCenter + zones[i + 1].refCenter) / 2;
             if (panelX < midX) { zone = zones[i]; break; }
             zone = zones[i + 1];
         }
@@ -774,14 +785,14 @@ export class HandCardPanel extends Component {
             return { kind: 'ungroup', index: ungroupVals.length };
         }
 
-        // group 区段
-        const id       = zone.groupId!;
-        const gv       = this._groupViews.get(id)!;
-        const gCenterX = gv.node.position.x + groupRX;
-        const gCards   = gv.groupData.cards.filter(c => c !== cardValue);
+        // group 区段：以稳定参考中心 + 原始 m 张布局计算参考插位边界
+        const id     = zone.groupId!;
+        const gv     = this._groupViews.get(id)!;
+        const gCards = gv.groupData.cards.filter(c => c !== cardValue);
+        const refCX  = zone.refCenter; // 稳定参考中心，不受 lerp 影响
 
         for (let i = 0; i < gCards.length; i++) {
-            const cardX = gCenterX + (i - (gCards.length - 1) / 2) * CARD_SPACING;
+            const cardX = refCX + (i - (gCards.length - 1) / 2) * CARD_SPACING;
             if (panelX < cardX + CARD_SPACING / 2) return { kind: 'group', groupId: id, index: i };
         }
         return { kind: 'group', groupId: id, index: gCards.length };
