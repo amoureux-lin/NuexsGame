@@ -65,11 +65,11 @@ const GROUP_GAP          = 48;
 /** 布局重排动画时长（正常交互） */
 const LAYOUT_DUR         = 0.14;
 /**
- * 拖拽预览 Lerp 平滑系数（指数差值）
- * factor = 1 - pow(LERP_SMOOTHING, dt)
- * 值越小越柔和：0.0001 ≈ 0.25s 到位，0.00001 ≈ 0.4s 到位
+ * 拖拽预览线性 Lerp 速度因子（与原版 ContainerComponent 保持一致）
+ * factor = min(1, LERP_SPEED * dt)
+ * 60fps 下约 0.33/帧，~10 帧（0.17s）基本到位
  */
-const LERP_SMOOTHING = 0.00001;
+const LERP_SPEED = 20;
 /** 发牌后"按组重排"动画时长（更长，有仪式感） */
 const DEAL_REORDER_DUR   = 0.30;
 /** 发牌每张飞行时长 */
@@ -139,8 +139,14 @@ export class HandCardPanel extends Component {
     private _containerTargets = new Map<Node, number>();
     /** 拖拽开始时各组容器的 local X（_groupRoot 坐标系），用于计算 delta */
     private _origGroupLocalX  = new Map<string, number>();
-    /** 散牌区第一张牌在 _ungroupRoot 坐标系中的 X（_doLayout 中缓存，供预览逻辑使用） */
+    /** 各组容器的目标 local X（由 _applyPreviewLayout 同步，供 _findDropTarget 使用） */
+    private _groupContainerTargetX = new Map<string, number>();
+    /** 散牌区第一张牌在 _ungroupRoot 坐标系中的 X（_doLayout 中缓存） */
     private _ungroupStartX = 0;
+    /** 拖拽预览期间的有效散牌起始 X（由 _applyPreviewLayout 实时计算，供检测使用） */
+    private _previewUngroupStartX = 0;
+    /** 拖拽预览：组容器目标宽度（gv.node → 目标宽度，驱动组的视觉展宽/收缩） */
+    private _slotTargetWidths = new Map<Node, number>();
     /** 拖拽释放时 floatNode 的世界坐标（新节点起飞点），-1 表示无待处理 */
     private _spawnCardValue  = -1;
     private _spawnWorldPos3  = new Vec3();
@@ -167,8 +173,8 @@ export class HandCardPanel extends Component {
      */
     update(dt: number): void {
         if (!this._drag) return;
-        // 指数差值系数：帧率无关
-        const factor = 1 - Math.pow(LERP_SMOOTHING, dt);
+        // 线性 lerp，帧率无关
+        const factor = Math.min(1, LERP_SPEED * dt);
         // 驱动各牌的 local X
         for (const [cn, targetX] of this._previewTargets) {
             if (!cn.node.isValid) continue;
@@ -176,12 +182,21 @@ export class HandCardPanel extends Component {
             const newX = pos.x + (targetX - pos.x) * factor;
             cn.node.setPosition(newX, pos.y, 0);
         }
-        // 驱动组容器的 local X（跨组拖拽时容器展宽/收缩）
+        // 驱动组容器的 local X
         for (const [node, targetX] of this._containerTargets) {
             if (!node.isValid) continue;
             const pos  = node.position;
             const newX = pos.x + (targetX - pos.x) * factor;
             node.setPosition(newX, pos.y, 0);
+        }
+        // 驱动组容器宽度（来源组收缩，目标组展宽）
+        for (const [node, targetW] of this._slotTargetWidths) {
+            if (!node.isValid) continue;
+            const tf = node.getComponent(UITransform);
+            if (!tf) continue;
+            const curW = tf.contentSize.width;
+            if (Math.abs(curW - targetW) < 0.5) { tf.setContentSize(targetW, tf.contentSize.height); continue; }
+            tf.setContentSize(curW + (targetW - curW) * factor, tf.contentSize.height);
         }
     }
 
@@ -333,6 +348,7 @@ export class HandCardPanel extends Component {
 
     onToggleAutoGroup(): void  { this._state.toggleAutoGroup(); }
     onToggleSortMode():  void  { this._state.toggleSortMode();  }
+
 
     get autoGroupEnabled(): boolean { return this._state.autoGroupEnabled; }
     get sortMode():         SortMode { return this._state.sortMode; }
@@ -613,6 +629,7 @@ export class HandCardPanel extends Component {
         cn.onDragEnd   = (uiPos)      => this._onCardDragEnd(uiPos);
     }
 
+
     private _onCardDragStart(
         cn: CardNode, cardValue: number, uiPos: Vec2,
         sourceKind: 'ungroup' | 'group', sourceGroupId?: string,
@@ -631,8 +648,10 @@ export class HandCardPanel extends Component {
 
         // 快照各组容器当前 local X（_applyPreviewLayout 中计算 delta 的基准）
         this._origGroupLocalX.clear();
+        this._groupContainerTargetX.clear();
         for (const [id, gv] of this._groupViews) {
             this._origGroupLocalX.set(id, gv.node.position.x);
+            this._groupContainerTargetX.set(id, gv.node.position.x); // 初始目标 = 当前位置
         }
 
         // ── 从映射中移除，避免 _applyPreviewLayout 重复处理 ─────────────
@@ -700,7 +719,9 @@ export class HandCardPanel extends Component {
         // 清空 Lerp 目标表，停止 update() 差值驱动
         this._previewTargets.clear();
         this._containerTargets.clear();
+        this._slotTargetWidths.clear();
         this._origGroupLocalX.clear();
+        this._groupContainerTargetX.clear();
 
         // 再销毁 floatNode：新节点已就位，不会出现空白帧
         if (drag.floatNode.isValid) drag.floatNode.destroy();
@@ -729,18 +750,12 @@ export class HandCardPanel extends Component {
         const groupRX   = this._groupRoot.position.x;
         const ungRX     = this._ungroupRoot.position.x;
 
-        // ── 辅助：计算某组的稳定参考中心（panel 坐标）────────────────
-
+        // ── 辅助：取各组容器的目标中心（_applyPreviewLayout 同步，稳定不受 lerp 影响）────
         const stableCenter = (id: string, gv: import('./CardGroupView').CardGroupView): number => {
-            const origX = this._origGroupLocalX.get(id) ?? gv.node.position.x;
-            let delta = 0;
-            if (drag.sourceGroupId === id) {
-                const n = gv.groupData.cards.length; // 含被拖拽牌的原始总数
-                if (n > 1) {
-                    delta -= ((drag.sourceIndex - (n - 1) / 2) / (n - 1)) * CARD_SPACING;
-                }
-            }
-            return origX + delta + groupRX;
+            const targetX = this._groupContainerTargetX.get(id)
+                         ?? this._origGroupLocalX.get(id)
+                         ?? gv.node.position.x;
+            return targetX + groupRX;
         };
 
         // ── 第一步：构建区段列表并按稳定中心排序 ────────────────────
@@ -758,9 +773,10 @@ export class HandCardPanel extends Component {
         }
 
         const ungroupVals = [...this._state.ungroup].filter(c => c !== cardValue);
+        // 使用 _previewUngroupStartX（_applyPreviewLayout 实时计算值），而非 _doLayout 缓存值
         const ungRefCenter = ungroupVals.length > 0
-            ? ungRX + this._ungroupStartX + (ungroupVals.length - 1) / 2 * CARD_SPACING
-            : ungRX + this._ungroupStartX;
+            ? ungRX + this._previewUngroupStartX + (ungroupVals.length - 1) / 2 * CARD_SPACING
+            : ungRX + this._previewUngroupStartX;
         zones.push({ kind: 'ungroup', refCenter: ungRefCenter });
 
         zones.sort((a, b) => a.refCenter - b.refCenter);
@@ -779,7 +795,7 @@ export class HandCardPanel extends Component {
 
         if (zone.kind === 'ungroup') {
             for (let i = 0; i < ungroupVals.length; i++) {
-                const cardX = ungRX + this._ungroupStartX + i * CARD_SPACING;
+                const cardX = ungRX + this._previewUngroupStartX + i * CARD_SPACING;
                 if (panelX < cardX + CARD_SPACING / 2) return { kind: 'ungroup', index: i };
             }
             return { kind: 'ungroup', index: ungroupVals.length };
@@ -799,14 +815,12 @@ export class HandCardPanel extends Component {
     }
 
     /**
-     * 更新 Lerp 预览目标表：重算所有散牌和组内牌的目标 X，以及各组容器的目标 local X。
-     * 实际位移由 update() 每帧驱动，天然平滑、无 tween 打断问题。
-     * hoverKind=null 时仅收拢来源空缺，不打开目标空缺。
+     * 仿照原版 calculateFullLayout + refreshAllTargets 的完整布局重算。
      *
-     * 容器偏移推导（加权平均法，保证边缘插入/删除时非拖拽牌绝对位置不变）：
-     *   - 来源组（从 n 张移出第 k 张）：delta = -((k - (n-1)/2) / (n-1)) * CARD_SPACING
-     *   - 目标组（向 m 张中 hoverIndex h 处插入）：delta = ((2h - m) / (2m)) * CARD_SPACING
-     *   两项对同一组叠加（支持组内拖拽自然抵消）。
+     * 核心：用"虚拟槽位数"计算每组有效宽度，再从左到右累积容器中心 X。
+     *   来源组：保留空槽（宽度不变），仅当牌离开到其他组/散牌区时才收缩。
+     *   目标组：扩展一个空槽（宽度增加 CARD_SPACING）。
+     *   由于来源收缩量 == 目标扩张量，总宽度始终守恒，root 节点 X 不变。
      */
     private _applyPreviewLayout(
         hoverKind:    'ungroup' | 'group' | null,
@@ -815,56 +829,108 @@ export class HandCardPanel extends Component {
     ): void {
         const drag      = this._drag!;
         const cardValue = drag.cardValue;
+        const snap      = this._state.snapshot();
 
         this._previewTargets.clear();
         this._containerTargets.clear();
+        this._slotTargetWidths.clear();
 
-        // ── 散牌区 ──
-        const ungroupVals = [...this._state.ungroup].filter(c => c !== cardValue);
+        // ── 1. 各组虚拟槽位信息 ─────────────────────────────────────
+        interface GSlot {
+            id: string; gv: CardGroupView;
+            realCards: number[];   // 不含拖拽牌的实际牌
+            slotCount: number;     // 含虚拟空槽的布局总数
+            width: number;         // 容器目标宽度
+            keepNull: boolean;     // 来源组是否仍保留空槽（牌未离开时 true）
+        }
+        const gSlots: GSlot[] = [];
+
+        for (const g of snap.groups) {
+            const gv = this._groupViews.get(g.id);
+            if (!gv) continue;
+            const realCards = g.cards.filter(c => c !== cardValue);
+            const isSource  = drag.sourceKind === 'group' && drag.sourceGroupId === g.id;
+            const isTarget  = hoverKind === 'group' && hoverGroupId === g.id;
+            // 来源组在无悬停或悬停自身时保留空槽（宽度不变），离开到其他区域后收缩
+            const keepNull  = isSource && (hoverKind === null || hoverGroupId === g.id);
+            // 仅跨组目标才扩展（组内拖拽时 isSource && isTarget，keepNull 已覆盖）
+            const addSlot   = isTarget && !isSource;
+            const slotCount = Math.max(1, realCards.length + (keepNull ? 1 : 0) + (addSlot ? 1 : 0));
+            const width     = CARD_W + Math.max(0, slotCount - 1) * CARD_SPACING;
+            gSlots.push({ id: g.id, gv, realCards, slotCount, width, keepNull });
+        }
+
+        // 散牌区槽位数
+        const ungroupVals      = snap.ungroup.filter(c => c !== cardValue);
+        const ungIsSource      = drag.sourceKind === 'ungroup';
+        const ungKeepNull      = ungIsSource && (hoverKind === null || hoverKind === 'ungroup');
+        const ungAddSlot       = hoverKind === 'ungroup' && !ungIsSource;
+        const ungSlotCount     = ungroupVals.length + (ungKeepNull ? 1 : 0) + (ungAddSlot ? 1 : 0);
+
+        // ── 2. 各组容器中心 X（相对 _groupRoot，从 0 累积）─────────
+        let curX = 0;
+        for (const gs of gSlots) {
+            const halfW = gs.width / 2;
+            curX += halfW;
+            this._containerTargets.set(gs.gv.node, curX);
+            this._slotTargetWidths.set(gs.gv.node, gs.width);
+            this._groupContainerTargetX.set(gs.id, curX);
+            curX += halfW + GROUP_GAP;
+        }
+
+        // ── 3. 散牌起始 X（相对 _ungroupRoot，与 _doLayout 公式一致）──
+        let ungroupStartX = curX;
+        if (gSlots.length > 0 && ungSlotCount > 0) ungroupStartX += GROUP_GAP;
+        this._previewUngroupStartX = ungroupStartX;
+
+        // ── 4. 各组内牌坐标目标 ──────────────────────────────────
+        for (const gs of gSlots) {
+            const { id, gv, realCards, slotCount, keepNull } = gs;
+            const isTarget = hoverKind === 'group' && hoverGroupId === id;
+            const isSource = drag.sourceKind === 'group' && drag.sourceGroupId === id;
+
+            for (let j = 0; j < realCards.length; j++) {
+                const cn = gv.cardNodes.find(c => c.cardValue === realCards[j]);
+                if (!cn) continue;
+
+                let targetX: number;
+                if (isSource && !keepNull) {
+                    // 来源组且牌已离开：补偿容器位移，保证所有剩余牌世界坐标不变。
+                    // slotIdx 与 keepNull=true 时相同（保留空槽位置），
+                    // delta(origLocal - newLocal) 精确抵消容器偏移，净位移为零。
+                    const origLocal = this._origGroupLocalX.get(id) ?? gv.node.position.x;
+                    const newLocal  = this._groupContainerTargetX.get(id)!;
+                    const slotIdx   = j >= drag.sourceIndex ? j + 1 : j;
+                    targetX = (origLocal - newLocal) + (slotIdx - realCards.length / 2) * CARD_SPACING;
+                } else {
+                    let slotIdx = j;
+                    if (isTarget) {
+                        // 目标组：空槽跟随 hoverIndex
+                        if (j >= hoverIndex) slotIdx = j + 1;
+                    } else if (isSource && keepNull) {
+                        // 来源组悬停自身：空槽保留在 sourceIndex
+                        if (j >= drag.sourceIndex) slotIdx = j + 1;
+                    }
+                    targetX = (slotIdx - (slotCount - 1) / 2) * CARD_SPACING;
+                }
+                this._previewTargets.set(cn, targetX);
+            }
+        }
+
+        // ── 5. 散牌坐标目标 ────────────────────────────────────────
         for (let i = 0; i < ungroupVals.length; i++) {
             const cn = this._ungroupNodes.get(ungroupVals[i]);
             if (!cn) continue;
-            const displayI = (hoverKind === 'ungroup' && i >= hoverIndex) ? i + 1 : i;
-            this._previewTargets.set(cn, this._ungroupStartX + displayI * CARD_SPACING);
-        }
-
-        // ── 各组（牌位置 + 容器位置）──
-        for (const [id, gv] of this._groupViews) {
-            const allCards = gv.groupData.cards;           // 原始牌列（含被拖拽牌）
-            const gCards   = allCards.filter(c => c !== cardValue);
-            const isTarget = hoverKind === 'group' && hoverGroupId === id;
-            const total    = isTarget ? gCards.length + 1 : gCards.length;
-
-            // ── 牌的 local X 目标 ──
-            for (let i = 0; i < gCards.length; i++) {
-                const cn = gv.cardNodes.find(c => c.cardValue === gCards[i]);
-                if (!cn) continue;
-                const displayI = (isTarget && i >= hoverIndex) ? i + 1 : i;
-                this._previewTargets.set(cn, (displayI - (total - 1) / 2) * CARD_SPACING);
+            let slotIdx = i;
+            if (hoverKind === 'ungroup') {
+                if (i >= hoverIndex) slotIdx = i + 1;
+            } else if (ungIsSource && ungKeepNull) {
+                // 来源在散牌区且牌未离开：保留空槽在 sourceIndex 位置
+                if (i >= drag.sourceIndex) slotIdx = i + 1;
             }
-
-            // ── 容器 local X 目标 ──
-            const origX = this._origGroupLocalX.get(id) ?? gv.node.position.x;
-            let delta = 0;
-
-            // 来源组贡献：移出第 k 张，共 n 张
-            if (drag.sourceGroupId === id) {
-                const n = allCards.length;      // 原始总数（含被拖拽牌）
-                if (n > 1) {
-                    const k = drag.sourceIndex;
-                    delta -= ((k - (n - 1) / 2) / (n - 1)) * CARD_SPACING;
-                }
-            }
-
-            // 目标组贡献：向 m 张中 hoverIndex h 处插入
-            if (isTarget) {
-                const m = gCards.length;        // 不含拖拽牌的现有张数
-                if (m > 0) {
-                    delta += ((2 * hoverIndex - m) / (2 * m)) * CARD_SPACING;
-                }
-            }
-
-            this._containerTargets.set(gv.node, origX + delta);
+            // ungIsSource && !ungKeepNull：牌已离开散牌区，ungroupStartX 已随目标组扩展
+            // 右移，slotIdx 不加 1，避免双重偏移
+            this._previewTargets.set(cn, ungroupStartX + slotIdx * CARD_SPACING);
         }
     }
 }
