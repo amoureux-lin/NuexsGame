@@ -37,7 +37,7 @@ export interface SelectionInfo {
 // 预留：上一家弃牌 → 可压牌候选组合切换
 // export type MeldCandidateInfo = { candidates: GroupData[][] };
 // onMeldCandidateChange: ((info: MeldCandidateInfo) => void) | null = null;
-import { autoGroup, GroupData }                           from '../../utils/GroupAlgorithm';
+import { autoGroup, GroupData, judgeGroupType, GroupType } from '../../utils/GroupAlgorithm';
 import { SortMode }                                      from '../../utils/CardDef';
 import { CardGroupView }                                 from './CardGroupView';
 import { CardNode, CARD_W, CARD_H, CARD_SPACING }         from './CardNode';
@@ -926,6 +926,14 @@ export class HandCardPanel extends Component {
             const slotCount = Math.max(1, realCards.length + (keepNull ? 1 : 0) + (addSlot ? 1 : 0));
             const width     = CARD_W + Math.max(0, slotCount - 1) * CARD_SPACING;
             gSlots.push({ id: g.id, gv, realCards, slotCount, width, keepNull });
+
+            // 实时预览该组有效性：目标组加入拖拽牌后的类型；来源组移走拖拽牌后的类型
+            const previewType: GroupType | null = isTarget
+                ? judgeGroupType([...realCards, drag.cardValue])
+                : isSource
+                    ? judgeGroupType(realCards)
+                    : null;
+            gv.setPreviewType(previewType);
         }
 
         // 散牌区槽位数

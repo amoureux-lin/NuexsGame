@@ -195,6 +195,17 @@ export class CardGroupView extends Component {
     }
 
     /**
+     * 拖拽预览期间临时覆盖类型标签。
+     * 传 null 还原为实际 groupData.type（拖拽结束后由 refresh 自动调用 _updateLabel 还原）。
+     */
+    setPreviewType(type: GroupType | null): void {
+        if (!this.typeLabel) return;
+        const resolved = type ?? this._groupData.type;
+        this.typeLabel.string = TYPE_TEXT[resolved];
+        this.typeLabel.color  = TYPE_COLOR[resolved];
+    }
+
+    /**
      * 根据容器宽度同步背景尺寸（拖拽期间由 HandCardPanel 每帧调用）。
      * 高度不变，由编辑器 Prefab 中设置。
      */
