@@ -108,6 +108,9 @@ export class HandCardPanel extends Component {
     @property({ type: Prefab, tooltip: '牌面预制体（可选）' })
     cardPrefab: Prefab | null = null;
 
+    @property({ type: Prefab, tooltip: '牌组预制体（CardGroupView Prefab）' })
+    cardGroupPrefab: Prefab | null = null;
+
     // ── 对外回调 ──────────────────────────────────────────
 
     /**
@@ -189,14 +192,15 @@ export class HandCardPanel extends Component {
             const newX = pos.x + (targetX - pos.x) * factor;
             node.setPosition(newX, pos.y, 0);
         }
-        // 驱动组容器宽度（来源组收缩，目标组展宽）
+        // 驱动组容器宽度（来源组收缩，目标组展宽），同步背景宽度
         for (const [node, targetW] of this._slotTargetWidths) {
             if (!node.isValid) continue;
             const tf = node.getComponent(UITransform);
             if (!tf) continue;
             const curW = tf.contentSize.width;
-            if (Math.abs(curW - targetW) < 0.5) { tf.setContentSize(targetW, tf.contentSize.height); continue; }
-            tf.setContentSize(curW + (targetW - curW) * factor, tf.contentSize.height);
+            const newW = Math.abs(curW - targetW) < 0.5 ? targetW : curW + (targetW - curW) * factor;
+            tf.setContentSize(newW, tf.contentSize.height);
+            node.getComponent(CardGroupView)?.syncBgWidth(newW);
         }
     }
 
@@ -318,7 +322,7 @@ export class HandCardPanel extends Component {
         this._groupRoot.setPosition(0, 0, 0);
         this._ungroupRoot.setPosition(0, 0, 0);
         this._ungroupRoot.removeAllChildren();
-        for (const gv of this._groupViews.values()) gv.destroy();
+        for (const gv of this._groupViews.values()) gv.node.destroy();
         this._groupViews.clear();
         for (const cn of this._ungroupNodes.values()) cn.node.destroy();
         this._ungroupNodes.clear();
@@ -402,12 +406,19 @@ export class HandCardPanel extends Component {
         for (const g of groups) {
             let gv = this._groupViews.get(g.id);
             if (!gv) {
-                gv = new CardGroupView(g, (v) => this._createCardNode(v));
+                const groupNode = this.cardGroupPrefab
+                    ? instantiate(this.cardGroupPrefab)
+                    : new Node(`Group_${g.id}`);
+                this._groupRoot.addChild(groupNode);
+                // 确保展开动画从容器中心出发（prefab 可能保存了非零 position）
+                groupNode.setPosition(0, 0, 0);
+                // 确保有 CardGroupView 组件（prefab 里已挂好，fallback 时手动添加）
+                gv = groupNode.getComponent(CardGroupView) ?? groupNode.addComponent(CardGroupView);
                 gv.onGroupClick = (id) => this._state.toggleGroup(id);
-                this._groupRoot.addChild(gv.node);
+                gv.init(g, (v) => this._createCardNode(v));
                 this._groupViews.set(g.id, gv);
             } else {
-                gv.update(g, (v) => this._createCardNode(v));
+                gv.refresh(g, (v) => this._createCardNode(v));
             }
             gv.setSelected(selectedIds.has(g.id));
             // 绑定（或重绑）所有组内牌的拖拽回调
@@ -679,6 +690,13 @@ export class HandCardPanel extends Component {
 
         // 初始预览（仅关闭来源缺口，无悬停目标）
         this._applyPreviewLayout(null, null, 0);
+
+        // 用初始预览计算出的稳定目标位置覆盖 _origGroupLocalX，
+        // 避免上次动画未完成时 gv.node.position.x 是中间值导致补偿 delta 错误。
+        for (const [id] of this._groupViews) {
+            const stableX = this._groupContainerTargetX.get(id);
+            if (stableX !== undefined) this._origGroupLocalX.set(id, stableX);
+        }
     }
 
     private _onCardDragMove(uiPos: Vec2): void {

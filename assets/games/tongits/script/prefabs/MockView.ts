@@ -147,8 +147,7 @@ export class MockView extends UIPanel {
     /** 剩余牌堆 */
     private _deck:        number[] = [];
     /** 自己的手牌 */
-    // private _selfHand:    number[] = [410, 207, 409, 303, 413, 202, 412, 404, 313, 310, 308, 309];
-    private _selfHand:    number[] = [310, 308, 309, 202, 303, 404];
+    private _selfHand:    number[] = [408, 201, 102, 204, 412, 312, 202, 413, 411, 404, 213, 304];
     /** 各玩家手牌数量 */
     private _handCounts:  Record<number, number> = {};
     /** 弃牌堆 */
@@ -481,7 +480,7 @@ export class MockView extends UIPanel {
     private _resetDeck(): void {
         const deck = shuffle(FULL_DECK);
         // Self:12, P2:12, P3(庄):13, 牌堆:15
-        // this._selfHand    = deck.slice(0, 12);
+        this._selfHand    = deck.slice(0, 12);
         const _p2Hand     = deck.slice(12, 24);  // 客户端不存，仅计数
         const _p3Hand     = deck.slice(24, 37);  // 庄家13张
         this._deck        = deck.slice(37);      // 15张

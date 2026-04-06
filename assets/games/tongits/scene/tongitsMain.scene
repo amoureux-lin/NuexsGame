@@ -377,7 +377,7 @@
     "_priority": 1073741824,
     "_fov": 45,
     "_fovAxis": 0,
-    "_orthoHeight": 565.3619047619047,
+    "_orthoHeight": 525.1615074024226,
     "_near": 1,
     "_far": 2000,
     "_color": {
@@ -806,7 +806,7 @@
     ],
     "value": {
       "__type__": "cc.Size",
-      "width": 42.23860039743436,
+      "width": 42.255859375,
       "height": 50.4
     }
   },
@@ -826,7 +826,7 @@
     ],
     "value": {
       "__type__": "cc.Size",
-      "width": 42.23860039743436,
+      "width": 42.255859375,
       "height": 50.4
     }
   },
@@ -1021,7 +1021,7 @@
     ],
     "value": {
       "__type__": "cc.Size",
-      "width": 42.23860039743436,
+      "width": 42.255859375,
       "height": 50.4
     }
   },
@@ -1041,7 +1041,7 @@
     ],
     "value": {
       "__type__": "cc.Size",
-      "width": 42.23860039743436,
+      "width": 42.255859375,
       "height": 50.4
     }
   },
@@ -1262,7 +1262,7 @@
     ],
     "value": {
       "__type__": "cc.Size",
-      "width": 42.23860039743436,
+      "width": 42.255859375,
       "height": 50.4
     }
   },
@@ -1282,7 +1282,7 @@
     ],
     "value": {
       "__type__": "cc.Size",
-      "width": 42.23860039743436,
+      "width": 42.255859375,
       "height": 50.4
     }
   },
@@ -4324,6 +4324,10 @@
       "__uuid__": "d9879dfa-01b3-4b0c-83c7-d9884afbcef9",
       "__expectedType__": "cc.Prefab"
     },
+    "cardGroupPrefab": {
+      "__uuid__": "08e4f06d-cfba-4dba-a33c-7d65a82e0e85",
+      "__expectedType__": "cc.Prefab"
+    },
     "_id": "94or/UEMJL4oVYnPMhN6D+"
   },
   {
@@ -4921,7 +4925,7 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 47.76371455808886,
+      "width": 47.783203125,
       "height": 50.4
     },
     "_anchorPoint": {
@@ -4954,7 +4958,7 @@
     "_string": "mock",
     "_horizontalAlign": 1,
     "_verticalAlign": 1,
-    "_actualFontSize": 22.038980509745127,
+    "_actualFontSize": 20,
     "_fontSize": 20,
     "_fontFamily": "Arial",
     "_lineHeight": 40,

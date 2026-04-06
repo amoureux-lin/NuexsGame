@@ -1,25 +1,39 @@
 /**
- * CardGroupView — 单个牌组的视图
+ * CardGroupView — 单个牌组的视图（Component 版）
  *
  * 职责：
+ *   - 作为 cardGroupView.prefab 的根组件
  *   - 持有一组 CardNode，横向叠牌排列
  *   - 顶部显示组类型标签（SPECIAL / VALID / INVALID）
  *   - 点击组内任意牌 → 通知父节点切换整组选中状态
  *   - 选中时显示高亮边框
  *
- * 由 HandCardPanel 动态创建，不挂预制体。
+ * Prefab 节点结构（在编辑器中配置）：
+ *   CardGroupView (Node + CardGroupView component + UITransform)
+ *   ├── _bg        (Node + UITransform + Sprite 9-slice)   ← bgNode
+ *   ├── _typeLabel (Node + UITransform + Label)             ← typeLabel
+ *   └── _border    (Node + UITransform + Sprite/Graphics)   ← borderNode，默认隐藏
+ *
+ * 由 HandCardPanel 通过 instantiate(cardGroupPrefab) 创建，
+ * 创建后调用 init() 完成初始化。
  */
 
-import { Node, Label, Graphics, UITransform, Color } from 'cc';
+import { _decorator, Component, Node, Label, UITransform, Color } from 'cc';
 import { GroupData, GroupType } from '../../utils/GroupAlgorithm';
 import { CardNode, CARD_W, CARD_H, CARD_SPACING } from './CardNode';
+
+const { ccclass, property } = _decorator;
 
 // ── 常量 ──────────────────────────────────────────────────
 
 /** 组类型标签高度 */
-const LABEL_H        = 22;
+const LABEL_H      = 22;
 /** 重排动画时长 */
-const RELAYOUT_DUR   = 0.12;
+const RELAYOUT_DUR = 0.12;
+/** Prefab 中固定子节点数（bg + typeLabel + border），card 从此下标开始 */
+const FIXED_CHILD_COUNT = 3;
+/** 背景水平内边距（两侧各留出的像素，让背景比牌区稍宽） */
+const BG_PAD_H = 8;
 
 /** 组类型显示文字 */
 const TYPE_TEXT: Record<GroupType, string> = {
@@ -31,78 +45,71 @@ const TYPE_TEXT: Record<GroupType, string> = {
 
 /** 组类型标签颜色 */
 const TYPE_COLOR: Record<GroupType, Color> = {
-    [GroupType.SPECIAL]: new Color(255, 200, 0,   255),   // 金色
-    [GroupType.VALID]:   new Color(60,  200, 80,  255),   // 绿色
-    [GroupType.INVALID]: new Color(180, 180, 180, 255),   // 灰色
-    [GroupType.UNGROUP]: new Color(255, 255, 255, 255),
-};
-
-/** 组类型边框颜色（选中时） */
-const BORDER_COLOR: Record<GroupType, Color> = {
     [GroupType.SPECIAL]: new Color(255, 200, 0,   255),
     [GroupType.VALID]:   new Color(60,  200, 80,  255),
     [GroupType.INVALID]: new Color(180, 180, 180, 255),
-    [GroupType.UNGROUP]: new Color(255, 255, 255, 128),
+    [GroupType.UNGROUP]: new Color(255, 255, 255, 255),
 };
 
 // ── CardGroupView ─────────────────────────────────────────
 
-export class CardGroupView {
+@ccclass('CardGroupView')
+export class CardGroupView extends Component {
 
-    readonly node: Node;
+    // ── Inspector 属性（在 Prefab 中绑定子节点）────────────
 
-    private _groupData:   GroupData;
-    private _cardNodes:   CardNode[] = [];
-    private _labelNode:   Node;
-    private _borderNode:  Node;
-    private _isSelected:  boolean = false;
+    @property(Node)
+    bgNode: Node = null!;
+
+    @property(Label)
+    typeLabel: Label = null!;
+
+    @property(Node)
+    borderNode: Node = null!;
+
+    // ── 私有状态 ──────────────────────────────────────────
+
+    private _groupData:  GroupData = null!;
+    private _cardNodes:  CardNode[] = [];
+    private _isSelected: boolean = false;
 
     /** 点击整组回调（由 HandCardPanel 赋值） */
     onGroupClick: ((groupId: string) => void) | null = null;
 
-    // ── 构造 ──────────────────────────────────────────────
+    // ── 初始化（instantiate 后、addChild 后调用）─────────
 
-    constructor(groupData: GroupData, cardPrefabFactory: (value: number) => Node) {
+    init(groupData: GroupData, cardPrefabFactory: (value: number) => Node): void {
         this._groupData = groupData;
+        this.node.name  = `Group_${groupData.id}`;
 
-        // 根节点
-        this.node = new Node(`Group_${groupData.id}`);
-        const tf = this.node.addComponent(UITransform);
-        tf.setContentSize(this._groupWidth(), CARD_H + LABEL_H);
+        this.node.getComponent(UITransform)?.setContentSize(
+            this._groupWidth(), CARD_H + LABEL_H,
+        );
 
-        // 标签节点
-        this._labelNode = this._createLabel(groupData.type);
-        this.node.addChild(this._labelNode);
+        this._updateLabel();
+        this._resizeBg();
 
-        // 选中边框
-        this._borderNode = this._createBorder(groupData.type);
-        this.node.addChild(this._borderNode);
+        if (this.borderNode) this.borderNode.active = false;
 
-        // 牌节点
         for (let i = 0; i < groupData.cards.length; i++) {
-            const cardNode = this._makeCardNode(groupData.cards[i], i, cardPrefabFactory);
-            this._cardNodes.push(cardNode);
-            this.node.addChild(cardNode.node);
+            const cn = this._makeCardNode(groupData.cards[i], i, cardPrefabFactory);
+            this._cardNodes.push(cn);
+            this.node.addChild(cn.node);
         }
     }
 
     // ── 公开 API ──────────────────────────────────────────
 
-    get groupId(): string               { return this._groupData.id; }
-    get groupData(): GroupData          { return this._groupData; }
-    get width(): number                 { return this._groupWidth(); }
-    get cardNodes(): readonly CardNode[] { return this._cardNodes; }
+    get groupId():   string               { return this._groupData.id; }
+    get groupData(): GroupData            { return this._groupData; }
+    get width():     number               { return this._groupWidth(); }
+    get cardNodes(): readonly CardNode[]  { return this._cardNodes; }
+    get isSelected(): boolean             { return this._isSelected; }
 
     /** 更新组数据（牌变化时调用，保留已有节点复用） */
-    update(groupData: GroupData, cardPrefabFactory: (value: number) => Node): void {
+    refresh(groupData: GroupData, cardPrefabFactory: (value: number) => Node): void {
         this._groupData = groupData;
-
-        // 更新标签
-        const lbl = this._labelNode.getComponent(Label);
-        if (lbl) {
-            lbl.string = TYPE_TEXT[groupData.type];
-            lbl.color  = TYPE_COLOR[groupData.type];
-        }
+        this._updateLabel();
 
         // 调整 CardNode 数量
         while (this._cardNodes.length > groupData.cards.length) {
@@ -116,29 +123,27 @@ export class CardGroupView {
             this.node.addChild(cn.node);
         }
 
-        // 更新牌值 + 位置
+        // 更新牌值 + 确保 sibling 顺序（bg/typeLabel/border 占前 FIXED_CHILD_COUNT 个）
         for (let i = 0; i < groupData.cards.length; i++) {
             this._cardNodes[i].setCard(groupData.cards[i]);
-            this._cardNodes[i].node.setSiblingIndex(i + 2); // label + border 在前
+            this._cardNodes[i].node.setSiblingIndex(i + FIXED_CHILD_COUNT);
         }
         this._relayout(false);
 
-        // 更新根节点尺寸
-        const tf = this.node.getComponent(UITransform);
-        tf?.setContentSize(this._groupWidth(), CARD_H + LABEL_H);
+        // 更新根节点尺寸 + 背景尺寸
+        this.node.getComponent(UITransform)?.setContentSize(
+            this._groupWidth(), CARD_H + LABEL_H,
+        );
+        this._resizeBg();
     }
 
     /** 设置整组选中状态 */
     setSelected(selected: boolean): void {
         if (this._isSelected === selected) return;
         this._isSelected = selected;
-        this._borderNode.active = selected;
-        for (const cn of this._cardNodes) {
-            cn.setSelected(selected);
-        }
+        if (this.borderNode) this.borderNode.active = selected;
+        for (const cn of this._cardNodes) cn.setSelected(selected);
     }
-
-    get isSelected(): boolean { return this._isSelected; }
 
     /** 设置某张牌的 Meld 提示状态 */
     setCardHinted(cardValue: number, hinted: boolean): void {
@@ -151,16 +156,12 @@ export class CardGroupView {
 
     /**
      * 拖拽开始时从组内移除一张牌（不销毁节点，由调用方管理）。
-     * 移除后立即重排剩余牌的显示位置（不含动画，由预览逻辑接管）。
      */
     removeCard(cardValue: number): void {
         const idx = this._cardNodes.findIndex(cn => cn.cardValue === cardValue);
         if (idx < 0) return;
         this._cardNodes.splice(idx, 1);
-        // 不调 _relayout，让 HandCardPanel._applyPreviewLayout 统一处理位置
     }
-
-    destroy(): void { this.node.destroy(); }
 
     // ── 私有 ──────────────────────────────────────────────
 
@@ -170,7 +171,6 @@ export class CardGroupView {
     }
 
     private _cardLocalX(index: number, total: number): number {
-        // 从左对齐排列（组容器以左边缘为锚点处理不方便，改为中心对齐）
         return (index - (total - 1) / 2) * CARD_SPACING;
     }
 
@@ -188,6 +188,27 @@ export class CardGroupView {
         }
     }
 
+    private _updateLabel(): void {
+        if (!this.typeLabel) return;
+        this.typeLabel.string = TYPE_TEXT[this._groupData.type];
+        this.typeLabel.color  = TYPE_COLOR[this._groupData.type];
+    }
+
+    /**
+     * 根据容器宽度同步背景尺寸（拖拽期间由 HandCardPanel 每帧调用）。
+     * 高度不变，由编辑器 Prefab 中设置。
+     */
+    syncBgWidth(containerW: number): void {
+        if (!this.bgNode) return;
+        const tf = this.bgNode.getComponent(UITransform);
+        if (!tf) return;
+        tf.setContentSize(containerW + BG_PAD_H * 2, tf.contentSize.height);
+    }
+
+    private _resizeBg(): void {
+        this.syncBgWidth(this._groupWidth());
+    }
+
     private _makeCardNode(
         cardValue: number,
         index: number,
@@ -196,47 +217,12 @@ export class CardGroupView {
         const n  = factory(cardValue);
         const cn = n.getComponent(CardNode) ?? n.addComponent(CardNode);
         cn.setCard(cardValue);
-        cn.setFaceDown(false);   // 组内牌始终正面朝上
+        cn.setFaceDown(false);
 
         const total = this._groupData.cards.length;
-        const x = this._cardLocalX(index, total);
-        n.setPosition(x, 0, 0);
+        n.setPosition(this._cardLocalX(index, total), 0, 0);
 
-        // 点击整个组 → 通知父层
         cn.onClick = () => { this.onGroupClick?.(this._groupData.id); };
         return cn;
-    }
-
-    private _createLabel(type: GroupType): Node {
-        const labelNode = new Node('_typeLabel');
-        const tf = labelNode.addComponent(UITransform);
-        tf.setContentSize(120, LABEL_H);
-        labelNode.setPosition(0, CARD_H / 2 + LABEL_H / 2, 0);
-
-        const lbl    = labelNode.addComponent(Label);
-        lbl.string   = TYPE_TEXT[type];
-        lbl.color    = TYPE_COLOR[type];
-        lbl.fontSize = 16;
-        lbl.horizontalAlign = Label.HorizontalAlign.CENTER;
-        lbl.verticalAlign   = Label.VerticalAlign.CENTER;
-        return labelNode;
-    }
-
-    private _createBorder(type: GroupType): Node {
-        const borderNode = new Node('_border');
-        const btf = borderNode.addComponent(UITransform);
-        btf.setContentSize(this._groupWidth() + 8, CARD_H + 8);
-        borderNode.setPosition(0, 0, 0);
-
-        const g = borderNode.addComponent(Graphics);
-        g.lineWidth   = 2;
-        g.strokeColor = BORDER_COLOR[type];
-        const w = this._groupWidth() + 8;
-        const h = CARD_H + 8;
-        g.roundRect(-w / 2, -h / 2, w, h, 8);
-        g.stroke();
-
-        borderNode.active = false; // 默认隐藏，选中时显示
-        return borderNode;
     }
 }
