@@ -51,6 +51,8 @@ interface DragState {
     floatNode:      Node;
     sourceKind:     'ungroup' | 'group';
     sourceGroupId?: string;
+    /** 拖拽牌在来源组（或散牌区）中的原始下标 */
+    sourceIndex:    number;
     hoverKind:      'ungroup' | 'group' | null;
     hoverGroupId?:  string;
     hoverIndex:     number;
@@ -133,6 +135,10 @@ export class HandCardPanel extends Component {
     private _drag: DragState | null = null;
     /** Lerp 预览目标：CardNode → 目标 X（在各自父容器坐标系中） */
     private _previewTargets = new Map<CardNode, number>();
+    /** Lerp 容器目标：gv.node → 目标 local X（在 _groupRoot 坐标系中） */
+    private _containerTargets = new Map<Node, number>();
+    /** 拖拽开始时各组容器的 local X（_groupRoot 坐标系），用于计算 delta */
+    private _origGroupLocalX  = new Map<string, number>();
     /** 散牌区第一张牌在 _ungroupRoot 坐标系中的 X（_doLayout 中缓存，供预览逻辑使用） */
     private _ungroupStartX = 0;
     /** 拖拽释放时 floatNode 的世界坐标（新节点起飞点），-1 表示无待处理 */
@@ -160,14 +166,22 @@ export class HandCardPanel extends Component {
      * 仅在拖拽进行时运行，无拖拽时零开销。
      */
     update(dt: number): void {
-        if (!this._drag || this._previewTargets.size === 0) return;
+        if (!this._drag) return;
         // 指数差值系数：帧率无关
         const factor = 1 - Math.pow(LERP_SMOOTHING, dt);
+        // 驱动各牌的 local X
         for (const [cn, targetX] of this._previewTargets) {
             if (!cn.node.isValid) continue;
             const pos  = cn.node.position;
             const newX = pos.x + (targetX - pos.x) * factor;
             cn.node.setPosition(newX, pos.y, 0);
+        }
+        // 驱动组容器的 local X（跨组拖拽时容器展宽/收缩）
+        for (const [node, targetX] of this._containerTargets) {
+            if (!node.isValid) continue;
+            const pos  = node.position;
+            const newX = pos.x + (targetX - pos.x) * factor;
+            node.setPosition(newX, pos.y, 0);
         }
     }
 
@@ -605,7 +619,23 @@ export class HandCardPanel extends Component {
     ): void {
         if (this._drag) return;
 
-        // 从映射中移除，避免 _applyPreviewLayout 重复处理
+        // ── 拖拽开始前捕获元数据（需在 removeCard 之前）────────────────
+        // 来源下标（用于计算容器偏移）
+        let sourceIndex = 0;
+        if (sourceKind === 'group' && sourceGroupId) {
+            const gv = this._groupViews.get(sourceGroupId);
+            sourceIndex = gv?.groupData.cards.indexOf(cardValue) ?? 0;
+        } else {
+            sourceIndex = [...this._state.ungroup].indexOf(cardValue);
+        }
+
+        // 快照各组容器当前 local X（_applyPreviewLayout 中计算 delta 的基准）
+        this._origGroupLocalX.clear();
+        for (const [id, gv] of this._groupViews) {
+            this._origGroupLocalX.set(id, gv.node.position.x);
+        }
+
+        // ── 从映射中移除，避免 _applyPreviewLayout 重复处理 ─────────────
         if (sourceKind === 'ungroup') {
             this._ungroupNodes.delete(cardValue);
         } else if (sourceKind === 'group' && sourceGroupId) {
@@ -623,6 +653,7 @@ export class HandCardPanel extends Component {
             floatNode:    cn.node,
             sourceKind,
             sourceGroupId,
+            sourceIndex,
             hoverKind:    null,
             hoverIndex:   0,
         };
@@ -668,14 +699,22 @@ export class HandCardPanel extends Component {
 
         // 清空 Lerp 目标表，停止 update() 差值驱动
         this._previewTargets.clear();
+        this._containerTargets.clear();
+        this._origGroupLocalX.clear();
 
         // 再销毁 floatNode：新节点已就位，不会出现空白帧
         if (drag.floatNode.isValid) drag.floatNode.destroy();
     }
 
     /**
-     * 根据拖拽牌的 panelLocalX，找出最近的落点区域和插入位置。
-     * 以所有可见牌节点的中心 X 为基准，选最近的一张，再按左右决定插前/后。
+     * 根据拖拽牌的 panelLocalX，找出落点区域和插入位置。
+     *
+     * 第一步：区段归属（组间中点分区）
+     *   将所有组和散牌区按中心 X 排成有序区段，相邻区段的中点为分界线。
+     *   手指 X 落在哪个区段，就认定为那个目标——不会因边界附近某张牌更近而跳组。
+     *
+     * 第二步：组内插位（就近牌左右判断）
+     *   确定目标区段后，再在该区段内找最近的牌，按左/右决定插前还是插后。
      */
     private _findDropTarget(panelX: number): { kind: 'ungroup' | 'group'; groupId?: string; index: number } {
         const drag      = this._drag!;
@@ -683,67 +722,80 @@ export class HandCardPanel extends Component {
         const groupRX   = this._groupRoot.position.x;
         const ungRX     = this._ungroupRoot.position.x;
 
-        interface Candidate {
-            kind:    'ungroup' | 'group';
+        // ── 第一步：构建区段列表并按中心 X 排序 ─────────────────────
+
+        interface Zone {
+            kind:     'ungroup' | 'group';
             groupId?: string;
-            panelX:  number;
-            index:   number;
-            total:   number;
+            centerX:  number; // 绝对 panel X
         }
 
-        const cands: Candidate[] = [];
+        const zones: Zone[] = [];
 
-        // 散牌区各张牌
-        const ungroupVals = [...this._state.ungroup].filter(c => c !== cardValue);
-        for (let i = 0; i < ungroupVals.length; i++) {
-            cands.push({
-                kind:   'ungroup',
-                panelX: ungRX + this._ungroupStartX + i * CARD_SPACING,
-                index:  i,
-                total:  ungroupVals.length,
+        for (const [id, gv] of this._groupViews) {
+            zones.push({
+                kind:    'group',
+                groupId: id,
+                centerX: gv.node.position.x + groupRX,
             });
         }
 
-        // 各组牌
-        for (const [id, gv] of this._groupViews) {
-            const gCards  = gv.groupData.cards.filter(c => c !== cardValue);
-            const gCenterX = gv.node.position.x + groupRX;
-            for (let i = 0; i < gCards.length; i++) {
-                const localX = (i - (gCards.length - 1) / 2) * CARD_SPACING;
-                cands.push({
-                    kind:    'group',
-                    groupId: id,
-                    panelX:  gCenterX + localX,
-                    index:   i,
-                    total:   gCards.length,
-                });
-            }
+        const ungroupVals = [...this._state.ungroup].filter(c => c !== cardValue);
+        if (ungroupVals.length > 0) {
+            // 散牌区中心 = 第一张到最后一张的中点
+            const ungCenterX = ungRX + this._ungroupStartX + (ungroupVals.length - 1) / 2 * CARD_SPACING;
+            zones.push({ kind: 'ungroup', centerX: ungCenterX });
+        } else {
+            // 散牌区为空时仍作为有效落点（放在最右侧）
+            zones.push({ kind: 'ungroup', centerX: ungRX + this._ungroupStartX });
         }
 
-        if (cands.length === 0) {
+        zones.sort((a, b) => a.centerX - b.centerX);
+
+        if (zones.length === 0) {
             return { kind: 'ungroup', index: 0 };
         }
 
-        // 最近的一张
-        let best    = cands[0];
-        let bestDist = Math.abs(panelX - best.panelX);
-        for (const c of cands) {
-            const d = Math.abs(panelX - c.panelX);
-            if (d < bestDist) { bestDist = d; best = c; }
+        // 按区段中点分界确定目标区段
+        let zone = zones[0];
+        for (let i = 0; i < zones.length - 1; i++) {
+            const midX = (zones[i].centerX + zones[i + 1].centerX) / 2;
+            if (panelX < midX) { zone = zones[i]; break; }
+            zone = zones[i + 1];
         }
 
-        // 在最近牌左侧 → 插前；右侧 → 插后
-        const insertIdx = panelX >= best.panelX
-            ? Math.min(best.index + 1, best.total)
-            : best.index;
+        // ── 第二步：在目标区段内确定插入位置 ─────────────────────────
 
-        return { kind: best.kind, groupId: best.groupId, index: insertIdx };
+        if (zone.kind === 'ungroup') {
+            for (let i = 0; i < ungroupVals.length; i++) {
+                const cardX = ungRX + this._ungroupStartX + i * CARD_SPACING;
+                if (panelX < cardX + CARD_SPACING / 2) return { kind: 'ungroup', index: i };
+            }
+            return { kind: 'ungroup', index: ungroupVals.length };
+        }
+
+        // group 区段
+        const id       = zone.groupId!;
+        const gv       = this._groupViews.get(id)!;
+        const gCenterX = gv.node.position.x + groupRX;
+        const gCards   = gv.groupData.cards.filter(c => c !== cardValue);
+
+        for (let i = 0; i < gCards.length; i++) {
+            const cardX = gCenterX + (i - (gCards.length - 1) / 2) * CARD_SPACING;
+            if (panelX < cardX + CARD_SPACING / 2) return { kind: 'group', groupId: id, index: i };
+        }
+        return { kind: 'group', groupId: id, index: gCards.length };
     }
 
     /**
-     * 更新 Lerp 预览目标表：重算所有散牌和组内牌的目标 X，
+     * 更新 Lerp 预览目标表：重算所有散牌和组内牌的目标 X，以及各组容器的目标 local X。
      * 实际位移由 update() 每帧驱动，天然平滑、无 tween 打断问题。
      * hoverKind=null 时仅收拢来源空缺，不打开目标空缺。
+     *
+     * 容器偏移推导（加权平均法，保证边缘插入/删除时非拖拽牌绝对位置不变）：
+     *   - 来源组（从 n 张移出第 k 张）：delta = -((k - (n-1)/2) / (n-1)) * CARD_SPACING
+     *   - 目标组（向 m 张中 hoverIndex h 处插入）：delta = ((2h - m) / (2m)) * CARD_SPACING
+     *   两项对同一组叠加（支持组内拖拽自然抵消）。
      */
     private _applyPreviewLayout(
         hoverKind:    'ungroup' | 'group' | null,
@@ -754,6 +806,7 @@ export class HandCardPanel extends Component {
         const cardValue = drag.cardValue;
 
         this._previewTargets.clear();
+        this._containerTargets.clear();
 
         // ── 散牌区 ──
         const ungroupVals = [...this._state.ungroup].filter(c => c !== cardValue);
@@ -764,18 +817,43 @@ export class HandCardPanel extends Component {
             this._previewTargets.set(cn, this._ungroupStartX + displayI * CARD_SPACING);
         }
 
-        // ── 各组 ──
+        // ── 各组（牌位置 + 容器位置）──
         for (const [id, gv] of this._groupViews) {
-            const gCards   = gv.groupData.cards.filter(c => c !== cardValue);
+            const allCards = gv.groupData.cards;           // 原始牌列（含被拖拽牌）
+            const gCards   = allCards.filter(c => c !== cardValue);
             const isTarget = hoverKind === 'group' && hoverGroupId === id;
             const total    = isTarget ? gCards.length + 1 : gCards.length;
 
+            // ── 牌的 local X 目标 ──
             for (let i = 0; i < gCards.length; i++) {
                 const cn = gv.cardNodes.find(c => c.cardValue === gCards[i]);
                 if (!cn) continue;
                 const displayI = (isTarget && i >= hoverIndex) ? i + 1 : i;
                 this._previewTargets.set(cn, (displayI - (total - 1) / 2) * CARD_SPACING);
             }
+
+            // ── 容器 local X 目标 ──
+            const origX = this._origGroupLocalX.get(id) ?? gv.node.position.x;
+            let delta = 0;
+
+            // 来源组贡献：移出第 k 张，共 n 张
+            if (drag.sourceGroupId === id) {
+                const n = allCards.length;      // 原始总数（含被拖拽牌）
+                if (n > 1) {
+                    const k = drag.sourceIndex;
+                    delta -= ((k - (n - 1) / 2) / (n - 1)) * CARD_SPACING;
+                }
+            }
+
+            // 目标组贡献：向 m 张中 hoverIndex h 处插入
+            if (isTarget) {
+                const m = gCards.length;        // 不含拖拽牌的现有张数
+                if (m > 0) {
+                    delta += ((2 * hoverIndex - m) / (2 * m)) * CARD_SPACING;
+                }
+            }
+
+            this._containerTargets.set(gv.node, origX + delta);
         }
     }
 }
