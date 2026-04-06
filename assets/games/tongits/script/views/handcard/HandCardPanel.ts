@@ -19,7 +19,7 @@
 
 import {
     _decorator, Component, Node, Prefab, instantiate,
-    UITransform, Vec2, Vec3, tween,
+    UITransform, Vec2, Vec3, tween, Tween,
 } from 'cc';
 import { HandCardState, ButtonStates, HandCardSnapshot } from '../../utils/HandCardState';
 
@@ -536,6 +536,56 @@ export class HandCardPanel extends Component {
 
     // ── 工具 ──────────────────────────────────────────────
 
+    /**
+     * 停止所有组容器 / 散牌节点上正在运行的 tween，并将它们吸附到
+     * _doLayout 最终目标位置。拖拽开始前调用，防止残留 tween 与
+     * _containerTargets lerp 竞争，导致世界坐标补偿公式基准值错误。
+     */
+    private _snapAllToLayoutTargets(): void {
+        const snap = this._state.snapshot();
+
+        // 组容器：按与 _doLayout 完全相同的公式重算并 snap
+        let curX = 0;
+        for (const g of snap.groups) {
+            const gv = this._groupViews.get(g.id);
+            if (!gv) continue;
+            Tween.stopAllByTarget(gv.node);
+            const halfW = gv.width / 2;
+            curX += halfW;
+            gv.node.setPosition(curX, 0, 0);
+            curX += halfW + GROUP_GAP;
+
+            // 组内卡牌：停止 tweenToX 等残留动画
+            for (const cn of gv.cardNodes) Tween.stopAllByTarget(cn.node);
+        }
+
+        // root 节点：停止残留展开动画（发牌期间可能有 tween），snap 到 _doLayout 最终目标
+        // 不 snap 则 _findDropTarget 中 groupRX 会取到中间值，导致坐标基准错误
+        Tween.stopAllByTarget(this._groupRoot);
+        Tween.stopAllByTarget(this._ungroupRoot);
+        let totalW = curX;
+        if (snap.ungroup.length > 0) {
+            if (snap.groups.length > 0) totalW += GROUP_GAP;
+            totalW += (snap.ungroup.length - 1) * CARD_SPACING + CARD_W;
+        }
+        const rootX = totalW > 0 ? -totalW / 2 : 0;
+        this._groupRoot.setPosition(rootX, 0, 0);
+        this._ungroupRoot.setPosition(rootX, 0, 0);
+
+        // 散牌：停止 tweenToX 残留动画，并 snap 到 _ungroupStartX 基准
+        for (const [val, cn] of this._ungroupNodes) {
+            Tween.stopAllByTarget(cn.node);
+            const idx = snap.ungroup.indexOf(val);
+            if (idx >= 0) {
+                cn.node.setPosition(
+                    this._ungroupStartX + idx * CARD_SPACING,
+                    cn.node.position.y,
+                    0,
+                );
+            }
+        }
+    }
+
     private _createCardNode(value: number): Node {
         const n = this.cardPrefab
             ? instantiate(this.cardPrefab)
@@ -657,12 +707,18 @@ export class HandCardPanel extends Component {
             sourceIndex = [...this._state.ungroup].indexOf(cardValue);
         }
 
+        // 停止所有正在运行的布局 tween，并将容器与散牌节点吸附到最终目标位置。
+        // 若 tween 中途被打断而不 snap，_origGroupLocalX 会捕捉到中间值，
+        // 导致后续补偿 delta 错误（来源组卡牌世界坐标偏移）。
+        this._snapAllToLayoutTargets();
+
         // 快照各组容器当前 local X（_applyPreviewLayout 中计算 delta 的基准）
+        // snap 已保证此时 gv.node.position.x 等于最终布局目标，无需额外覆盖。
         this._origGroupLocalX.clear();
         this._groupContainerTargetX.clear();
         for (const [id, gv] of this._groupViews) {
             this._origGroupLocalX.set(id, gv.node.position.x);
-            this._groupContainerTargetX.set(id, gv.node.position.x); // 初始目标 = 当前位置
+            this._groupContainerTargetX.set(id, gv.node.position.x);
         }
 
         // ── 从映射中移除，避免 _applyPreviewLayout 重复处理 ─────────────
@@ -690,13 +746,6 @@ export class HandCardPanel extends Component {
 
         // 初始预览（仅关闭来源缺口，无悬停目标）
         this._applyPreviewLayout(null, null, 0);
-
-        // 用初始预览计算出的稳定目标位置覆盖 _origGroupLocalX，
-        // 避免上次动画未完成时 gv.node.position.x 是中间值导致补偿 delta 错误。
-        for (const [id] of this._groupViews) {
-            const stableX = this._groupContainerTargetX.get(id);
-            if (stableX !== undefined) this._origGroupLocalX.set(id, stableX);
-        }
     }
 
     private _onCardDragMove(uiPos: Vec2): void {
@@ -769,7 +818,7 @@ export class HandCardPanel extends Component {
         const ungRX     = this._ungroupRoot.position.x;
 
         // ── 辅助：取各组容器的目标中心（_applyPreviewLayout 同步，稳定不受 lerp 影响）────
-        const stableCenter = (id: string, gv: import('./CardGroupView').CardGroupView): number => {
+        const stableCenter = (id: string, gv: CardGroupView): number => {
             const targetX = this._groupContainerTargetX.get(id)
                          ?? this._origGroupLocalX.get(id)
                          ?? gv.node.position.x;
@@ -869,8 +918,9 @@ export class HandCardPanel extends Component {
             const realCards = g.cards.filter(c => c !== cardValue);
             const isSource  = drag.sourceKind === 'group' && drag.sourceGroupId === g.id;
             const isTarget  = hoverKind === 'group' && hoverGroupId === g.id;
-            // 来源组在无悬停或悬停自身时保留空槽（宽度不变），离开到其他区域后收缩
-            const keepNull  = isSource && (hoverKind === null || hoverGroupId === g.id);
+            // 来源组仅在悬停自身（组内拖拽）或牌悬空（null）时保留空槽，
+            // 跨组或拖到散牌区时收缩为实际剩余牌数宽度，与目标组扩展量相抵，总宽守恒。
+            const keepNull  = isSource && (hoverKind === null || isTarget);
             // 仅跨组目标才扩展（组内拖拽时 isSource && isTarget，keepNull 已覆盖）
             const addSlot   = isTarget && !isSource;
             const slotCount = Math.max(1, realCards.length + (keepNull ? 1 : 0) + (addSlot ? 1 : 0));
@@ -901,6 +951,18 @@ export class HandCardPanel extends Component {
         if (gSlots.length > 0 && ungSlotCount > 0) ungroupStartX += GROUP_GAP;
         this._previewUngroupStartX = ungroupStartX;
 
+        // ── 3.5 重新居中：跨组拖拽时目标组扩展（+CARD_SPACING）使总宽增加，
+        //         将两个 root 节点加入 _containerTargets，由 update() Lerp 驱动重新居中，
+        //         消除跨组悬停时的整体漂移。
+        let newTotalW = curX;
+        if (ungSlotCount > 0) {
+            if (gSlots.length > 0) newTotalW += GROUP_GAP;
+            newTotalW += Math.max(0, ungSlotCount - 1) * CARD_SPACING + CARD_W;
+        }
+        const newRootX = newTotalW > 0 ? -newTotalW / 2 : 0;
+        this._containerTargets.set(this._groupRoot,   newRootX);
+        this._containerTargets.set(this._ungroupRoot, newRootX);
+
         // ── 4. 各组内牌坐标目标 ──────────────────────────────────
         for (const gs of gSlots) {
             const { id, gv, realCards, slotCount, keepNull } = gs;
@@ -911,27 +973,16 @@ export class HandCardPanel extends Component {
                 const cn = gv.cardNodes.find(c => c.cardValue === realCards[j]);
                 if (!cn) continue;
 
-                let targetX: number;
-                if (isSource && !keepNull) {
-                    // 来源组且牌已离开：补偿容器位移，保证所有剩余牌世界坐标不变。
-                    // slotIdx 与 keepNull=true 时相同（保留空槽位置），
-                    // delta(origLocal - newLocal) 精确抵消容器偏移，净位移为零。
-                    const origLocal = this._origGroupLocalX.get(id) ?? gv.node.position.x;
-                    const newLocal  = this._groupContainerTargetX.get(id)!;
-                    const slotIdx   = j >= drag.sourceIndex ? j + 1 : j;
-                    targetX = (origLocal - newLocal) + (slotIdx - realCards.length / 2) * CARD_SPACING;
-                } else {
-                    let slotIdx = j;
-                    if (isTarget) {
-                        // 目标组：空槽跟随 hoverIndex
-                        if (j >= hoverIndex) slotIdx = j + 1;
-                    } else if (isSource && keepNull) {
-                        // 来源组悬停自身：空槽保留在 sourceIndex
-                        if (j >= drag.sourceIndex) slotIdx = j + 1;
-                    }
-                    targetX = (slotIdx - (slotCount - 1) / 2) * CARD_SPACING;
+                let slotIdx = j;
+                if (isTarget) {
+                    // 目标组：空槽跟随 hoverIndex
+                    if (j >= hoverIndex) slotIdx = j + 1;
+                } else if (isSource && keepNull) {
+                    // 来源组悬停自身或悬空：空槽保留在 sourceIndex
+                    if (j >= drag.sourceIndex) slotIdx = j + 1;
                 }
-                this._previewTargets.set(cn, targetX);
+                // isSource && !keepNull（跨组/到散牌）：slotIdx = j，牌紧凑居中排列
+                this._previewTargets.set(cn, (slotIdx - (slotCount - 1) / 2) * CARD_SPACING);
             }
         }
 
