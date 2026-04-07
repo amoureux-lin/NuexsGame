@@ -1,7 +1,6 @@
-import { _decorator, Component } from 'cc';
+import { _decorator, Component ,Vec3} from 'cc';
 import { Nexus } from 'db://nexus-framework/index';
 import { GameEvents } from 'db://assets/script/config/GameEvents';
-import { TongitsEvents } from '../../config/TongitsEvents';
 import { PlayerSeat } from './PlayerSeat';
 import type { TongitsPlayerInfo } from '../../proto/tongits';
 
@@ -214,4 +213,20 @@ export class PlayerSeatManager extends Component {
     private _findSeatByUserId(userId: number): PlayerSeat | null {
         return this._allSeats().find(s => s?.getUserId() === userId) ?? null;
     }
+
+    /**
+     * 获取所有非空座位头像节点的世界坐标。
+     * 供 GameStartEffect 确定 Phase1 的金币起点。
+     */
+    getAvatarWorldPositions(): Vec3[] {
+        const result: Vec3[] = [];
+        for (const seat of this._allSeats()) {
+            if (!seat || seat.isEmpty()) continue;
+            // avatarSprite 节点即头像，取其世界坐标
+            const avatarNode = seat.avatarSprite?.node;
+            if (avatarNode) result.push(avatarNode.getWorldPosition());
+        }
+        return result;
+    }
+
 }

@@ -81,7 +81,7 @@ const DEAL_INTERVAL      = 55;
 /** 弹跳单步时长 */
 const BOUNCE_STEP        = 0.16;
 /** 全部落牌后暂停时长（让玩家看清手牌） */
-const DEAL_PAUSE_MS      = 240;
+const DEAL_PAUSE_MS      = 100;
 /** 组内牌收缩时长（Phase 4 消失动画） */
 const SHRINK_DUR         = 0.12;
 
@@ -504,19 +504,20 @@ export class HandCardPanel extends Component {
         this._dealReorderDur = LAYOUT_DUR;
 
         // ── 1. 预算总宽度 ─────────────────────────────────────
+        // 组的视觉宽度：组间有 GROUP_GAP，首尾不加（不含尾部间距）
         let totalW = 0;
         for (const g of groups) {
             const gv = this._groupViews.get(g.id);
             if (!gv) continue;
             totalW += gv.width + GROUP_GAP;
         }
-        let ungroupStartX = totalW;
+        if (groups.length > 0) totalW -= GROUP_GAP; // 去掉最后一组的尾部间距
+
+        let ungroupStartX = 0;
         if (ungroup.length > 0) {
-            if (groups.length > 0) {
-                // totalW 已含最后一组后的 GROUP_GAP；再 +GROUP_GAP 会使「最后一组—散牌」边距变成约 2*GAP - cardW/2，视觉上比组间窄
-                totalW += this._layoutCardW() / 2;
-            }
-            ungroupStartX = totalW;
+            if (groups.length > 0) totalW += GROUP_GAP; // 组区与散牌区之间的间距
+            // 首张散牌中心 = 当前左边界 + 半牌宽，使散牌视觉区两侧对称
+            ungroupStartX = totalW + this._layoutCardW() / 2;
             totalW += (ungroup.length - 1) * CARD_SPACING + this._layoutCardW();
         }
         this._ungroupStartX = ungroupStartX;
@@ -609,9 +610,10 @@ export class HandCardPanel extends Component {
         Tween.stopAllByTarget(this._ungroupRoot);
         Tween.stopAllByTarget(this._dragLayer);
         Tween.stopAllByTarget(this._markerOverlayRoot);
+        if (snap.groups.length > 0) curX -= GROUP_GAP; // 去掉最后一组尾部间距，与 _doLayout 一致
         let totalW = curX;
         if (snap.ungroup.length > 0) {
-            if (snap.groups.length > 0) totalW += this._layoutCardW() / 2;
+            if (snap.groups.length > 0) totalW += GROUP_GAP;
             totalW += (snap.ungroup.length - 1) * CARD_SPACING + this._layoutCardW();
         }
         const rootX = totalW > 0 ? -totalW / 2 : 0;
@@ -1048,8 +1050,12 @@ export class HandCardPanel extends Component {
         }
 
         // ── 3. 散牌起始 X（相对 _ungroupRoot，与 _doLayout 公式一致）──
+        if (gSlots.length > 0) curX -= GROUP_GAP; // 去掉最后一组尾部间距
         let ungroupStartX = curX;
-        if (gSlots.length > 0 && ungSlotCount > 0) ungroupStartX += this._layoutCardW() / 2;
+        if (ungSlotCount > 0) {
+            if (gSlots.length > 0) ungroupStartX += GROUP_GAP; // 组区与散牌区间距
+            ungroupStartX += this._layoutCardW() / 2;          // 首张牌中心偏移
+        }
         this._previewUngroupStartX = ungroupStartX;
 
         // ── 3.5 重新居中：跨组拖拽时目标组扩展（+CARD_SPACING）使总宽增加，
@@ -1057,7 +1063,7 @@ export class HandCardPanel extends Component {
         //         消除跨组悬停时的整体漂移。
         let newTotalW = curX;
         if (ungSlotCount > 0) {
-            if (gSlots.length > 0) newTotalW += this._layoutCardW() / 2;
+            if (gSlots.length > 0) newTotalW += GROUP_GAP;
             newTotalW += Math.max(0, ungSlotCount - 1) * CARD_SPACING + this._layoutCardW();
         }
         const newRootX = newTotalW > 0 ? -newTotalW / 2 : 0;

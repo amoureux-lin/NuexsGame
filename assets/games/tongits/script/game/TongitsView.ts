@@ -24,6 +24,7 @@ import type {
     GameResultDetailsRes,
 } from '../proto/tongits';
 import {GameEvents} from "db://assets/script/config/GameEvents";
+import {GameStartEffect} from "db://assets/games/tongits/script/views/effect/GameStartEffect";
 
 const { ccclass, property } = _decorator;
 
@@ -56,6 +57,9 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     /** 本地玩家手牌区（底部），仅自己可见发牌动画 */
     @property({ type: HandCardPanel, tooltip: '本地玩家手牌区组件' })
     handCardPanel: HandCardPanel = null!;
+
+    @property({ type: GameStartEffect, tooltip: '游戏开始动画控制器' })
+    gameStartEffect: GameStartEffect = null!;
 
     // ── 缓存本地状态 ─────────────────────────────────────
 
@@ -152,7 +156,16 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         this.actionPanel?.hideAll();
         // 发牌动画（仅自己可见）
         const selfPlayer = this._players.find(p => p.playerInfo?.userId === this._selfUserId);
-        this.handCardPanel?.dealCards(selfPlayer?.handCards ?? []);
+        const potAmount = (data.gameInfo?.betAmount ?? 0)
+            * (data.gameInfo?.pot?.base ?? 1);
+        const avatarPositions = this.seatManager?.getAvatarWorldPositions() ?? [];
+
+        // 动画序列 → 完成后发牌
+        this.gameStartEffect?.playSequence(
+            avatarPositions,
+            potAmount,
+            () => this.handCardPanel?.dealCards(selfPlayer?.handCards ?? []),
+        );
     }
 
     protected onActionChange(data: ActionChangeBroadcast): void {
