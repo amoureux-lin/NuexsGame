@@ -16,10 +16,27 @@ const { ccclass, property } = _decorator;
 
 // ── 常量 ──────────────────────────────────────────────────
 
-export const CARD_W       = 80;
-export const CARD_H       = 110;
+/** 无 SpriteFrame 或尺寸无效时的回退宽高（布局与占位用） */
+export const DEFAULT_CARD_W = 80;
+export const DEFAULT_CARD_H = 110;
+
+/** @deprecated 请用 DEFAULT_CARD_W 或节点 UITransform / getCardContentSize */
+export const CARD_W = DEFAULT_CARD_W;
+/** @deprecated 请用 DEFAULT_CARD_H 或节点 UITransform / getCardContentSize */
+export const CARD_H = DEFAULT_CARD_H;
+
 /** 牌与牌之间的叠牌间距（px），散牌与分组统一使用 */
 export const CARD_SPACING = 64;
+
+/** 从已挂 CardNode 的节点读取内容区宽高（无组件或尺寸为 0 时回退默认） */
+export function getCardContentSize(cardRoot: Node | null): { w: number; h: number } {
+    if (!cardRoot?.isValid) return { w: DEFAULT_CARD_W, h: DEFAULT_CARD_H };
+    const tf = cardRoot.getComponent(UITransform);
+    if (!tf) return { w: DEFAULT_CARD_W, h: DEFAULT_CARD_H };
+    const { width: cw, height: ch } = tf.contentSize;
+    if (cw > 0 && ch > 0) return { w: cw, h: ch };
+    return { w: DEFAULT_CARD_W, h: DEFAULT_CARD_H };
+}
 
 const LIFT_Y        = 30; //上移距离
 const LIFT_DURATION = 0.1;
@@ -183,7 +200,7 @@ export class CardNode extends Component {
             .start();
     }
 
-    /** 刷新 cardSprite 的 spriteFrame：牌背或牌面 */
+    /** 刷新 cardSprite 的 spriteFrame：牌背或牌面，并按帧图尺寸同步根节点与描边/蒙层 */
     private _refreshDisplay(): void {
         if (!this.cardSprite) return;
         if (this._faceDown) {
@@ -192,6 +209,65 @@ export class CardNode extends Component {
             if (this.pokerAtlas && this._cardValue) {
                 const frame = this.pokerAtlas.getSpriteFrame(String(this._cardValue));
                 if (frame) this.cardSprite.spriteFrame = frame;
+            }
+        }
+        this._syncNodeSizeFromCurrentFrame();
+    }
+
+    /**
+     * 按当前 spriteFrame 的像素尺寸设置根 UITransform（CUSTOM 模式），
+     * 并同步选中框 / 提示蒙层。
+     */
+    private _syncNodeSizeFromCurrentFrame(): void {
+        const sf = this.cardSprite?.spriteFrame;
+        const tf = this.node.getComponent(UITransform);
+        if (!tf) return;
+
+        let w = 0;
+        let h = 0;
+        if (sf) {
+            const os = sf.originalSize;
+            if (os && os.width > 0 && os.height > 0) {
+                w = os.width;
+                h = os.height;
+            } else {
+                const r = sf.rect;
+                w = r.width;
+                h = r.height;
+            }
+        }
+        if (w <= 0 || h <= 0) {
+            w = DEFAULT_CARD_W;
+            h = DEFAULT_CARD_H;
+        }
+        tf.setContentSize(w, h);
+        this._syncOverlaySizes(w, h);
+    }
+
+    private _syncOverlaySizes(w: number, h: number): void {
+        const halfW = w / 2;
+        const halfH = h / 2;
+        const radius = Math.min(6, Math.min(w, h) * 0.08);
+
+        if (this.selectedBorder) {
+            this.selectedBorder.getComponent(UITransform)?.setContentSize(w, h);
+            const g = this.selectedBorder.getComponent(Graphics);
+            if (g) {
+                g.clear();
+                g.lineWidth   = 3;
+                g.strokeColor = new Color(255, 210, 0, 255);
+                g.roundRect(-halfW, -halfH, w, h, radius);
+                g.stroke();
+            }
+        }
+        if (this.hintOverlay) {
+            this.hintOverlay.getComponent(UITransform)?.setContentSize(w, h);
+            const g = this.hintOverlay.getComponent(Graphics);
+            if (g) {
+                g.clear();
+                g.fillColor = new Color(0, 140, 255, 255);
+                g.roundRect(-halfW, -halfH, w, h, radius);
+                g.fill();
             }
         }
     }
@@ -203,7 +279,7 @@ export class CardNode extends Component {
     private _ensureVisuals(): void {
         let tf = this.node.getComponent(UITransform);
         if (!tf) tf = this.node.addComponent(UITransform);
-        tf.setContentSize(CARD_W, CARD_H);
+        tf.setContentSize(DEFAULT_CARD_W, DEFAULT_CARD_H);
 
         // 牌面/牌背 Sprite（直接挂在根节点）
         if (!this.cardSprite) {
@@ -211,15 +287,11 @@ export class CardNode extends Component {
             this.cardSprite.sizeMode = Sprite.SizeMode.CUSTOM;
         }
 
-        // 选中高亮（黄色描边）
+        // 选中高亮（黄色描边）— 具体尺寸在 _syncNodeSizeFromCurrentFrame 中按帧图重绘
         if (!this.selectedBorder) {
             const n = new Node('_selectedBorder');
-            n.addComponent(UITransform).setContentSize(CARD_W, CARD_H);
-            const g = n.addComponent(Graphics);
-            g.lineWidth   = 3;
-            g.strokeColor = new Color(255, 210, 0, 255);
-            g.roundRect(-CARD_W / 2, -CARD_H / 2, CARD_W, CARD_H, 6);
-            g.stroke();
+            n.addComponent(UITransform).setContentSize(DEFAULT_CARD_W, DEFAULT_CARD_H);
+            n.addComponent(Graphics);
             n.active = false;
             this.node.addChild(n);
             this.selectedBorder = n;
@@ -228,12 +300,9 @@ export class CardNode extends Component {
         // Meld 提示高亮（蓝色半透明蒙层）
         if (!this.hintOverlay) {
             const n = new Node('_hintOverlay');
-            n.addComponent(UITransform).setContentSize(CARD_W, CARD_H);
+            n.addComponent(UITransform).setContentSize(DEFAULT_CARD_W, DEFAULT_CARD_H);
             n.addComponent(UIOpacity).opacity = 80;
-            const g = n.addComponent(Graphics);
-            g.fillColor = new Color(0, 140, 255, 255);
-            g.roundRect(-CARD_W / 2, -CARD_H / 2, CARD_W, CARD_H, 6);
-            g.fill();
+            n.addComponent(Graphics);
             n.active = false;
             this.node.addChild(n);
             this.hintOverlay = n;

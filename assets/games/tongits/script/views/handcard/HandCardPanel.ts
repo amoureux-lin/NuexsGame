@@ -13,8 +13,10 @@
  *
  * 节点结构（运行时动态）：
  *   HandCardPanel
- *   ├── _groupRoot      ← 所有 CardGroupView 挂在此节点
- *   └── _ungroupRoot    ← 所有 UNGROUP 区 CardNode 挂在此节点
+ *   ├── _groupRoot         ← 所有 CardGroupView
+ *   ├── _ungroupRoot       ← UNGROUP 散牌
+ *   ├── _dragLayer         ← 拖拽中的牌（在组与标记之下）
+ *   └── _markerOverlayRoot ← 各组 groupMarker 挂此（最上层，盖住拖拽牌）
  */
 
 import {
@@ -40,7 +42,7 @@ export interface SelectionInfo {
 import { autoGroup, GroupData, judgeGroupType, GroupType } from '../../utils/GroupAlgorithm';
 import { SortMode }                                      from '../../utils/CardDef';
 import { CardGroupView }                                 from './CardGroupView';
-import { CardNode, CARD_W, CARD_H, CARD_SPACING }         from './CardNode';
+import { CardNode, DEFAULT_CARD_W, DEFAULT_CARD_H, CARD_SPACING, getCardContentSize } from './CardNode';
 
 const { ccclass, property } = _decorator;
 
@@ -61,7 +63,7 @@ interface DragState {
 // ── 布局常量 ──────────────────────────────────────────────
 
 /** 组与组之间的间距 */
-const GROUP_GAP          = 48;
+const GROUP_GAP          = 36;
 /** 布局重排动画时长（正常交互） */
 const LAYOUT_DUR         = 0.14;
 /**
@@ -124,6 +126,10 @@ export class HandCardPanel extends Component {
     private _state       = new HandCardState();
     private _groupRoot:   Node = null!;
     private _ungroupRoot: Node = null!;
+    /** 拖拽中浮层牌的父节点（sibling 在 _markerOverlayRoot 之下，保证组标记盖在牌上） */
+    private _dragLayer:   Node = null!;
+    /** 组类型条（groupMarker）统一挂此节点，始终在手牌区最顶层 */
+    private _markerOverlayRoot: Node = null!;
 
     /** groupId → CardGroupView */
     private _groupViews  = new Map<string, CardGroupView>();
@@ -159,8 +165,12 @@ export class HandCardPanel extends Component {
     onLoad(): void {
         this._groupRoot   = this._makeContainerNode('_groupRoot');
         this._ungroupRoot = this._makeContainerNode('_ungroupRoot');
+        this._dragLayer   = this._makeContainerNode('_dragLayer');
+        this._markerOverlayRoot = this._makeContainerNode('_markerOverlayRoot');
         this.node.addChild(this._groupRoot);
         this.node.addChild(this._ungroupRoot);
+        this.node.addChild(this._dragLayer);
+        this.node.addChild(this._markerOverlayRoot);
 
         this._unsubscribe = this._state.onChange((snap) => this._onStateChange(snap));
     }
@@ -321,8 +331,15 @@ export class HandCardPanel extends Component {
     clear(): void {
         this._groupRoot.setPosition(0, 0, 0);
         this._ungroupRoot.setPosition(0, 0, 0);
+        this._dragLayer.setPosition(0, 0, 0);
+        this._markerOverlayRoot.setPosition(0, 0, 0);
         this._ungroupRoot.removeAllChildren();
-        for (const gv of this._groupViews.values()) gv.node.destroy();
+        this._dragLayer.removeAllChildren();
+        this._markerOverlayRoot.removeAllChildren();
+        for (const gv of this._groupViews.values()) {
+            gv.setMarkerOverlayParent(null);
+            gv.node.destroy();
+        }
         this._groupViews.clear();
         for (const cn of this._ungroupNodes.values()) cn.node.destroy();
         this._ungroupNodes.clear();
@@ -397,7 +414,8 @@ export class HandCardPanel extends Component {
         // 删除已消失的组
         for (const [id, gv] of this._groupViews) {
             if (!newIds.has(id)) {
-                gv.destroy();
+                gv.setMarkerOverlayParent(null);
+                gv.node.destroy();
                 this._groupViews.delete(id);
             }
         }
@@ -416,9 +434,11 @@ export class HandCardPanel extends Component {
                 gv = groupNode.getComponent(CardGroupView) ?? groupNode.addComponent(CardGroupView);
                 gv.onGroupClick = (id) => this._state.toggleGroup(id);
                 gv.init(g, (v) => this._createCardNode(v));
+                gv.setMarkerOverlayParent(this._markerOverlayRoot);
                 this._groupViews.set(g.id, gv);
             } else {
                 gv.refresh(g, (v) => this._createCardNode(v));
+                gv.setMarkerOverlayParent(this._markerOverlayRoot);
             }
             gv.setSelected(selectedIds.has(g.id));
             // 绑定（或重绑）所有组内牌的拖拽回调
@@ -463,6 +483,13 @@ export class HandCardPanel extends Component {
 
     // ── 布局 ──────────────────────────────────────────────
 
+    /** groupMarker 挂在 overlay 上时，需与组世界坐标同步（每帧或 snap 后调用） */
+    private _syncAllGroupMarkers(): void {
+        for (const gv of this._groupViews.values()) {
+            gv.syncMarkerLayout();
+        }
+    }
+
     /**
      * 计算并应用所有组 + UNGROUP 散牌的目标位置，使用 tween 平滑过渡。
      * 发牌后首次调用会使用 _dealReorderDur（更长），之后自动还原为 LAYOUT_DUR。
@@ -487,20 +514,29 @@ export class HandCardPanel extends Component {
         if (ungroup.length > 0) {
             if (groups.length > 0) totalW += GROUP_GAP;
             ungroupStartX = totalW;
-            totalW += (ungroup.length - 1) * CARD_SPACING + CARD_W;
+            totalW += (ungroup.length - 1) * CARD_SPACING + this._layoutCardW();
         }
         this._ungroupStartX = ungroupStartX;
 
         const targetX = -totalW / 2;
 
         // ── 2. 容器定位（先于个体 tween，保证起飞点坐标转换正确）──
+        const easeQuad = { easing: 'quadOut' as const };
         if (dur > LAYOUT_DUR) {
-            // 展开动画：容器从中心 tween 展开
-            tween(this._groupRoot)  .to(dur, { position: new Vec3(targetX, 0, 0) }, { easing: 'quadOut' }).start();
-            tween(this._ungroupRoot).to(dur, { position: new Vec3(targetX, 0, 0) }, { easing: 'quadOut' }).start();
+            // 展开动画：容器 tween；每帧同步 overlay 上的 groupMarker（与 _groupRoot 同轨，避免全程错位）
+            const rootTweenOpts = {
+                easing: 'quadOut' as const,
+                onUpdate: () => { this._syncAllGroupMarkers(); },
+            };
+            tween(this._groupRoot)  .to(dur, { position: new Vec3(targetX, 0, 0) }, rootTweenOpts).start();
+            tween(this._ungroupRoot).to(dur, { position: new Vec3(targetX, 0, 0) }, easeQuad).start();
+            tween(this._dragLayer)  .to(dur, { position: new Vec3(targetX, 0, 0) }, easeQuad).start();
+            tween(this._markerOverlayRoot).to(dur, { position: new Vec3(targetX, 0, 0) }, easeQuad).start();
         } else {
             this._groupRoot.setPosition(targetX, 0, 0);
             this._ungroupRoot.setPosition(targetX, 0, 0);
+            this._dragLayer.setPosition(targetX, 0, 0);
+            this._markerOverlayRoot.setPosition(targetX, 0, 0);
         }
 
         // ── 3. 应用拖拽释放起飞点（仅普通 layout，仅散牌目标）──
@@ -520,8 +556,13 @@ export class HandCardPanel extends Component {
             if (!gv) continue;
             const halfW = gv.width / 2;
             curX += halfW;
+            // 每帧同步：容器与组 x 同时 tween 时，任一次更新后重算 overlay 世界坐标
+            const gvOpts = {
+                easing: 'quadOut' as const,
+                onUpdate: () => { gv.syncMarkerLayout(); },
+            };
             tween(gv.node)
-                .to(dur, { position: new Vec3(curX, 0, 0) }, { easing: 'quadOut' })
+                .to(dur, { position: new Vec3(curX, 0, 0) }, gvOpts)
                 .start();
             curX += halfW + GROUP_GAP;
         }
@@ -563,14 +604,18 @@ export class HandCardPanel extends Component {
         // 不 snap 则 _findDropTarget 中 groupRX 会取到中间值，导致坐标基准错误
         Tween.stopAllByTarget(this._groupRoot);
         Tween.stopAllByTarget(this._ungroupRoot);
+        Tween.stopAllByTarget(this._dragLayer);
+        Tween.stopAllByTarget(this._markerOverlayRoot);
         let totalW = curX;
         if (snap.ungroup.length > 0) {
             if (snap.groups.length > 0) totalW += GROUP_GAP;
-            totalW += (snap.ungroup.length - 1) * CARD_SPACING + CARD_W;
+            totalW += (snap.ungroup.length - 1) * CARD_SPACING + this._layoutCardW();
         }
         const rootX = totalW > 0 ? -totalW / 2 : 0;
         this._groupRoot.setPosition(rootX, 0, 0);
         this._ungroupRoot.setPosition(rootX, 0, 0);
+        this._dragLayer.setPosition(rootX, 0, 0);
+        this._markerOverlayRoot.setPosition(rootX, 0, 0);
 
         // 散牌：停止 tweenToX 残留动画，并 snap 到 _ungroupStartX 基准
         for (const [val, cn] of this._ungroupNodes) {
@@ -584,6 +629,8 @@ export class HandCardPanel extends Component {
                 );
             }
         }
+
+        this._syncAllGroupMarkers();
     }
 
     private _createCardNode(value: number): Node {
@@ -601,8 +648,42 @@ export class HandCardPanel extends Component {
     private _makeContainerNode(name: string): Node {
         const n  = new Node(name);
         const tf = n.addComponent(UITransform);
-        tf.setContentSize(0, CARD_H);
+        tf.setContentSize(0, this._layoutCardH());
         return n;
+    }
+
+    /**
+     * 当前手牌区用于布局的牌面宽（与 CardNode 根 UITransform 一致）。
+     * 优先正在拖拽的浮层牌，其次散牌、组内首张；全无则默认。
+     */
+    private _layoutCardW(): number {
+        if (this._drag?.floatNode?.isValid) {
+            const cn = this._drag.floatNode.getComponent(CardNode);
+            if (cn) return getCardContentSize(this._drag.floatNode).w;
+        }
+        for (const cn of this._ungroupNodes.values()) {
+            return getCardContentSize(cn.node).w;
+        }
+        for (const gv of this._groupViews.values()) {
+            const first = gv.cardNodes[0];
+            if (first) return getCardContentSize(first.node).w;
+        }
+        return DEFAULT_CARD_W;
+    }
+
+    private _layoutCardH(): number {
+        if (this._drag?.floatNode?.isValid) {
+            const cn = this._drag.floatNode.getComponent(CardNode);
+            if (cn) return getCardContentSize(this._drag.floatNode).h;
+        }
+        for (const cn of this._ungroupNodes.values()) {
+            return getCardContentSize(cn.node).h;
+        }
+        for (const gv of this._groupViews.values()) {
+            const first = gv.cardNodes[0];
+            if (first) return getCardContentSize(first.node).h;
+        }
+        return DEFAULT_CARD_H;
     }
 
     /** 牌堆节点在本 panel 坐标系中的位置（发牌起点） */
@@ -612,7 +693,8 @@ export class HandCardPanel extends Component {
             : this.node.getWorldPosition();
         const local = this._worldToLocal(world);
         // 若牌堆与 panel 重叠，强制偏移到上方作为起点
-        if (Math.abs(local.y) < CARD_H) local.y = CARD_H * 3;
+        const ch = this._layoutCardH();
+        if (Math.abs(local.y) < ch) local.y = ch * 3;
         return local;
     }
 
@@ -658,6 +740,10 @@ export class HandCardPanel extends Component {
         // 合并完成后短暂停顿，再展开
         await delay(120);
 
+        for (const gv of this._groupViews.values()) {
+            gv.setMarkerOverlayParent(null);
+        }
+
         // 清理状态映射（节点稍后统一销毁）
         this._ungroupNodes.clear();
         this._groupViews.clear();
@@ -667,8 +753,12 @@ export class HandCardPanel extends Component {
         // 保险：清除容器残余
         this._ungroupRoot.removeAllChildren();
         this._groupRoot.removeAllChildren();
+        this._dragLayer.removeAllChildren();
+        this._markerOverlayRoot.removeAllChildren();
         this._ungroupRoot.setPosition(0, 0, 0);
         this._groupRoot.setPosition(0, 0, 0);
+        this._dragLayer.setPosition(0, 0, 0);
+        this._markerOverlayRoot.setPosition(0, 0, 0);
 
         // 触发展开（_doLayout 使用较长时长产生仪式感）
         this._dealReorderDur = DEAL_REORDER_DUR;
@@ -728,11 +818,10 @@ export class HandCardPanel extends Component {
             this._groupViews.get(sourceGroupId)?.removeCard(cardValue);
         }
 
-        // 将牌节点重挂到 panel 顶层（维持世界坐标）
+        // 挂到拖拽层（在 _groupRoot 之上、_markerOverlayRoot 之下，组标记盖住拖牌）
         const worldPos = cn.node.getWorldPosition();
-        this.node.addChild(cn.node);
+        this._dragLayer.addChild(cn.node);
         cn.node.setWorldPosition(worldPos);
-        cn.node.setSiblingIndex(this.node.children.length - 1);
 
         this._drag = {
             cardValue,
@@ -752,12 +841,13 @@ export class HandCardPanel extends Component {
         const drag = this._drag;
         if (!drag) return;
 
-        // 移动 floatNode 跟随手指
-        const local = this._worldToLocal(new Vec3(uiPos.x, uiPos.y, 0));
-        drag.floatNode.setPosition(local.x, local.y, 0);
+        // 浮牌挂在 _dragLayer 上：用 Panel 本地坐标减去拖拽层位移，得到相对 _dragLayer 的本地坐标
+        const pl = this._worldToLocal(new Vec3(uiPos.x, uiPos.y, 0));
+        const dp = this._dragLayer.position;
+        drag.floatNode.setPosition(pl.x - dp.x, pl.y - dp.y, 0);
 
-        // 检测悬停目标
-        const { kind, groupId, index } = this._findDropTarget(local.x);
+        // 检测悬停目标（与 _findDropTarget 约定一致：Panel 本地 X）
+        const { kind, groupId, index } = this._findDropTarget(pl.x);
 
         if (kind !== drag.hoverKind || groupId !== drag.hoverGroupId || index !== drag.hoverIndex) {
             drag.hoverKind    = kind;
@@ -924,7 +1014,7 @@ export class HandCardPanel extends Component {
             // 仅跨组目标才扩展（组内拖拽时 isSource && isTarget，keepNull 已覆盖）
             const addSlot   = isTarget && !isSource;
             const slotCount = Math.max(1, realCards.length + (keepNull ? 1 : 0) + (addSlot ? 1 : 0));
-            const width     = CARD_W + Math.max(0, slotCount - 1) * CARD_SPACING;
+            const width     = this._layoutCardW() + Math.max(0, slotCount - 1) * CARD_SPACING;
             gSlots.push({ id: g.id, gv, realCards, slotCount, width, keepNull });
 
             // 实时预览该组有效性：目标组加入拖拽牌后的类型；来源组移走拖拽牌后的类型
@@ -965,11 +1055,13 @@ export class HandCardPanel extends Component {
         let newTotalW = curX;
         if (ungSlotCount > 0) {
             if (gSlots.length > 0) newTotalW += GROUP_GAP;
-            newTotalW += Math.max(0, ungSlotCount - 1) * CARD_SPACING + CARD_W;
+            newTotalW += Math.max(0, ungSlotCount - 1) * CARD_SPACING + this._layoutCardW();
         }
         const newRootX = newTotalW > 0 ? -newTotalW / 2 : 0;
         this._containerTargets.set(this._groupRoot,   newRootX);
         this._containerTargets.set(this._ungroupRoot, newRootX);
+        this._containerTargets.set(this._dragLayer,   newRootX);
+        this._containerTargets.set(this._markerOverlayRoot, newRootX);
 
         // ── 4. 各组内牌坐标目标 ──────────────────────────────────
         for (const gs of gSlots) {
