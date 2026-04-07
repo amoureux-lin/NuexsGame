@@ -54,8 +54,8 @@ const GROUP_MARKER_BOTTOM_PAD = 4;
 /** 组类型显示文字 */
 const TYPE_TEXT: Record<GroupType, string> = {
     [GroupType.SPECIAL]: 'Special',
-    [GroupType.VALID]:   'Valid',
-    [GroupType.INVALID]: 'Invalid',
+    [GroupType.VALID]:   '',
+    [GroupType.INVALID]: '',
     [GroupType.UNGROUP]: '',
 };
 

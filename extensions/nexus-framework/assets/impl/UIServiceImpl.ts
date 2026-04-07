@@ -1,4 +1,4 @@
-import { director, instantiate, Node, Prefab, UITransform, Widget } from 'cc';
+import { Color, director, instantiate, Node, Prefab, Sprite, UITransform, Widget } from 'cc';
 import { Nexus } from '../core/Nexus';
 import { IUIService, UILayer, type UIPanelConfigMap, type UIPanelOptions } from '../services/contracts';
 import { NexusEvents } from '../NexusEvents';
@@ -123,6 +123,9 @@ export class UIServiceImpl extends IUIService {
                 existing.node.active = true;
                 if (existing.maskNode) existing.maskNode.active = true;
             }
+            if (needMask && existing.maskNode) {
+                this._applyMaskColor(existing.maskNode, cfg?.maskColor);
+            }
             this.dispatch(existing.node, 'onShow', params, name, existing.maskNode);
 
             // 播放显示动画
@@ -164,7 +167,10 @@ export class UIServiceImpl extends IUIService {
         let maskNode: Node | null = null;
         if (needMask) {
             maskNode = await this._createMask(name, cfg);
-            if (maskNode) layerNode.addChild(maskNode);
+            if (maskNode) {
+                this._applyMaskColor(maskNode, cfg?.maskColor);
+                layerNode.addChild(maskNode);
+            }
         }
 
         // 创建面板节点
@@ -406,6 +412,39 @@ export class UIServiceImpl extends IUIService {
         }
 
         return node;
+    }
+
+    /**
+     * 将 UIPanelOptions.maskColor（RRGGBBAA，可选 # 前缀）应用到遮罩节点下所有 Sprite。
+     * 与 contracts 约定一致；6 位视为 RRGGBB + 不透明。
+     */
+    private _applyMaskColor(root: Node, hex?: string): void {
+        const c = this._parseMaskColorHex(hex);
+        const apply = (n: Node): void => {
+            const sp = n.getComponent(Sprite);
+            if (sp) sp.color = c;
+            for (const ch of n.children) apply(ch);
+        };
+        apply(root);
+    }
+
+    private _parseMaskColorHex(hex?: string): Color {
+        const def = '000000AA';
+        const raw = (hex && hex.trim() !== '' ? hex : def).replace(/^#/, '').trim();
+        if (raw.length === 6) {
+            const r = parseInt(raw.slice(0, 2), 16);
+            const g = parseInt(raw.slice(2, 4), 16);
+            const b = parseInt(raw.slice(4, 6), 16);
+            return new Color(r, g, b, 255);
+        }
+        if (raw.length === 8) {
+            const r = parseInt(raw.slice(0, 2), 16);
+            const g = parseInt(raw.slice(2, 4), 16);
+            const b = parseInt(raw.slice(4, 6), 16);
+            const a = parseInt(raw.slice(6, 8), 16);
+            return new Color(r, g, b, a);
+        }
+        return new Color(0, 0, 0, 170);
     }
 
     // ── 私有工具 ─────────────────────────────────────────

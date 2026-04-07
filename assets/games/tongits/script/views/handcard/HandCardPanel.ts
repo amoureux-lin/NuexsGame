@@ -512,7 +512,10 @@ export class HandCardPanel extends Component {
         }
         let ungroupStartX = totalW;
         if (ungroup.length > 0) {
-            if (groups.length > 0) totalW += GROUP_GAP;
+            if (groups.length > 0) {
+                // totalW 已含最后一组后的 GROUP_GAP；再 +GROUP_GAP 会使「最后一组—散牌」边距变成约 2*GAP - cardW/2，视觉上比组间窄
+                totalW += this._layoutCardW() / 2;
+            }
             ungroupStartX = totalW;
             totalW += (ungroup.length - 1) * CARD_SPACING + this._layoutCardW();
         }
@@ -608,7 +611,7 @@ export class HandCardPanel extends Component {
         Tween.stopAllByTarget(this._markerOverlayRoot);
         let totalW = curX;
         if (snap.ungroup.length > 0) {
-            if (snap.groups.length > 0) totalW += GROUP_GAP;
+            if (snap.groups.length > 0) totalW += this._layoutCardW() / 2;
             totalW += (snap.ungroup.length - 1) * CARD_SPACING + this._layoutCardW();
         }
         const rootX = totalW > 0 ? -totalW / 2 : 0;
@@ -1046,7 +1049,7 @@ export class HandCardPanel extends Component {
 
         // ── 3. 散牌起始 X（相对 _ungroupRoot，与 _doLayout 公式一致）──
         let ungroupStartX = curX;
-        if (gSlots.length > 0 && ungSlotCount > 0) ungroupStartX += GROUP_GAP;
+        if (gSlots.length > 0 && ungSlotCount > 0) ungroupStartX += this._layoutCardW() / 2;
         this._previewUngroupStartX = ungroupStartX;
 
         // ── 3.5 重新居中：跨组拖拽时目标组扩展（+CARD_SPACING）使总宽增加，
@@ -1054,7 +1057,7 @@ export class HandCardPanel extends Component {
         //         消除跨组悬停时的整体漂移。
         let newTotalW = curX;
         if (ungSlotCount > 0) {
-            if (gSlots.length > 0) newTotalW += GROUP_GAP;
+            if (gSlots.length > 0) newTotalW += this._layoutCardW() / 2;
             newTotalW += Math.max(0, ungSlotCount - 1) * CARD_SPACING + this._layoutCardW();
         }
         const newRootX = newTotalW > 0 ? -newTotalW / 2 : 0;

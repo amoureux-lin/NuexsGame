@@ -12,6 +12,6 @@ export const TongitsUIPanelConfig: Record<string, UIPanelOptions> = {
         prefab: 'res/prefabs/mockView',
         mask:true,
         maskClose:true,
-        maskColor:"000000"
+        maskColor:"#00000000"
     }
 };
