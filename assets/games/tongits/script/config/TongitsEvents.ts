@@ -52,4 +52,8 @@ export const TongitsEvents = {
     CMD_TONGITS_CLICK: 'tongits:cmd:tongitsClick',
     /** 查看结算详情 */
     CMD_RESULT_DETAILS: 'tongits:cmd:resultDetails',
+    /** 手牌分组（本地操作） */
+    CMD_GROUP: 'tongits:cmd:group',
+    /** 手牌取消分组（本地操作） */
+    CMD_UNGROUP: 'tongits:cmd:ungroup',
 } as const;

@@ -2,6 +2,7 @@ import { _decorator, Button, Component } from 'cc';
 import { Nexus } from 'db://nexus-framework/index';
 import { TongitsEvents } from '../../config/TongitsEvents';
 import type { TongitsPlayerInfo, GameInfo } from '../../proto/tongits';
+import type { ButtonStates } from '../../utils/HandCardState';
 
 const { ccclass, property } = _decorator;
 
@@ -9,116 +10,120 @@ const { ccclass, property } = _decorator;
 const enum PLAYER_STATUS {
     INIT   = 1,  // 等待抽牌
     SELECT = 2,  // 已弃牌，等待他人操作
-    ACTION = 3,  // 已抽牌，可出牌/弃牌/吃牌/补牌
+    ACTION = 3,  // 已抽牌，可出牌/弃牌等
 }
 
 /**
  * ActionPanel — 游戏进行中的操作面板
  *
- * 显示条件：roomStatus === GAME（游戏中）
+ * 按钮说明：
+ *   group    — 将选中手牌创建组合（本地手牌操作）
+ *   ungroup  — 取消选中的手牌组合（本地手牌操作）
+ *   drop     — 打出有效组合到桌面（需 canDrop）
+ *   drump    — 弃一张牌到弃牌堆
+ *   fight    — 挑战 / 接受 / 拒绝
  *
- * 按钮可见规则（轮到自己时才可操作）：
- *   INIT   状态：drawBtn 可见（可抽牌）
- *   ACTION 状态：meldBtn / discardBtn / layOffBtn / takeBtn / tongitsBtn 可见
- *   changeStatus 触发挑战：challengeBtn 可见
- *
- * 节点结构建议：
+ * 节点结构：
  *   ActionPanel
- *   ├── drawBtn       抽牌
- *   ├── meldBtn       出牌（成组）
- *   ├── discardBtn    弃牌
- *   ├── layOffBtn     补牌 / 压牌
- *   ├── takeBtn       吃牌
- *   ├── challengeBtn  挑战
- *   └── tongitsBtn    Tongits 胜利确认
+ *   ├── groupBtn
+ *   ├── ungroupBtn
+ *   ├── dropBtn
+ *   ├── drumpBtn
+ *   └── fightBtn
  */
 @ccclass('ActionPanel')
 export class ActionPanel extends Component {
 
-    @property({ type: Button, tooltip: '抽牌按钮' })
-    drawBtn: Button = null!;
-
-    @property({ type: Button, tooltip: '出牌（组合）按钮' })
-    meldBtn: Button = null!;
-
-    @property({ type: Button, tooltip: '弃牌按钮' })
-    discardBtn: Button = null!;
-
-    @property({ type: Button, tooltip: '补牌 / 压牌按钮' })
-    layOffBtn: Button = null!;
-
-    @property({ type: Button, tooltip: '吃牌按钮' })
-    takeBtn: Button = null!;
+    @property({ type: Button, tooltip: '打出组合到桌面按钮' })
+    dropBtn: Button = null!;
 
     @property({ type: Button, tooltip: '挑战按钮' })
-    challengeBtn: Button = null!;
+    fightBtn: Button = null!;
 
-    @property({ type: Button, tooltip: 'Tongits 胜利确认按钮' })
-    tongitsBtn: Button = null!;
+    @property({ type: Button, tooltip: '手牌分组按钮' })
+    groupBtn: Button = null!;
+
+    @property({ type: Button, tooltip: '手牌取消分组按钮' })
+    ungroupBtn: Button = null!;
+
+    @property({ type: Button, tooltip: '弃牌按钮' })
+    drumpBtn: Button = null!;
+
 
     // ── 公开方法（由 TongitsView 驱动） ──────────────────
 
     /**
-     * 刷新操作按钮可见性。
-     * @param self           本地玩家数据（含 status / isFight / changeStatus）
-     * @param actionPlayerId 当前操作玩家 userId
-     * @param selfUserId     本地玩家 userId
-     * @param gameInfo       游戏状态（含弃牌堆，用于判断是否可吃牌）
+     * 刷新操作按钮的可交互状态（游戏进行中始终调用，按钮可见性由 showAll/hideAll 控制）。
+     *
+     * @param self        本地玩家数据（含 status / isFight / changeStatus）
+     * @param gameInfo    游戏状态
+     * @param handButtons 手牌状态机的按钮状态（可选，默认全 false）
      */
     refresh(
         self: TongitsPlayerInfo | null,
-        actionPlayerId: number,
-        selfUserId: number,
         gameInfo: GameInfo | null,
+        handButtons?: ButtonStates,
     ): void {
-        const isMyTurn      = actionPlayerId === selfUserId;
-        const status        = self?.status ?? PLAYER_STATUS.INIT;
-        const isFight       = self?.isFight ?? false;
-        const changeStatus  = self?.changeStatus ?? 0;
-        const hasDiscard    = (gameInfo?.discardPile?.length ?? 0) > 0;
+        const status       = self?.status ?? PLAYER_STATUS.INIT;
+        const isFight      = self?.isFight ?? false;
+        const changeStatus = self?.changeStatus ?? 0;
+        const inAction     = status === PLAYER_STATUS.ACTION;
 
-        // 抽牌：轮到自己且处于等待抽牌状态
-        this._setActive(this.drawBtn,      isMyTurn && status === PLAYER_STATUS.INIT);
+        const canGroup   = handButtons?.canGroup   ?? false;
+        const canUngroup = handButtons?.canUngroup ?? false;
+        const canDrop    = handButtons?.canDrop    ?? false;
+        const canDump    = handButtons?.canDump    ?? false;
 
-        // 出牌 / 弃牌 / 补牌 / 吃牌 / Tongits：轮到自己且已抽牌
-        this._setActive(this.meldBtn,      isMyTurn && status === PLAYER_STATUS.ACTION);
-        this._setActive(this.discardBtn,   isMyTurn && status === PLAYER_STATUS.ACTION);
-        this._setActive(this.layOffBtn,    isMyTurn && status === PLAYER_STATUS.ACTION);
-        this._setActive(this.takeBtn,      isMyTurn && status === PLAYER_STATUS.ACTION && hasDiscard);
-        this._setActive(this.tongitsBtn,   isMyTurn && status === PLAYER_STATUS.ACTION && isFight);
+        // ── drop / drump：始终可见，已摸牌(ACTION)且手牌满足条件才可点 ──
+        this._setInteractable(this.dropBtn,  inAction && canDrop);
+        this._setInteractable(this.drumpBtn, inAction && canDump);
 
-        // 挑战：changeStatus 为 2(发起) / 3(接受) / 4(拒绝) 时才需要操作
-        this._setActive(this.challengeBtn, changeStatus >= 2 && changeStatus <= 4);
+        // ── group / ungroup 互斥显示 ──────────────────────────────────────
+        this._setActive(this.ungroupBtn, canUngroup);
+        this._setInteractable(this.ungroupBtn, true);
+
+        this._setActive(this.groupBtn, !canUngroup);
+        this._setInteractable(this.groupBtn, canGroup);
+
+        // ── fight：isFight 或挑战进行中可点 ──────────────────────────────
+        this._setInteractable(this.fightBtn, isFight || (changeStatus >= 2 && changeStatus <= 4));
+    }
+
+    /**
+     * 显示所有按钮（发牌合并完成后调用），初始全部禁用状态。
+     */
+    showAll(): void {
+        [this.dropBtn, this.drumpBtn, this.groupBtn, this.fightBtn]
+            .forEach(btn => {
+                this._setActive(btn, true);
+                this._setInteractable(btn, false);
+            });
+        // ungroupBtn 初始隐藏，groupBtn 作为占位显示
+        this._setActive(this.ungroupBtn, false);
     }
 
     /** 隐藏所有操作按钮（游戏结束 / 重置时调用） */
     hideAll(): void {
-        [
-            this.drawBtn, this.meldBtn, this.discardBtn,
-            this.layOffBtn, this.takeBtn, this.challengeBtn, this.tongitsBtn,
-        ].forEach(btn => this._setActive(btn, false));
+        [this.groupBtn, this.ungroupBtn, this.dropBtn, this.drumpBtn, this.fightBtn]
+            .forEach(btn => this._setActive(btn, false));
     }
 
     // ── 生命周期 ─────────────────────────────────────────
 
     protected onLoad(): void {
-        this.drawBtn?.node.on(Button.EventType.CLICK,      this._onDraw,      this);
-        this.meldBtn?.node.on(Button.EventType.CLICK,      this._onMeld,      this);
-        this.discardBtn?.node.on(Button.EventType.CLICK,   this._onDiscard,   this);
-        this.layOffBtn?.node.on(Button.EventType.CLICK,    this._onLayOff,    this);
-        this.takeBtn?.node.on(Button.EventType.CLICK,      this._onTake,      this);
-        this.challengeBtn?.node.on(Button.EventType.CLICK, this._onChallenge, this);
-        this.tongitsBtn?.node.on(Button.EventType.CLICK,   this._onTongits,   this);
+        this.groupBtn?.node.on(Button.EventType.CLICK,   this._onGroup,   this);
+        this.ungroupBtn?.node.on(Button.EventType.CLICK, this._onUngroup, this);
+        this.dropBtn?.node.on(Button.EventType.CLICK,    this._onDrop,    this);
+        this.drumpBtn?.node.on(Button.EventType.CLICK,   this._onDrump,   this);
+        this.fightBtn?.node.on(Button.EventType.CLICK,   this._onFight,   this);
     }
 
     protected onDestroy(): void {
-        this.drawBtn?.node.off(Button.EventType.CLICK,      this._onDraw,      this);
-        this.meldBtn?.node.off(Button.EventType.CLICK,      this._onMeld,      this);
-        this.discardBtn?.node.off(Button.EventType.CLICK,   this._onDiscard,   this);
-        this.layOffBtn?.node.off(Button.EventType.CLICK,    this._onLayOff,    this);
-        this.takeBtn?.node.off(Button.EventType.CLICK,      this._onTake,      this);
-        this.challengeBtn?.node.off(Button.EventType.CLICK, this._onChallenge, this);
-        this.tongitsBtn?.node.off(Button.EventType.CLICK,   this._onTongits,   this);
+        this.groupBtn?.node.off(Button.EventType.CLICK,   this._onGroup,   this);
+        this.ungroupBtn?.node.off(Button.EventType.CLICK, this._onUngroup, this);
+        this.dropBtn?.node.off(Button.EventType.CLICK,    this._onDrop,    this);
+        this.drumpBtn?.node.off(Button.EventType.CLICK,   this._onDrump,   this);
+        this.fightBtn?.node.off(Button.EventType.CLICK,   this._onFight,   this);
     }
 
     // ── 私有工具 ─────────────────────────────────────────
@@ -127,38 +132,31 @@ export class ActionPanel extends Component {
         if (btn) btn.node.active = active;
     }
 
-    // ── 私有：按钮回调 ────────────────────────────────────
-    // 复杂操作（meld/layOff/take/challenge）需要额外数据，
-    // 由手牌面板或其他交互流程选完牌后再 emit，这里仅作触发入口。
-
-    private _onDraw(): void {
-        Nexus.emit(TongitsEvents.CMD_DRAW);
+    private _setInteractable(btn: Button | null, interactable: boolean): void {
+        if (btn) btn.interactable = interactable;
     }
 
-    private _onMeld(): void {
-        // 具体 cards 由 HandCardPanel 选牌后传入，此处仅触发选牌流程
+    // ── 私有：按钮回调 ────────────────────────────────────
+
+    private _onGroup(): void {
+        Nexus.emit(TongitsEvents.CMD_GROUP);
+    }
+
+    private _onUngroup(): void {
+        Nexus.emit(TongitsEvents.CMD_UNGROUP);
+    }
+
+    private _onDrop(): void {
+        // 具体 cards 由 HandCardPanel 当前选中组决定，TongitsView 负责组装
         Nexus.emit(TongitsEvents.CMD_MELD, { cards: [] });
     }
 
-    private _onDiscard(): void {
-        // 具体 card 由 HandCardPanel 选牌后传入
+    private _onDrump(): void {
+        // 具体 card 由 HandCardPanel 选中散牌决定，TongitsView 负责组装
         Nexus.emit(TongitsEvents.CMD_DISCARD, { card: 0 });
     }
 
-    private _onLayOff(): void {
-        Nexus.emit(TongitsEvents.CMD_LAY_OFF, { card: 0, targetPlayerId: 0, targetMeldId: 0 });
-    }
-
-    private _onTake(): void {
-        Nexus.emit(TongitsEvents.CMD_TAKE, { cardsFromHand: [] });
-    }
-
-    private _onChallenge(): void {
-        // changeStatus 2:发起挑战
+    private _onFight(): void {
         Nexus.emit(TongitsEvents.CMD_CHALLENGE, { changeStatus: 2 });
-    }
-
-    private _onTongits(): void {
-        Nexus.emit(TongitsEvents.CMD_TONGITS_CLICK);
     }
 }

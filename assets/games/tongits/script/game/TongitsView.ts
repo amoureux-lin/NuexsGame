@@ -1,10 +1,12 @@
 import { _decorator } from 'cc';
 import { BaseGameView } from 'db://assets/script/base/BaseGameView';
+import { Nexus } from 'db://nexus-framework/index';
 import { TongitsEvents } from '../config/TongitsEvents';
 import { PlayerSeatManager } from '../views/player/PlayerSeatManager';
 import { WaitingPanel } from '../views/panel/WaitingPanel';
 import { ActionPanel } from '../views/panel/ActionPanel';
 import { HandCardPanel } from '../views/handcard/HandCardPanel';
+import type { ButtonStates } from '../utils/HandCardState';
 import type {
     TongitsPlayerInfo,
     GameInfo,
@@ -68,10 +70,31 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     private _gameInfo: GameInfo | null = null;
     private _isLocalOwner: boolean = false;
     private _isGameStarted: boolean = false;
+    /** 发牌动画进行中，此期间拦截操作按钮刷新 */
+    private _isDealing: boolean = false;
+    /** 手牌状态机最新的按钮可用状态 */
+    private _handButtons: ButtonStates | null = null;
 
     // ── 事件注册 ─────────────────────────────────────────
 
     protected override registerGameEvents(): void {
+        if (this.handCardPanel) {
+            // 合并完成、展开前 → 显示所有按钮（禁用状态）
+            this.handCardPanel.onDealMergeComplete = () => {
+                this._isDealing = false;
+                this.actionPanel?.showAll();
+                this._refreshActionPanel();
+            };
+            // 手牌选中状态变化 → 实时更新按钮可交互状态
+            this.handCardPanel.onSelectionChange = (info) => {
+                this._handButtons = info.buttons;
+                if (!this._isDealing) this._refreshActionPanel();
+            };
+        }
+        // 本地手牌操作命令（不经过服务器）
+        Nexus.on(TongitsEvents.CMD_GROUP,   this._onCmdGroup,   this);
+        Nexus.on(TongitsEvents.CMD_UNGROUP, this._onCmdUngroup, this);
+
         this.listen<GameStartBroadcast>(TongitsEvents.GAME_START,       (d) => this.onGameStart(d));
         this.listen<ActionChangeBroadcast>(TongitsEvents.ACTION_CHANGE, (d) => this.onActionChange(d));
         this.listen<DrawCardBroadcast>(TongitsEvents.DRAW,              (d) => this.onDraw(d));
@@ -154,26 +177,32 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         if (this.waitingPanel) this.waitingPanel.node.active = false;
         if (this.actionPanel) this.actionPanel.node.active = true;
         this.actionPanel?.hideAll();
-        // 发牌动画（仅自己可见）
+
+        // GameStart 带的 gameInfo 包含初始 actionPlayerId，缓存备用
+        if (data.gameInfo) this._gameInfo = data.gameInfo as GameInfo;
+
+        // 标记发牌中，拦截期间的 ActionChange 按钮刷新
+        this._isDealing = true;
+
         const selfPlayer = this._players.find(p => p.playerInfo?.userId === this._selfUserId);
         const potAmount = (data.gameInfo?.betAmount ?? 0)
             * (data.gameInfo?.pot?.base ?? 1);
         const avatarPositions = this.seatManager?.getAvatarWorldPositions() ?? [];
 
-        // 动画序列 → 完成后发牌
+        // 开场动画 → 发牌 → 发牌完成后刷新操作按钮
         this.gameStartEffect?.playSequence(
             avatarPositions,
             potAmount,
-            () => this.handCardPanel?.dealCards(selfPlayer?.handCards ?? []),
+            () => {
+                this.handCardPanel?.dealCards(selfPlayer?.handCards ?? []);
+            },
         );
     }
 
     protected onActionChange(data: ActionChangeBroadcast): void {
         this.seatManager?.updateActionPlayer(data.actionPlayerId);
         this.seatManager?.updateCountdown(data.actionPlayerId, data.countdown);
-        // 刷新操作按钮（轮到自己时才显示可操作按钮）
-        const self = this._players.find(p => p.playerInfo?.userId === this._selfUserId) ?? null;
-        this.actionPanel?.refresh(self, data.actionPlayerId, this._selfUserId, this._gameInfo);
+        if (!this._isDealing) this._refreshActionPanel();
     }
 
     protected onDraw(data: DrawCardBroadcast): void {
@@ -225,6 +254,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     }
 
     protected onRoomReset(data: RoomResetBroadcast): void {
+        this._isDealing = false;
         this._isGameStarted = false;
         this.seatManager?.setContext(this._isLocalOwner, false);
         if (data.players) this._players = data.players;
@@ -256,6 +286,29 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     protected tongitsClick(): void { this.dispatch(TongitsEvents.CMD_TONGITS_CLICK); }
     protected resultDetails(): void { this.dispatch(TongitsEvents.CMD_RESULT_DETAILS); }
     // openSettings() / backLobby() 继承自 BaseGameView
+
+    // ── 生命周期 ─────────────────────────────────────────
+
+    protected onDestroy(): void {
+        Nexus.off(TongitsEvents.CMD_GROUP,   this._onCmdGroup,   this);
+        Nexus.off(TongitsEvents.CMD_UNGROUP, this._onCmdUngroup, this);
+    }
+
+    // ── 私有：本地手牌命令 ────────────────────────────────
+
+    private _onCmdGroup(): void {
+        this.handCardPanel?.onGroupBtn();
+    }
+
+    private _onCmdUngroup(): void {
+        this.handCardPanel?.onUngroupBtn();
+    }
+
+    /** 用当前缓存状态刷新 ActionPanel 的可交互状态 */
+    private _refreshActionPanel(): void {
+        const self = this._players.find(p => p.playerInfo?.userId === this._selfUserId) ?? null;
+        this.actionPanel?.refresh(self, this._gameInfo, this._handButtons ?? undefined);
+    }
 
     // ── 私有工具 ─────────────────────────────────────────
 

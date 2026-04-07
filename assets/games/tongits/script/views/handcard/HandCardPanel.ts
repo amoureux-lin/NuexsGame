@@ -82,8 +82,6 @@ const DEAL_INTERVAL      = 55;
 const BOUNCE_STEP        = 0.16;
 /** 全部落牌后暂停时长（让玩家看清手牌） */
 const DEAL_PAUSE_MS      = 100;
-/** 组内牌收缩时长（Phase 4 消失动画） */
-const SHRINK_DUR         = 0.12;
 
 // ── 模块级辅助函数 ─────────────────────────────────────────
 
@@ -120,6 +118,12 @@ export class HandCardPanel extends Component {
      * ActionPanel / TongitsView 通过此回调决定按钮显示
      */
     onSelectionChange: ((info: SelectionInfo) => void) | null = null;
+
+    /**
+     * 发牌合并动画完成、展开动画开始前触发。
+     * TongitsView 在此回调中显示 ActionPanel 按钮。
+     */
+    onDealMergeComplete: (() => void) | null = null;
 
     // ── 私有状态 ──────────────────────────────────────────
 
@@ -743,7 +747,9 @@ export class HandCardPanel extends Component {
         }
 
         // 合并完成后短暂停顿，再展开
-        await delay(120);
+        await delay(60);
+        // 合并完成，展开前通知外部（ActionPanel 在此时机显示按钮）
+        this.onDealMergeComplete?.();
 
         for (const gv of this._groupViews.values()) {
             gv.setMarkerOverlayParent(null);
@@ -764,6 +770,8 @@ export class HandCardPanel extends Component {
         this._groupRoot.setPosition(0, 0, 0);
         this._dragLayer.setPosition(0, 0, 0);
         this._markerOverlayRoot.setPosition(0, 0, 0);
+
+
 
         // 触发展开（_doLayout 使用较长时长产生仪式感）
         this._dealReorderDur = DEAL_REORDER_DUR;
