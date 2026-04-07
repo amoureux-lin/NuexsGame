@@ -232,14 +232,7 @@ export class HandCardState {
         this._groups   = this._groups.filter(g => g.id !== id);
         this._clearSelSilent();
 
-        if (this._autoGroupEnabled) {
-            const all = [...this._getAllCards(), ...released];
-            this._groups  = [];
-            this._ungroup = sortCards(all, this._sortMode);
-            this._runAutoGroupAll();
-        } else {
-            this._ungroup = sortCards([...this._ungroup, ...released], this._sortMode);
-        }
+        this._ungroup = sortCards([...this._ungroup, ...released], this._sortMode);
 
         this._notify();
     }

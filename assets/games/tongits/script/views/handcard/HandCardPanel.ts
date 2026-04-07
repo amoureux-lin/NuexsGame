@@ -163,6 +163,10 @@ export class HandCardPanel extends Component {
     /** 拖拽释放时 floatNode 的世界坐标（新节点起飞点），-1 表示无待处理 */
     private _spawnCardValue  = -1;
     private _spawnWorldPos3  = new Vec3();
+    /** createGroup 时选中牌的世界坐标中心（供新组起始位置使用） */
+    private _spawnGroupWorldPos: Vec3 | null = null;
+    /** dissolveGroup 时被解散组的世界坐标（供散牌起始位置使用） */
+    private _spawnUngroupWorldPos: Vec3 | null = null;
 
     // ── 生命周期 ──────────────────────────────────────────
 
@@ -351,8 +355,32 @@ export class HandCardPanel extends Component {
 
     // ── 按钮操作入口（ActionPanel 调用） ─────────────────
 
-    onGroupBtn():   void { this._state.createGroup();   }
-    onUngroupBtn(): void { this._state.dissolveGroup(); }
+    onGroupBtn(): void {
+        // 捕获所有选中节点的世界坐标中心，作为新组的起飞点
+        const snap = this._state.snapshot();
+        let sumX = 0, sumY = 0, count = 0;
+        for (const gId of snap.selectedGroupIds) {
+            const gv = this._groupViews.get(gId);
+            if (gv) { const wp = gv.node.getWorldPosition(); sumX += wp.x; sumY += wp.y; count++; }
+        }
+        for (const val of snap.selectedUngroupCards) {
+            const cn = this._ungroupNodes.get(val);
+            if (cn) { const wp = cn.node.getWorldPosition(); sumX += wp.x; sumY += wp.y; count++; }
+        }
+        if (count > 0) this._spawnGroupWorldPos = new Vec3(sumX / count, sumY / count, 0);
+        this._state.createGroup();
+    }
+
+    onUngroupBtn(): void {
+        // 捕获被解散组的世界坐标，作为散牌节点的起飞点
+        const snap = this._state.snapshot();
+        const [gId] = [...snap.selectedGroupIds];
+        if (gId) {
+            const gv = this._groupViews.get(gId);
+            if (gv) this._spawnUngroupWorldPos = gv.node.getWorldPosition().clone();
+        }
+        this._state.dissolveGroup();
+    }
 
     /**
      * Drop 按钮：返回被 Drop 的 GroupData（供 TongitsView 发送服务端请求）
@@ -432,8 +460,13 @@ export class HandCardPanel extends Component {
                     ? instantiate(this.cardGroupPrefab)
                     : new Node(`Group_${g.id}`);
                 this._groupRoot.addChild(groupNode);
-                // 确保展开动画从容器中心出发（prefab 可能保存了非零 position）
-                groupNode.setPosition(0, 0, 0);
+                // 手动组合时从选中牌的中心起飞；其他情况（autoGroup / prefab 偏移）从原点出发
+                if (this._spawnGroupWorldPos && !g.isAuto) {
+                    groupNode.setWorldPosition(this._spawnGroupWorldPos);
+                    this._spawnGroupWorldPos = null;
+                } else {
+                    groupNode.setPosition(0, 0, 0);
+                }
                 // 确保有 CardGroupView 组件（prefab 里已挂好，fallback 时手动添加）
                 gv = groupNode.getComponent(CardGroupView) ?? groupNode.addComponent(CardGroupView);
                 gv.onGroupClick = (id) => this._state.toggleGroup(id);
@@ -475,6 +508,10 @@ export class HandCardPanel extends Component {
                 cn.onClick = (v) => this._state.toggleUngroupCard(v);
                 this._bindCardDrag(cn, 'ungroup');
                 this._ungroupRoot.addChild(n);
+                // 解散组时从原组位置起飞，而非从左端(0,0,0)
+                if (this._spawnUngroupWorldPos) {
+                    n.setWorldPosition(this._spawnUngroupWorldPos);
+                }
                 // 按数组顺序设置 sibling index，保证叠牌 Z 序正确
                 n.setSiblingIndex(ungroup.indexOf(val));
                 cn.setFaceDown(false);       // 正常显示时翻到正面
@@ -483,6 +520,7 @@ export class HandCardPanel extends Component {
             // 更新选中状态
             this._ungroupNodes.get(val)?.setSelected(selectedCards.has(val));
         }
+        this._spawnUngroupWorldPos = null;
     }
 
     // ── 布局 ──────────────────────────────────────────────
