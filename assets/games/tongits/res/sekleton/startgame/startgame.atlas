@@ -1,0 +1,300 @@
+
+startgame.png
+size: 1329,1039
+format: RGBA8888
+filter: Linear,Linear
+repeat: none
+a1
+  rotate: true
+  xy: 1185, 2
+  size: 96, 85
+  orig: 98, 87
+  offset: 1, 1
+  index: -1
+a2
+  rotate: false
+  xy: 1246, 964
+  size: 81, 73
+  orig: 83, 75
+  offset: 1, 1
+  index: -1
+bg_text
+  rotate: false
+  xy: 819, 836
+  size: 425, 201
+  orig: 427, 203
+  offset: 1, 1
+  index: -1
+body
+  rotate: false
+  xy: 493, 627
+  size: 324, 410
+  orig: 324, 410
+  offset: 0, 0
+  index: -1
+e
+  rotate: true
+  xy: 735, 2
+  size: 58, 70
+  orig: 60, 72
+  offset: 1, 1
+  index: -1
+face
+  rotate: true
+  xy: 493, 279
+  size: 346, 306
+  orig: 346, 306
+  offset: 0, 0
+  index: -1
+flasg_start
+  rotate: false
+  xy: 2, 165
+  size: 489, 872
+  orig: 489, 872
+  offset: 0, 0
+  index: -1
+flower_1
+  rotate: true
+  xy: 1262, 567
+  size: 64, 65
+  orig: 69, 75
+  offset: 3, 2
+  index: -1
+flower_2
+  rotate: false
+  xy: 1237, 225
+  size: 89, 92
+  orig: 97, 97
+  offset: 4, 3
+  index: -1
+flower_3
+  rotate: false
+  xy: 1091, 14
+  size: 79, 63
+  orig: 98, 70
+  offset: 8, 3
+  index: -1
+flower_4
+  rotate: true
+  xy: 1272, 86
+  size: 49, 45
+  orig: 51, 47
+  offset: 1, 1
+  index: -1
+g
+  rotate: true
+  xy: 1255, 633
+  size: 73, 72
+  orig: 75, 74
+  offset: 1, 1
+  index: -1
+hand_l_flasg_start
+  rotate: false
+  xy: 493, 146
+  size: 273, 131
+  orig: 273, 131
+  offset: 0, 0
+  index: -1
+hat
+  rotate: false
+  xy: 819, 503
+  size: 268, 165
+  orig: 268, 165
+  offset: 0, 0
+  index: -1
+l_ear
+  rotate: false
+  xy: 1089, 502
+  size: 171, 106
+  orig: 171, 106
+  offset: 0, 0
+  index: -1
+l_eyewhite
+  rotate: true
+  xy: 963, 3
+  size: 57, 71
+  orig: 57, 71
+  offset: 0, 0
+  index: -1
+l_foot
+  rotate: true
+  xy: 1056, 243
+  size: 129, 179
+  orig: 129, 179
+  offset: 0, 0
+  index: -1
+l_hand
+  rotate: false
+  xy: 1105, 610
+  size: 148, 224
+  orig: 148, 224
+  offset: 0, 0
+  index: -1
+l_horn
+  rotate: false
+  xy: 985, 62
+  size: 104, 176
+  orig: 104, 176
+  offset: 0, 0
+  index: -1
+l_pupil
+  rotate: false
+  xy: 1036, 9
+  size: 50, 51
+  orig: 50, 51
+  offset: 0, 0
+  index: -1
+l_shirt
+  rotate: true
+  xy: 801, 240
+  size: 95, 253
+  orig: 95, 253
+  offset: 0, 0
+  index: -1
+l_shirt_shape
+  rotate: true
+  xy: 641, 66
+  size: 78, 115
+  orig: 78, 115
+  offset: 0, 0
+  index: -1
+lid_l
+  rotate: false
+  xy: 807, 2
+  size: 70, 58
+  orig: 70, 58
+  offset: 0, 0
+  index: -1
+lid_r
+  rotate: false
+  xy: 641, 2
+  size: 92, 62
+  orig: 92, 62
+  offset: 0, 0
+  index: -1
+m
+  rotate: false
+  xy: 879, 31
+  size: 82, 70
+  orig: 84, 72
+  offset: 1, 1
+  index: -1
+nose
+  rotate: true
+  xy: 358, 16
+  size: 147, 86
+  orig: 147, 86
+  offset: 0, 0
+  index: -1
+r
+  rotate: false
+  xy: 1217, 137
+  size: 74, 86
+  orig: 76, 88
+  offset: 1, 1
+  index: -1
+r_ear
+  rotate: false
+  xy: 446, 36
+  size: 193, 108
+  orig: 193, 108
+  offset: 0, 0
+  index: -1
+r_eyewhite
+  rotate: false
+  xy: 1237, 319
+  size: 90, 73
+  orig: 90, 73
+  offset: 0, 0
+  index: -1
+r_hand
+  rotate: true
+  xy: 801, 337
+  size: 164, 241
+  orig: 164, 241
+  offset: 0, 0
+  index: -1
+r_horn
+  rotate: true
+  xy: 1044, 374
+  size: 126, 184
+  orig: 128, 186
+  offset: 1, 1
+  index: -1
+r_pupil
+  rotate: false
+  xy: 1262, 504
+  size: 64, 61
+  orig: 64, 61
+  offset: 0, 0
+  index: -1
+r_shirt
+  rotate: true
+  xy: 819, 670
+  size: 164, 284
+  orig: 164, 284
+  offset: 0, 0
+  index: -1
+s
+  rotate: false
+  xy: 1246, 876
+  size: 78, 86
+  orig: 80, 88
+  offset: 1, 1
+  index: -1
+shadow
+  rotate: true
+  xy: 1185, 100
+  size: 141, 30
+  orig: 141, 30
+  offset: 0, 0
+  index: -1
+t
+  rotate: false
+  xy: 1255, 792
+  size: 72, 82
+  orig: 74, 84
+  offset: 1, 1
+  index: -1
+t2
+  rotate: false
+  xy: 1255, 708
+  size: 72, 82
+  orig: 74, 84
+  offset: 1, 1
+  index: -1
+teeth
+  rotate: true
+  xy: 1230, 394
+  size: 106, 35
+  orig: 106, 35
+  offset: 0, 0
+  index: -1
+throat
+  rotate: true
+  xy: 1091, 79
+  size: 162, 92
+  orig: 162, 92
+  offset: 0, 0
+  index: -1
+tongue
+  rotate: true
+  xy: 1267, 406
+  size: 96, 46
+  orig: 96, 46
+  offset: 0, 0
+  index: -1
+towel
+  rotate: false
+  xy: 2, 11
+  size: 354, 152
+  orig: 354, 152
+  offset: 0, 0
+  index: -1
+wire
+  rotate: false
+  xy: 768, 103
+  size: 215, 135
+  orig: 215, 135
+  offset: 0, 0
+  index: -1

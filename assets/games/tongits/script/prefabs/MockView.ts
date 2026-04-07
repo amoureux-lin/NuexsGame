@@ -138,7 +138,6 @@ function mockPlayerResult(
 }
 
 // ── MockView ──────────────────────────────────────────────
-
 @ccclass('MockView')
 export class MockView extends UIPanel {
 
@@ -147,7 +146,7 @@ export class MockView extends UIPanel {
     /** 剩余牌堆 */
     private _deck:        number[] = [];
     /** 自己的手牌 */
-    private _selfHand:    number[] = [408, 201, 102, 204, 412, 312, 202, 413, 411, 404, 213, 304];
+    private _selfHand:    number[] = [408, 201, 102, 204, 412, 312, 202, 413, 411, 404, 104, 304];
     /** 各玩家手牌数量 */
     private _handCounts:  Record<number, number> = {};
     /** 弃牌堆 */
