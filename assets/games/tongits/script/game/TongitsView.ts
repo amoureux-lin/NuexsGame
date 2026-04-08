@@ -1,4 +1,4 @@
-import { _decorator,Node } from 'cc';
+import { _decorator } from 'cc';
 import { BaseGameView } from 'db://assets/script/base/BaseGameView';
 import { Nexus } from 'db://nexus-framework/index';
 import { TongitsEvents } from '../config/TongitsEvents';
@@ -25,8 +25,8 @@ import type {
     JoinRoomRes,
     GameResultDetailsRes,
 } from '../proto/tongits';
-import {GameEvents} from "db://assets/script/config/GameEvents";
 import {GameStartEffect} from "db://assets/games/tongits/script/views/effect/GameStartEffect";
+import { TableAreaView } from '../views/panel/TableAreaView';
 
 const { ccclass, property } = _decorator;
 
@@ -63,8 +63,8 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     @property({ type: GameStartEffect, tooltip: '游戏开始动画控制器' })
     gameStartEffect: GameStartEffect = null!;
 
-    @property({ type: Node,tooltip:"牌桌上摸牌与弃牌区域"})
-    tableArea:Node = null!;
+    @property({ type: TableAreaView, tooltip: '牌桌中央区（牌堆数量 + 弃牌展示 + 历史按钮），挂在 tableArea 节点上' })
+    tableAreaView: TableAreaView = null!;
 
     // ── 缓存本地状态 ─────────────────────────────────────
 
@@ -93,7 +93,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     }
 
     init(){
-        this.tableArea.active = false;
+        if (this.tableAreaView) this.tableAreaView.node.active = false;
         if (this.actionPanel) this.actionPanel.node.active = false;
         this.actionPanel?.hideAll();
     }
@@ -122,8 +122,10 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
                     this._refreshActionPanel();
                 }
             };
-            // 牌堆点击抽牌（HandCardPanel 内部做 enabled gate）
-            this.handCardPanel.onDeckDrawClick = () => this._onDeckDrawClick();
+        }
+        // 牌堆点击抽牌（TableAreaView 内部做 enabled gate）
+        if (this.tableAreaView) {
+            this.tableAreaView.onDeckDrawClick = () => this._onDeckDrawClick();
         }
         // 本地手牌操作命令（不经过服务器）
         Nexus.on(TongitsEvents.CMD_GROUP,   this._onCmdGroup,   this);
@@ -228,10 +230,13 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
             avatarPositions,
             potAmount,
             () => {
-                this.tableArea.active = true;
+                if (this.tableAreaView) this.tableAreaView.node.active = true;
                 this.handCardPanel?.dealCards(
                     selfPlayer?.handCards ?? [],
                     data.gameInfo?.deckCardCount ?? 0,
+                    async ()=>{
+                        await Nexus.audio.playSfx("res/audios/send_card");
+                    }
                 );
             },
         );
@@ -262,6 +267,9 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
 
     protected onDraw(data: DrawCardBroadcast): void {
         this._syncPlayerField(data.playerId, { handCardCount: data.handCardCount });
+        // 每次摸牌牌堆减一（弹出顶部视觉节点并销毁）
+        const pileTop = this.tableAreaView?.popDeckCard();
+        if (pileTop?.isValid) pileTop.destroy();
         // 自己抽牌：drawnCard 有值时追加到手牌区
         if (data.userId === this._perspectiveId && data.drawnCard) {
             this.handCardPanel?.addCard(data.drawnCard);
@@ -281,6 +289,10 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         // 自己出牌：从手牌区移除对应节点
         if (data.userId === this._perspectiveId && data.discardedCard) {
             this.handCardPanel?.removeCard(data.discardedCard);
+        }
+        // 同步弃牌堆展示（所有玩家弃牌均更新）
+        if (data.discardPile?.length) {
+            this.tableAreaView?.syncDiscard(data.discardPile);
         }
     }
 
@@ -346,8 +358,9 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         this.seatManager?.setContext(this._isLocalOwner, false);
         this.seatManager?.updateActionPlayer(0);
         this._refreshAllSeats();
-        this.tableArea.active = false;
+        if (this.tableAreaView) this.tableAreaView.node.active = false;
         this.handCardPanel?.clear();
+        this.tableAreaView?.clear();
         this.handCardPanel?.setDeckDrawEnabled(false);
         this._refreshPanelVisibility();
         // actionPanel 重置时始终隐藏，等动画回调时再显示
@@ -386,7 +399,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     protected onDestroy(): void {
         Nexus.off(TongitsEvents.CMD_GROUP,   this._onCmdGroup,   this);
         Nexus.off(TongitsEvents.CMD_UNGROUP, this._onCmdUngroup, this);
-        if (this.handCardPanel) this.handCardPanel.onDeckDrawClick = null;
+        if (this.tableAreaView) this.tableAreaView.onDeckDrawClick = null;
     }
 
     // ── 私有：本地手牌命令 ────────────────────────────────

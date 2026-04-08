@@ -252,6 +252,7 @@ export abstract class BaseGameEntry extends NexusBaseEntry {
         if (this._waitDisplayResolve && this._targetPercent >= PROGRESS_JOIN_END && clamped >= DISPLAY_PROGRESS_COMPLETE) {
             const resolve = this._waitDisplayResolve;
             this._waitDisplayResolve = null;
+            this.onComplete();
             resolve();
         }
     }
@@ -263,5 +264,13 @@ export abstract class BaseGameEntry extends NexusBaseEntry {
         return new Promise((resolve) => {
             this._waitDisplayResolve = resolve;
         });
+    }
+
+    /**
+     * loading 100事件
+     * @protected
+     */
+    protected onComplete(){
+        console.log('[BaseGameEntry] complete');
     }
 }

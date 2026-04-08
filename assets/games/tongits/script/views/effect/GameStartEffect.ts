@@ -73,7 +73,8 @@ export class GameStartEffect extends Component {
 
     // ── Phase 1: 金币从座位飞向中心，落地后停留 ─────────────
 
-    private _phase1_flyToCenter(worldPositions: Vec3[]): Promise<void> {
+    private async _phase1_flyToCenter(worldPositions: Vec3[]): Promise<void> {
+        await Nexus.audio.playSfx("res/audios/collectmoney");
         this._stagedCoins = [];
         return new Promise(resolve => {
             const centerLocal = this._worldToFlyLayer(

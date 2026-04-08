@@ -8,8 +8,8 @@
  *   - 对外暴露 onButtonStates 回调供 ActionPanel 订阅
  *
  * Inspector 配置：
- *   deckNode    — 牌堆节点（发牌动画起点）
- *   cardPrefab  — 牌面预制体（可选，不填用程序化默认样式）
+ *   tableAreaView — 牌桌区组件（牌堆位置 / 视觉 / 交互全部在此）
+ *   cardPrefab    — 牌面预制体（可选，不填用程序化默认样式）
  *
  * 节点结构（运行时动态）：
  *   HandCardPanel
@@ -22,8 +22,8 @@
 import {
     _decorator, Component, Node, Prefab, instantiate,
     UITransform, Vec2, Vec3, tween, Tween,
-    Label,
 } from 'cc';
+import { TableAreaView } from '../panel/TableAreaView';
 import { HandCardState, ButtonStates, HandCardSnapshot } from '../../utils/HandCardState';
 
 // ── 选中信息（对外统一出口） ───────────────────────────────
@@ -84,12 +84,6 @@ const BOUNCE_STEP        = 0.16;
 /** 全部落牌后暂停时长（让玩家看清手牌） */
 const DEAL_PAUSE_MS      = 100;
 
-// ── 牌堆视觉常量 ──────────────────────────────────────────
-/** 牌堆最多叠显张数（超出部分用厚度模拟，不实际创建节点） */
-const DECK_PILE_MAX_VISIBLE = 14;
-/** 牌堆每张向上偏移（模拟叠厚感） */
-const DECK_STACK_DY         = 0.8;
-
 // ── 模块级辅助函数 ─────────────────────────────────────────
 
 const delay = (ms: number): Promise<void> =>
@@ -109,17 +103,14 @@ function tweenTo(node: Node, dur: number, props: object, easing = 'quadOut'): Pr
 @ccclass('HandCardPanel')
 export class HandCardPanel extends Component {
 
-    @property({ type: Node,   tooltip: '牌堆节点（发牌动画起点）' })
-    deckNode: Node = null!;
+    @property({ type: TableAreaView, tooltip: '牌桌区组件（牌堆位置/视觉/交互）' })
+    tableAreaView: TableAreaView | null = null;
 
     @property({ type: Prefab, tooltip: '牌面预制体（可选）' })
     cardPrefab: Prefab | null = null;
 
     @property({ type: Prefab, tooltip: '牌组预制体（CardGroupView Prefab）' })
     cardGroupPrefab: Prefab | null = null;
-
-    @property({ type: Label,  tooltip: '牌堆剩余数量 Label（挂在 deckNode 附近的场景节点）' })
-    deckCountLabel: Label | null = null;
 
     // ── 对外回调 ──────────────────────────────────────────
 
@@ -183,16 +174,6 @@ export class HandCardPanel extends Component {
     /** dissolveGroup 时被解散组的世界坐标（供散牌起始位置使用） */
     private _spawnUngroupWorldPos: Vec3 | null = null;
 
-    // ── 牌堆 ──────────────────────────────────────────────
-    /** 牌堆节点上的叠牌视觉节点（背面朝上，从下到上） */
-    private _deckPileNodes:  Node[] = [];
-    /** 当前牌堆剩余牌数（含视觉未显示的部分） */
-    private _deckRemaining   = 0;
-    /** 牌堆是否允许点击抽牌（由 TongitsView 按回合阶段控制） */
-    private _deckDrawEnabled = false;
-    /** 牌堆呼吸指引 tween（enabled 时运行） */
-    private _deckGuideTween: Tween<Node> | null = null;
-
     // ── 生命周期 ──────────────────────────────────────────
 
     onLoad(): void {
@@ -204,18 +185,11 @@ export class HandCardPanel extends Component {
         this.node.addChild(this._ungroupRoot);
         this.node.addChild(this._dragLayer);
         this.node.addChild(this._markerOverlayRoot);
-        this.deckNode.removeAllChildren();
-        this._deckRemaining = 0;
-        this._updateDeckCountLabel();
         this._unsubscribe = this._state.onChange((snap) => this._onStateChange(snap));
-        // 牌堆点击：默认关闭，由 setDeckDrawEnabled 开启
-        this.deckNode?.on(Node.EventType.TOUCH_END, this._onDeckTouchEnd, this);
     }
 
     onDestroy(): void {
         this._unsubscribe?.();
-        this.deckNode?.off(Node.EventType.TOUCH_END, this._onDeckTouchEnd, this);
-        this.setDeckDrawEnabled(false);
         this.clear();
     }
 
@@ -258,64 +232,62 @@ export class HandCardPanel extends Component {
     /**
      * 发牌动画：游戏开始时调用
      *
-     * Phase 1 — 所有牌叠放在牌堆（背面朝上）
-     * Phase 2 — 错时飞入展开到散牌位置
+     * Phase 1 — 建发牌用牌堆（cards.length 张），背面朝上；同时预创建飞行节点
+     * Phase 2 — 错时飞入展开位置，每张起飞时 pop 牌堆视觉；
+     *           最后一张起飞时立即用 deckCardCount 重建剩余牌堆
      * Phase 3 — 到位后翻正面（scaleX 压扁→恢复）+ Y 弹跳
      * Phase 4 — 预判 autoGroup：组内牌收缩消失，然后 setCards 触发
      *           重排动画（散牌从展开位滑到最终位置）
      */
-    async dealCards(cards: number[], deckCardCount = 0): Promise<void> {
+    async dealCards(cards: number[], deckCardCount = 0,callback?:Function): Promise<void> {
         this.clear();
         if (!cards.length) return;
 
-        const deckLocal  = this._deckLocalPos();
-        const spreadXs   = this._spreadPositions(cards.length);
-        console.log("cards: ", cards);
-        console.log("spreadXs:",spreadXs)
+        const spreadXs = this._spreadPositions(cards.length);
 
-        // ── Phase 1: 在牌堆叠放，背面朝上 ──────────────────────
-        const nodes: Node[] = [];
-        const cns:   CardNode[] = [];
-
-        for (let i = 0; i < cards.length; i++) {
-            const n  = this._createCardNode(cards[i]);
-            const cn = n.getComponent(CardNode)!;
-            cn.node.setScale(0.68,0.68,1);
-            cn.setFaceDown(true);            // 背面朝上
-            cns.push(cn);
-            n.setPosition(deckLocal.x - i * 0.8, deckLocal.y - i * 0.5, 0);
-            this._ungroupRoot.addChild(n);   // 正序：children[i] = nodes[i]
-            nodes.push(n);
-        }
+        // ── Phase 1: 在 sendCardNode 下建发牌堆，一次性 re-parent 到 _ungroupRoot ──
+        this.tableAreaView?.setupSendDeck(cards.length);
+        const rawNodes = this.tableAreaView
+            ? [...this.tableAreaView.sendPileNodes].reverse()
+            : [];
+        // re-parent 后节点世界坐标不变（起飞点 = sendCardNode 位置），z-order 正确
+        const nodes = rawNodes.map(n => {
+            const worldPos = n.getWorldPosition();
+            this._ungroupRoot.addChild(n);
+            n.setWorldPosition(worldPos);
+            return n;
+        });
+        const cns = nodes.map(n => n.getComponent(CardNode)!);
 
         const lastIdx = cards.length - 1;
 
         // ── Phase 2 & 3: 错时飞入（parallel：位移 + 缩放旋转同步）→ 落地弹跳 ──
         await Promise.all(cards.map((_, i) =>
             delay(i * DEAL_INTERVAL).then(() => new Promise<void>(resolve => {
-                // 最后一张起飞时建立剩余牌堆
-                if (i === lastIdx) this.setupDeck(deckCardCount);
+                // 最后一张起飞时重建剩余牌堆
+                if (i === lastIdx) this.tableAreaView?.setupDeck(deckCardCount);
 
-                // 每飞出一张，弹出并销毁牌堆顶部节点（视觉减少）
-                const pileTop = this._popDeckCard();
-                if (pileTop?.isValid) pileTop.destroy();
+                const n  = nodes[i];
+                const cn = cns[i];
 
-                const n   = nodes[i];
-                const cn  = cns[i];
                 // 按牌序偏转：中间牌垂直，两侧逐渐倾斜，形成扇形叠牌感
                 const rotZ = (i - (cards.length - 1) / 2) * 2;
 
-                n.setSiblingIndex(nodes.length - 1); // 飞行期间置顶
+                n.setSiblingIndex(cards.length - 1); // 飞行期间置顶
 
                 tween(n)
                     // 初始：微缩 + 扇形旋转（从牌堆起飞姿态）
-                    .set({ scale: new Vec3(0.65, 0.8, 1), eulerAngles: new Vec3(0, 0, rotZ) })
+                    .set({ scale: new Vec3(0.6, 0.6, 1), eulerAngles: new Vec3(0, 0, rotZ) })
                     // 飞行阶段：位移与缩放/旋转并行
                     .parallel(
                         // 位移：飞到展开位，到位后立刻翻正面
                         tween(n)
                             .to(FLY_DUR, { position: new Vec3(spreadXs[i], 0, 0) }, { easing: 'sineOut' })
-                            .call(() => cn.setFaceDown(false)),
+                            .call(() => {
+                                cn.setCard(cards[i]); // 翻面前设牌值
+                                cn.setFaceDown(false);
+                                if (callback) callback();
+                            }),
                         // 缩放+旋转：先压缩（飞行感）→ 还原旋转 → 轻微收缩（落地前）
                         tween(n)
                             .to(FLY_DUR * 0.2, { scale: new Vec3(0.6, 0.6, 1) },                                          { easing: 'quadIn'  })
@@ -356,12 +328,11 @@ export class HandCardPanel extends Component {
      */
     addCard(card: number): void {
         // 弹出牌堆顶部（视觉减一）；若有节点则飞出动画后销毁
-        const pileTop = this._popDeckCard();
+        const pileTop = this.tableAreaView?.popDeckCard() ?? null;
 
         // 将新牌的起始世界坐标设为牌堆位置（供 _syncUngroupNodes 设起飞点）
-        if (this.deckNode) {
-            this._spawnUngroupWorldPos = this.deckNode.getWorldPosition().clone();
-        }
+        const deckWorld = this.tableAreaView?.getDeckWorldPos();
+        if (deckWorld) this._spawnUngroupWorldPos = deckWorld;
 
         if (pileTop?.isValid) {
             // 顶部牌节点轻微飞起后销毁（纯视觉过渡）
@@ -410,10 +381,6 @@ export class HandCardPanel extends Component {
         this._groupViews.clear();
         for (const cn of this._ungroupNodes.values()) cn.node.destroy();
         this._ungroupNodes.clear();
-        // 清空牌堆视觉
-        this._clearDeckPile();
-        this._deckRemaining = 0;
-        this.deckNode.removeAllChildren();
     }
 
     // ── 按钮操作入口（ActionPanel 调用） ─────────────────
@@ -465,34 +432,16 @@ export class HandCardPanel extends Component {
     onToggleAutoGroup(): void  { this._state.toggleAutoGroup(); }
     onToggleSortMode():  void  { this._state.toggleSortMode();  }
 
-    /**
-     * 初始化牌堆显示（游戏开始、发牌前调用）。
-     * @param totalCount 牌堆总张数（含将要发出的牌）
-     */
-    setupDeck(totalCount: number): void {
-        this._deckRemaining = totalCount;
-        this._buildDeckPile();
-    }
-
-    /** 牌堆剩余张数 */
-    get deckRemaining(): number { return this._deckRemaining; }
-
     get autoGroupEnabled(): boolean { return this._state.autoGroupEnabled; }
     get sortMode():         SortMode { return this._state.sortMode; }
     get point():            number  { return this._state.point; }
 
     /**
-     * 是否允许点击牌堆进行抽牌（指引 + 交互一起控制）。
-     * 注意：具体是否“轮到自己”由上层 TongitsView 负责判定后调用本方法。
+     * 是否允许点击牌堆进行抽牌（转发给 TableAreaView）。
+     * 注意：具体是否”轮到自己”由上层 TongitsView 负责判定后调用本方法。
      */
     setDeckDrawEnabled(enabled: boolean): void {
-        if (this._deckDrawEnabled === enabled) return;
-        this._deckDrawEnabled = enabled;
-        if (enabled) {
-            this._startDeckGuide();
-        } else {
-            this._stopDeckGuide();
-        }
+        this.tableAreaView?.setDeckDrawEnabled(enabled);
     }
 
     // ── 状态变化响应 ──────────────────────────────────────
@@ -768,94 +717,6 @@ export class HandCardPanel extends Component {
         this._syncAllGroupMarkers();
     }
 
-    // ── 牌堆视觉管理 ──────────────────────────────────────
-
-    /** 清空牌堆视觉节点 */
-    private _clearDeckPile(): void {
-        for (const n of this._deckPileNodes) { if (n.isValid) n.destroy(); }
-        this._deckPileNodes = [];
-    }
-
-    /** 更新牌堆剩余数量 Label */
-    private _updateDeckCountLabel(): void {
-        if (this.deckCountLabel) {
-            this.deckCountLabel.string = this._deckRemaining > 0 ? `${this._deckRemaining}` : "";
-        }
-    }
-
-    private _onDeckTouchEnd(): void {
-        // 交互 gate：不允许时忽略点击
-        if (!this._deckDrawEnabled) return;
-        // 由 TongitsView 派发抽牌命令
-        this.onDeckDrawClick?.();
-    }
-
-    private _startDeckGuide(): void {
-        if (!this.deckNode || !this.deckNode.isValid) return;
-        this._stopDeckGuide();
-        // 简单呼吸：缩放循环（不依赖 Animation 组件）
-        this.deckNode.setScale(1, 1, 1);
-        this._deckGuideTween = tween(this.deckNode)
-            .repeatForever(
-                tween()
-                    .to(0.35, { scale: new Vec3(1.06, 1.06, 1) }, { easing: 'sineOut' })
-                    .to(0.35, { scale: new Vec3(1.00, 1.00, 1) }, { easing: 'sineIn'  })
-            )
-            .start();
-    }
-
-    private _stopDeckGuide(): void {
-        if (this._deckGuideTween) {
-            this._deckGuideTween.stop();
-            this._deckGuideTween = null;
-        }
-        if (this.deckNode?.isValid) {
-            this.deckNode.setScale(1, 1, 1);
-        }
-    }
-
-    /** 创建一张牌堆背面节点（不绑定点击 / 拖拽） */
-    private _createDeckPileCard(): Node {
-        const n = this.cardPrefab ? instantiate(this.cardPrefab) : new Node('DeckCard');
-        n.name = 'DeckCard';
-        let cn = n.getComponent(CardNode);
-        if (!cn) cn = n.addComponent(CardNode);
-        cn.setFaceDown(true);
-        return n;
-    }
-
-    /**
-     * 根据 _deckRemaining 重建 deckNode 上的叠牌视觉。
-     * 最多显示 DECK_PILE_MAX_VISIBLE 张，超出部分靠偏移模拟厚度。
-     */
-    private _buildDeckPile(): void {
-        this._clearDeckPile();
-        if (!this.deckNode || this._deckRemaining <= 0) return;
-        const visible = Math.min(this._deckRemaining, DECK_PILE_MAX_VISIBLE);
-        const startY  = -(visible - 1) * DECK_STACK_DY / 2;   // 整体居中于 Y=0
-        for (let i = 0; i < visible; i++) {
-            const n = this._createDeckPileCard();
-            n.setPosition(0, startY + i * DECK_STACK_DY, 0);
-            this.deckNode.addChild(n);
-            this._deckPileNodes.push(n);
-        }
-        this._updateDeckCountLabel();
-    }
-
-    /**
-     * 从牌堆取出顶部节点（剩余数 -1，移除顶层叠牌节点）。
-     * 返回被弹出的节点（调用者决定如何处理：直接销毁或作动画），
-     * 若视觉节点已耗尽但逻辑数仍有剩余则返回 null。
-     */
-    private _popDeckCard(): Node | null {
-        this._deckRemaining = Math.max(0, this._deckRemaining - 1);
-        this._updateDeckCountLabel();
-        if (this._deckPileNodes.length > 0) {
-            return this._deckPileNodes.pop()!;
-        }
-        return null;
-    }
-
     private _createCardNode(value: number): Node {
         const n = this.cardPrefab
             ? instantiate(this.cardPrefab)
@@ -911,9 +772,7 @@ export class HandCardPanel extends Component {
 
     /** 牌堆节点在本 panel 坐标系中的位置（发牌起点） */
     private _deckLocalPos(): Vec3 {
-        const world = this.deckNode
-            ? this.deckNode.getWorldPosition()
-            : this.node.getWorldPosition();
+        const world = this.tableAreaView?.getDeckWorldPos() ?? this.node.getWorldPosition();
         const local = this._worldToLocal(world);
         // 若牌堆与 panel 重叠，强制偏移到上方作为起点
         const ch = this._layoutCardH();

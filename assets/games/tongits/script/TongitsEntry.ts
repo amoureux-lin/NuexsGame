@@ -54,7 +54,6 @@ export class TongitsEntry extends BaseGameEntry {
             );
             console.log('joinRoomRes:', res);
             this._model!.joinRoom(res);
-            await Nexus.audio.playMusic('res/audios/Tongits_bg', true);
         } catch (err) {
             console.error('[TongitsEntry] joinRoom failed:', err);
             throw err;
@@ -93,6 +92,10 @@ export class TongitsEntry extends BaseGameEntry {
 
         this._model!.joinRoom(res);
         console.log('[TongitsEntry] mock join room complete');
+    }
+
+    async onComplete(){
+        await Nexus.audio.playMusic('res/audios/Tongits_bg', true);
     }
 
     protected async onGameExit(): Promise<void> {
