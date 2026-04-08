@@ -1,4 +1,4 @@
-import { _decorator } from 'cc';
+import { _decorator,Node } from 'cc';
 import { BaseGameView } from 'db://assets/script/base/BaseGameView';
 import { Nexus } from 'db://nexus-framework/index';
 import { TongitsEvents } from '../config/TongitsEvents';
@@ -63,6 +63,9 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     @property({ type: GameStartEffect, tooltip: '游戏开始动画控制器' })
     gameStartEffect: GameStartEffect = null!;
 
+    @property({ type: Node,tooltip:"牌桌上摸牌与弃牌区域"})
+    tableArea:Node = null!;
+
     // ── 缓存本地状态 ─────────────────────────────────────
 
     private _selfUserId: number = 0;
@@ -74,6 +77,11 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     private _isDealing: boolean = false;
     /** 手牌状态机最新的按钮可用状态 */
     private _handButtons: ButtonStates | null = null;
+
+    protected onLoad() {
+        super.onLoad();
+        this.tableArea.active = false;
+    }
 
     // ── 事件注册 ─────────────────────────────────────────
 
@@ -194,7 +202,11 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
             avatarPositions,
             potAmount,
             () => {
-                this.handCardPanel?.dealCards(selfPlayer?.handCards ?? []);
+                this.tableArea.active = true;
+                this.handCardPanel?.dealCards(
+                    selfPlayer?.handCards ?? [],
+                    data.gameInfo?.deckCardCount ?? 0,
+                );
             },
         );
     }
