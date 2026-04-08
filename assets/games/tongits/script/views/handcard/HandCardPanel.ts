@@ -277,7 +277,7 @@ export class HandCardPanel extends Component {
 
                 tween(n)
                     // 初始：微缩 + 扇形旋转（从牌堆起飞姿态）
-                    .set({ scale: new Vec3(0.6, 0.6, 1), eulerAngles: new Vec3(0, 0, rotZ) })
+                    .set({ scale: new Vec3(0.68, 0.68, 1), eulerAngles: new Vec3(0, 0, rotZ) })
                     // 飞行阶段：位移与缩放/旋转并行
                     .parallel(
                         // 位移：飞到展开位，到位后立刻翻正面
@@ -290,8 +290,8 @@ export class HandCardPanel extends Component {
                             }),
                         // 缩放+旋转：先压缩（飞行感）→ 还原旋转 → 轻微收缩（落地前）
                         tween(n)
-                            .to(FLY_DUR * 0.2, { scale: new Vec3(0.6, 0.6, 1) },                                          { easing: 'quadIn'  })
-                            .to(FLY_DUR * 0.6, { scale: new Vec3(0.9, 0.9, 1), eulerAngles: new Vec3(0, 0, 0) }, { easing: 'sineOut' })
+                            .to(FLY_DUR * 0.2, { scale: new Vec3(0.68, 0.68, 1) },                                          { easing: 'quadIn'  })
+                            .to(FLY_DUR * 0.68, { scale: new Vec3(0.9, 0.9, 1), eulerAngles: new Vec3(0, 0, 0) }, { easing: 'sineOut' })
                             .to(FLY_DUR * 0.2, { scale: new Vec3(0.82, 0.82, 1) },                                        { easing: 'sineOut' })
                     )
                     // 落地弹跳：放大过冲 → 回弹还原
@@ -337,7 +337,7 @@ export class HandCardPanel extends Component {
         if (pileTop?.isValid) {
             // 顶部牌节点轻微飞起后销毁（纯视觉过渡）
             const curPos = pileTop.position.clone();
-            tweenTo(pileTop, FLY_DUR * 0.6,
+            tweenTo(pileTop, FLY_DUR * 0.68,
                 { position: new Vec3(curPos.x, curPos.y + 20, 0) },
                 'sineOut',
             ).then(() => { if (pileTop.isValid) pileTop.destroy(); });

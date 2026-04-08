@@ -18,7 +18,7 @@
 
 import {
     _decorator, Component, Node, Prefab, Label,
-    instantiate, Vec3, tween, Tween,
+    instantiate, Vec3, tween, Tween,sp
 } from 'cc';
 import { CardNode } from '../handcard/CardNode';
 
@@ -40,6 +40,12 @@ export class TableAreaView extends Component {
 
     @property({ type: Node,  tooltip: '牌堆叠牌容器节点' })
     deckNode: Node = null!;
+
+    @property({type:Node,tooltip:"摸牌堆 光效"})
+    deckLight: Node = null!;
+
+    @property({type:sp.Skeleton,tooltip:"摸牌堆 提示"})
+    deckTip: sp.Skeleton = null!;
 
     @property({ type: Node,  tooltip: '牌堆叠牌容器节点（发牌动画起点）' })
     sendCardNode: Node = null!;
@@ -70,7 +76,7 @@ export class TableAreaView extends Component {
     private _deckPileNodes:  Node[]         = [];
     private _deckRemaining   = 0;
     private _deckDrawEnabled = false;
-    private _deckGuideTween: Tween<Node> | null = null;
+    private _deckLightTween: Tween<Node> | null = null;
 
     // ── 私有：发牌堆（sendCardNode） ─────────────────────
 
@@ -88,7 +94,9 @@ export class TableAreaView extends Component {
         this._updateDeckCountLabel();
         this.deckNode?.on(Node.EventType.TOUCH_END, this._onDeckTouchEnd, this);
         this.historyBtn?.on(Node.EventType.TOUCH_END, this._onHistoryTap,  this);
-        if (this.historyBtn) this.historyBtn.active = false;
+        if (this.historyBtn)  this.historyBtn.active  = false;
+        if (this.deckLight)   this.deckLight.active   = false;
+        if (this.deckTip)     this.deckTip.node.active = false;
     }
 
     onDestroy(): void {
@@ -122,7 +130,7 @@ export class TableAreaView extends Component {
             const n = this.makeDeckCard();
             const pileIdx = Math.min(i, visible - 1);
             n.setPosition(0, startY + pileIdx * DECK_STACK_DY, 0);
-            n.setScale(0.6, 0.6);
+            n.setScale(0.68, 0.68);
             this.sendCardNode.addChild(n);
             this._sendPileNodes.push(n);
         }
@@ -225,7 +233,7 @@ export class TableAreaView extends Component {
         for (let i = 0; i < visible; i++) {
             const n = this.makeDeckCard();
             n.setPosition(0, startY + i * DECK_STACK_DY, 0);
-            n.setScale(0.6,0.6)
+            // n.setScale(0.68,0.68)
             this.deckNode.addChild(n);
             this._deckPileNodes.push(n);
         }
@@ -262,24 +270,46 @@ export class TableAreaView extends Component {
     }
 
     private _startDeckGuide(): void {
-        if (!this.deckNode?.isValid) return;
-        this._stopDeckGuide();
-        this.deckNode.setScale(1, 1, 1);
-        this._deckGuideTween = tween(this.deckNode)
+        this._startDeckLight();
+        this._startDeckTip();
+    }
+
+    private _stopDeckGuide(): void {
+        this._stopDeckLight();
+        this._stopDeckTip();
+    }
+
+    private _startDeckLight(): void {
+        if (!this.deckLight?.isValid) return;
+        this._stopDeckLight();
+        this.deckLight.active = true;
+        this.deckLight.setScale(1, 1, 1);
+        this._deckLightTween = tween(this.deckLight)
             .repeatForever(
                 tween()
-                    .to(0.35, { scale: new Vec3(1.06, 1.06, 1) }, { easing: 'sineOut' })
-                    .to(0.35, { scale: new Vec3(1.00, 1.00, 1) }, { easing: 'sineIn'  })
+                    .to(0.4, { scale: new Vec3(1.15, 1.15, 1) }, { easing: 'sineOut' })
+                    .to(0.4, { scale: new Vec3(1.00, 1.00, 1) }, { easing: 'sineIn'  })
             )
             .start();
     }
 
-    private _stopDeckGuide(): void {
-        if (this._deckGuideTween) {
-            this._deckGuideTween.stop();
-            this._deckGuideTween = null;
+    private _stopDeckLight(): void {
+        if (this._deckLightTween) {
+            this._deckLightTween.stop();
+            this._deckLightTween = null;
         }
-        if (this.deckNode?.isValid) this.deckNode.setScale(1, 1, 1);
+        if (this.deckLight?.isValid) {
+            this.deckLight.setScale(1, 1, 1);
+            this.deckLight.active = false;
+        }
+    }
+
+    private _startDeckTip(): void {
+        if (this.deckTip) this.deckTip.node.active = true;
+    }
+
+    private _stopDeckTip(): void {
+        if (this.deckTip) this.deckTip.node.active = false;
     }
 
     // ── 私有：弃牌堆视觉 ──────────────────────────────────
