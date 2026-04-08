@@ -135,6 +135,11 @@ export class HandCardPanel extends Component {
      */
     onDealMergeComplete: (() => void) | null = null;
 
+    /**
+     * 牌堆被点击且当前允许抽牌时触发（由 TongitsView 赋值）。
+     */
+    onDeckDrawClick: (() => void) | null = null;
+
     // ── 私有状态 ──────────────────────────────────────────
 
     private _state       = new HandCardState();
@@ -183,6 +188,10 @@ export class HandCardPanel extends Component {
     private _deckPileNodes:  Node[] = [];
     /** 当前牌堆剩余牌数（含视觉未显示的部分） */
     private _deckRemaining   = 0;
+    /** 牌堆是否允许点击抽牌（由 TongitsView 按回合阶段控制） */
+    private _deckDrawEnabled = false;
+    /** 牌堆呼吸指引 tween（enabled 时运行） */
+    private _deckGuideTween: Tween<Node> | null = null;
 
     // ── 生命周期 ──────────────────────────────────────────
 
@@ -199,10 +208,14 @@ export class HandCardPanel extends Component {
         this._deckRemaining = 0;
         this._updateDeckCountLabel();
         this._unsubscribe = this._state.onChange((snap) => this._onStateChange(snap));
+        // 牌堆点击：默认关闭，由 setDeckDrawEnabled 开启
+        this.deckNode?.on(Node.EventType.TOUCH_END, this._onDeckTouchEnd, this);
     }
 
     onDestroy(): void {
         this._unsubscribe?.();
+        this.deckNode?.off(Node.EventType.TOUCH_END, this._onDeckTouchEnd, this);
+        this.setDeckDrawEnabled(false);
         this.clear();
     }
 
@@ -467,6 +480,20 @@ export class HandCardPanel extends Component {
     get autoGroupEnabled(): boolean { return this._state.autoGroupEnabled; }
     get sortMode():         SortMode { return this._state.sortMode; }
     get point():            number  { return this._state.point; }
+
+    /**
+     * 是否允许点击牌堆进行抽牌（指引 + 交互一起控制）。
+     * 注意：具体是否“轮到自己”由上层 TongitsView 负责判定后调用本方法。
+     */
+    setDeckDrawEnabled(enabled: boolean): void {
+        if (this._deckDrawEnabled === enabled) return;
+        this._deckDrawEnabled = enabled;
+        if (enabled) {
+            this._startDeckGuide();
+        } else {
+            this._stopDeckGuide();
+        }
+    }
 
     // ── 状态变化响应 ──────────────────────────────────────
 
@@ -753,6 +780,37 @@ export class HandCardPanel extends Component {
     private _updateDeckCountLabel(): void {
         if (this.deckCountLabel) {
             this.deckCountLabel.string = this._deckRemaining > 0 ? `${this._deckRemaining}` : "";
+        }
+    }
+
+    private _onDeckTouchEnd(): void {
+        // 交互 gate：不允许时忽略点击
+        if (!this._deckDrawEnabled) return;
+        // 由 TongitsView 派发抽牌命令
+        this.onDeckDrawClick?.();
+    }
+
+    private _startDeckGuide(): void {
+        if (!this.deckNode || !this.deckNode.isValid) return;
+        this._stopDeckGuide();
+        // 简单呼吸：缩放循环（不依赖 Animation 组件）
+        this.deckNode.setScale(1, 1, 1);
+        this._deckGuideTween = tween(this.deckNode)
+            .repeatForever(
+                tween()
+                    .to(0.35, { scale: new Vec3(1.06, 1.06, 1) }, { easing: 'sineOut' })
+                    .to(0.35, { scale: new Vec3(1.00, 1.00, 1) }, { easing: 'sineIn'  })
+            )
+            .start();
+    }
+
+    private _stopDeckGuide(): void {
+        if (this._deckGuideTween) {
+            this._deckGuideTween.stop();
+            this._deckGuideTween = null;
+        }
+        if (this.deckNode?.isValid) {
+            this.deckNode.setScale(1, 1, 1);
         }
     }
 

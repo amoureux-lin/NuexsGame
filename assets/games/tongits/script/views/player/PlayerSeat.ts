@@ -86,8 +86,8 @@ export class PlayerSeat extends Component {
     actionNode: Node = null!;
 
     /** 倒计时容器节点 */
-    @property({ type: Node, tooltip: '倒计时容器节点，操作高亮时与 actionNode 同步显隐' })
-    countdownNode: Node = null!;
+    @property({ type: Sprite, tooltip: '倒计时容器节点，操作高亮时与 actionNode 同步显隐' })
+    countdownNode: Sprite = null!;
 
     /** 倒计时数字 Label */
     @property({ type: Label, tooltip: '倒计时剩余秒数文本' })
@@ -108,6 +108,13 @@ export class PlayerSeat extends Component {
     /** 游戏是否已开始，由 PlayerSeatManager 注入 */
     private _isGameStarted: boolean = false;
 
+    /** 倒计时总秒数 */
+    private _countdownTotal: number = 0;
+    /** 倒计时剩余秒数（浮点，每帧递减） */
+    private _countdownRemaining: number = 0;
+    /** 倒计时是否运行中 */
+    private _countdownRunning: boolean = false;
+
     /** 点击空座位回调（坐下），由 PlayerSeatManager 注入 */
     public onEmptySeatClick: ((seat: PlayerSeat) => void) | null = null;
     /** 点击有玩家座位回调（查看个人信息），由 PlayerSeatManager 注入 */
@@ -121,6 +128,7 @@ export class PlayerSeat extends Component {
         this.emptyNode?.on(Node.EventType.TOUCH_END, this._onEmptyClick, this);
         this.occupiedNode?.on(Node.EventType.TOUCH_END, this._onOccupiedClick, this);
         this.kickBtn?.node.on(Node.EventType.TOUCH_END, this._onKickBtnClick, this);
+        if (this.countdownNode) this.countdownNode.node.active = false;
     }
 
     protected onDestroy(): void {
@@ -144,9 +152,14 @@ export class PlayerSeat extends Component {
     setContext(isLocalOwner: boolean, isGameStarted: boolean): void {
         this._isLocalOwner = isLocalOwner;
         this._isGameStarted = isGameStarted;
-        // 非完整 refresh：直接更新 kickBtn（仅有玩家时 occupiedNode 才可见）
-        if (this._data !== null && this.kickBtn) {
-            this.kickBtn.node.active = !isGameStarted && (this._isSelf || isLocalOwner);
+        if (this._data !== null) {
+            if (this.kickBtn) {
+                this.kickBtn.node.active = !isGameStarted && (this._isSelf || isLocalOwner);
+            }
+            // 游戏开始时显示对手手牌数，自己（perspectiveId）始终隐藏
+            if (this.cardCountNode) {
+                this.cardCountNode.active = isGameStarted && !this._isSelf;
+            }
         }
     }
 
@@ -169,15 +182,39 @@ export class PlayerSeat extends Component {
      */
     setActionActive(active: boolean): void {
         if (this.actionNode) this.actionNode.active = active;
-        if (this.countdownNode) this.countdownNode.active = active;
+        if (this.countdownNode) this.countdownNode.node.active = active;
+        if (!active) this._stopCountdown();
     }
 
     /**
-     * 更新倒计时显示
-     * @param seconds 剩余秒数
+     * 启动倒计时（收到 ActionChange 时调用）
+     * @param totalSeconds 倒计时总秒数
      */
-    setCountdown(seconds: number): void {
-        if (this.countdownLabel) this.countdownLabel.string = String(seconds);
+    setCountdown(totalSeconds: number): void {
+        this._countdownTotal     = totalSeconds;
+        this._countdownRemaining = totalSeconds;
+        this._countdownRunning   = true;
+        this._refreshCountdownUI();
+    }
+
+    protected update(dt: number): void {
+        if (!this._countdownRunning) return;
+        this._countdownRemaining = Math.max(0, this._countdownRemaining - dt);
+        this._refreshCountdownUI();
+        if (this._countdownRemaining <= 0) this._stopCountdown();
+    }
+
+    private _stopCountdown(): void {
+        this._countdownRunning = false;
+    }
+
+    private _refreshCountdownUI(): void {
+        if (this.countdownLabel) {
+            this.countdownLabel.string = String(Math.ceil(this._countdownRemaining));
+        }
+        if (this.countdownNode && this._countdownTotal > 0) {
+            this.countdownNode.fillRange = this._countdownRemaining / this._countdownTotal;
+        }
     }
 
     /** 获取当前玩家的 userId，空座位返回 0 */
@@ -263,9 +300,9 @@ export class PlayerSeat extends Component {
             this.coinLabel.string = String(info?.coin ?? 0);
         }
 
-        // 手牌数（对手显示牌背数；自己不显示此区域，由 HandCardPanel 接管）
+        // 手牌数：默认隐藏，游戏开始后由 setContext 控制（自己始终隐藏）
         if (this.cardCountNode) {
-            this.cardCountNode.active = !this._isSelf;
+            this.cardCountNode.active = false;
         }
         if (this.cardCountLabel) {
             this.cardCountLabel.string = String(this._data!.handCardCount);

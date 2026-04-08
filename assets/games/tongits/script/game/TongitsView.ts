@@ -69,6 +69,13 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     // ── 缓存本地状态 ─────────────────────────────────────
 
     private _selfUserId: number = 0;
+    /**
+     * 视角玩家 userId：
+     *   - 普通玩家：与 _selfUserId 相同
+     *   - 观战者：gameInfo.perspectiveId（被观战玩家的 id）
+     * 所有座位排列、手牌显示、操作按钮等 view 逻辑均以此为基准。
+     */
+    private _perspectiveId: number = 0;
     private _players: TongitsPlayerInfo[] = [];
     private _gameInfo: GameInfo | null = null;
     private _isLocalOwner: boolean = false;
@@ -77,10 +84,18 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     private _isDealing: boolean = false;
     /** 手牌状态机最新的按钮可用状态 */
     private _handButtons: ButtonStates | null = null;
+    /** 当前可操作玩家（来自 ActionChangeBroadcast） */
+    private _actionPlayerId: number = 0;
 
     protected onLoad() {
         super.onLoad();
+        this.init();
+    }
+
+    init(){
         this.tableArea.active = false;
+        if (this.actionPanel) this.actionPanel.node.active = false;
+        this.actionPanel?.hideAll();
     }
 
     // ── 事件注册 ─────────────────────────────────────────
@@ -92,12 +107,23 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
                 this._isDealing = false;
                 this.actionPanel?.showAll();
                 this._refreshActionPanel();
+                // cardCountNode 与 actionPanel 同时显示
+                this.seatManager?.setContext(this._isLocalOwner, true);
+                if (this.actionPanel) {this.actionPanel.node.active = true;}
             };
             // 手牌选中状态变化 → 实时更新按钮可交互状态
             this.handCardPanel.onSelectionChange = (info) => {
                 this._handButtons = info.buttons;
-                if (!this._isDealing) this._refreshActionPanel();
+                if (this._isDealing) return;
+                // group/ungroup 是本地操作，不受回合限制，始终随选牌状态更新
+                this.actionPanel?.refreshGroupButtons(info.buttons);
+                // drop/drump/spaw/fight 只在轮到自己时开启
+                if (this._actionPlayerId === this._perspectiveId) {
+                    this._refreshActionPanel();
+                }
             };
+            // 牌堆点击抽牌（HandCardPanel 内部做 enabled gate）
+            this.handCardPanel.onDeckDrawClick = () => this._onDeckDrawClick();
         }
         // 本地手牌操作命令（不经过服务器）
         Nexus.on(TongitsEvents.CMD_GROUP,   this._onCmdGroup,   this);
@@ -129,17 +155,17 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         this._selfUserId = data.self?.playerInfo?.userId ?? 0;
         this._players = data.players ?? [];
         this._gameInfo = (data.gameInfo as GameInfo) ?? null;
+        // 观战时用 perspectiveId 作为视角基准，普通玩家两者相同
+        this._perspectiveId = this._gameInfo?.perspectiveId || this._selfUserId;
         this._isLocalOwner = (data.self?.playerInfo?.post ?? 0) === 1;
         this._isGameStarted = false;
         this.seatManager?.setContext(this._isLocalOwner, false);
         this._refreshAllSeats();
-        // 面板：游戏前显示，游戏中隐藏
-        if (this.waitingPanel) this.waitingPanel.node.active = true;
-        if (this.actionPanel) this.actionPanel.node.active = false;
+        this._refreshPanelVisibility();
         this.waitingPanel?.refresh(data.self ?? null, this._isLocalOwner);
-        // 重连/中途加入：若游戏已在进行则立即显示自己手牌（无动画）
+        // 重连/中途加入：若游戏已在进行则立即显示视角玩家手牌（无动画）
         if (this._gameInfo) {
-            const selfPlayer = this._players.find(p => p.playerInfo?.userId === this._selfUserId);
+            const selfPlayer = this._players.find(p => p.playerInfo?.userId === this._perspectiveId);
             this.handCardPanel?.showCards(selfPlayer?.handCards ?? []);
         }
     }
@@ -176,15 +202,15 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
 
     protected onGameStart(data: GameStartBroadcast): void {
         console.log('onGameStart', data);
+        this._resetToPreGame();
         this._isGameStarted = true;
-        this.seatManager?.setContext(this._isLocalOwner, true);
+        // waitingPanel 立即隐藏，actionPanel 等动画回调时与 cardCountNode 同步显示
+        this._refreshPanelVisibility();
+
         if (data.players) {
             this._players = data.players;
             this._refreshAllSeats();
         }
-        if (this.waitingPanel) this.waitingPanel.node.active = false;
-        if (this.actionPanel) this.actionPanel.node.active = true;
-        this.actionPanel?.hideAll();
 
         // GameStart 带的 gameInfo 包含初始 actionPlayerId，缓存备用
         if (data.gameInfo) this._gameInfo = data.gameInfo as GameInfo;
@@ -192,7 +218,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         // 标记发牌中，拦截期间的 ActionChange 按钮刷新
         this._isDealing = true;
 
-        const selfPlayer = this._players.find(p => p.playerInfo?.userId === this._selfUserId);
+        const selfPlayer = this._players.find(p => p.playerInfo?.userId === this._perspectiveId);
         const potAmount = (data.gameInfo?.betAmount ?? 0)
             * (data.gameInfo?.pot?.base ?? 1);
         const avatarPositions = this.seatManager?.getAvatarWorldPositions() ?? [];
@@ -214,13 +240,30 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     protected onActionChange(data: ActionChangeBroadcast): void {
         this.seatManager?.updateActionPlayer(data.actionPlayerId);
         this.seatManager?.updateCountdown(data.actionPlayerId, data.countdown);
-        if (!this._isDealing) this._refreshActionPanel();
+
+        this._actionPlayerId = data.actionPlayerId;
+        // 同步自身/对手的操作阶段字段，保证按钮启用条件使用的是最新状态
+        this._syncPlayerField(data.actionPlayerId, {
+            status: data.status,
+            countdown: data.countdown,
+            isFight: data.isFight,
+        } as Partial<TongitsPlayerInfo>);
+
+        // 每回合切换先做统一按钮重置（不依赖是否轮到自己）
+        if (!this._isDealing) {
+            this.actionPanel?.resetForTurn();
+            const isSelfTurn = this._actionPlayerId === this._perspectiveId;
+            // status===1：可抽牌 → 开启牌堆点击与指引；其他阶段关闭
+            this.handCardPanel?.setDeckDrawEnabled(isSelfTurn && data.status === 1);
+            // status===2：可 drop/drump（以及后续 sapaw）→ 按选牌驱动开启按钮
+            if (isSelfTurn) this._refreshActionPanel();
+        }
     }
 
     protected onDraw(data: DrawCardBroadcast): void {
         this._syncPlayerField(data.playerId, { handCardCount: data.handCardCount });
         // 自己抽牌：drawnCard 有值时追加到手牌区
-        if (data.userId === this._selfUserId && data.drawnCard) {
+        if (data.userId === this._perspectiveId && data.drawnCard) {
             this.handCardPanel?.addCard(data.drawnCard);
         }
     }
@@ -236,7 +279,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     protected onDiscard(data: DiscardCardBroadcast): void {
         this._syncPlayerField(data.playerId, { handCardCount: data.handCardCount });
         // 自己出牌：从手牌区移除对应节点
-        if (data.userId === this._selfUserId && data.discardedCard) {
+        if (data.userId === this._perspectiveId && data.discardedCard) {
             this.handCardPanel?.removeCard(data.discardedCard);
         }
     }
@@ -246,10 +289,32 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     }
 
     protected onChallenge(_data: ChallengeBroadcast): void {
+        // challenge/PK 会改变 fight 按钮的可点条件（isFight/changeStatus）
+        // 这里先同步本地 player 字段，避免按钮状态滞后
+        const data = _data as ChallengeBroadcast;
+        if (data.basePlayers) {
+            for (const bp of data.basePlayers) {
+                this._syncPlayerField(bp.playerId, {
+                    changeStatus: bp.changeStatus,
+                    countdown: bp.countdown,
+                } as Partial<TongitsPlayerInfo>);
+            }
+        }
+        if (!this._isDealing && this._actionPlayerId === this._perspectiveId) {
+            this._refreshActionPanel();
+        }
         this._refreshAllSeats();
     }
 
     protected onPK(_data: PKBroadcast): void {
+        const data = _data as PKBroadcast;
+        // PK 会改变 challenge 的状态字段（用于 fight 按钮交互）
+        this._syncPlayerField(data.playerId, {
+            changeStatus: data.changeStatus,
+        } as Partial<TongitsPlayerInfo>);
+        if (!this._isDealing && this._actionPlayerId === this._perspectiveId) {
+            this._refreshActionPanel();
+        }
         this._refreshAllSeats();
     }
 
@@ -266,18 +331,35 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     }
 
     protected onRoomReset(data: RoomResetBroadcast): void {
+        if (data.players) this._players = data.players;
+        this._resetToPreGame();
+        const self = this._players.find(p => p.playerInfo?.userId === this._perspectiveId) ?? null;
+        this.waitingPanel?.refresh(self, this._isLocalOwner);
+    }
+
+    /** 重置到进房间初始状态 */
+    private _resetToPreGame(): void {
         this._isDealing = false;
         this._isGameStarted = false;
+        this._actionPlayerId = 0;
+        this._handButtons = null;
         this.seatManager?.setContext(this._isLocalOwner, false);
-        if (data.players) this._players = data.players;
         this.seatManager?.updateActionPlayer(0);
         this._refreshAllSeats();
-        // 回到等待状态
-        if (this.waitingPanel) this.waitingPanel.node.active = true;
-        if (this.actionPanel) this.actionPanel.node.active = false;
-        const self = this._players.find(p => p.playerInfo?.userId === this._selfUserId) ?? null;
-        this.waitingPanel?.refresh(self, this._isLocalOwner);
+        this.tableArea.active = false;
         this.handCardPanel?.clear();
+        this.handCardPanel?.setDeckDrawEnabled(false);
+        this._refreshPanelVisibility();
+        // actionPanel 重置时始终隐藏，等动画回调时再显示
+        if (this.actionPanel) this.actionPanel.node.active = false;
+    }
+
+    /**
+     * 根据 _isGameStarted 控制 waitingPanel 显隐。
+     * actionPanel 由动画回调（与 cardCountNode 同步）单独控制。
+     */
+    private _refreshPanelVisibility(): void {
+        if (this.waitingPanel) this.waitingPanel.node.active = !this._isGameStarted;
     }
 
     protected onResultDetails(_data: GameResultDetailsRes): void {
@@ -304,6 +386,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     protected onDestroy(): void {
         Nexus.off(TongitsEvents.CMD_GROUP,   this._onCmdGroup,   this);
         Nexus.off(TongitsEvents.CMD_UNGROUP, this._onCmdUngroup, this);
+        if (this.handCardPanel) this.handCardPanel.onDeckDrawClick = null;
     }
 
     // ── 私有：本地手牌命令 ────────────────────────────────
@@ -316,16 +399,26 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         this.handCardPanel?.onUngroupBtn();
     }
 
+    private _onDeckDrawClick(): void {
+        // 额外保护：只在轮到自己且 status===1 时允许抽牌
+        if (this._actionPlayerId !== this._perspectiveId) return;
+        const self = this._players.find(p => p.playerInfo?.userId === this._perspectiveId) ?? null;
+        if ((self?.status ?? 0) !== 1) return;
+        this.draw();
+    }
+
     /** 用当前缓存状态刷新 ActionPanel 的可交互状态 */
     private _refreshActionPanel(): void {
-        const self = this._players.find(p => p.playerInfo?.userId === this._selfUserId) ?? null;
+        // 只允许“轮到自己”时由选牌状态驱动按钮开启
+        if (this._actionPlayerId !== this._perspectiveId) return;
+        const self = this._players.find(p => p.playerInfo?.userId === this._perspectiveId) ?? null;
         this.actionPanel?.refresh(self, this._gameInfo, this._handButtons ?? undefined);
     }
 
     // ── 私有工具 ─────────────────────────────────────────
 
     private _refreshAllSeats(): void {
-        this.seatManager?.refreshFromPlayers(this._players, this._selfUserId);
+        this.seatManager?.refreshFromPlayers(this._players, this._perspectiveId);
     }
 
     private _syncPlayerField(playerId: number, patch: Partial<TongitsPlayerInfo>): void {
@@ -338,7 +431,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         ];
         this.seatManager?.getSeatByUserId(playerId)?.setData(
             this._players[idx],
-            this._players[idx].playerInfo?.userId === this._selfUserId,
+            this._players[idx].playerInfo?.userId === this._perspectiveId,
         );
     }
 }

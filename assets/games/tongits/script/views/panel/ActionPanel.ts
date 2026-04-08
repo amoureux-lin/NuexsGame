@@ -49,11 +49,15 @@ export class ActionPanel extends Component {
     @property({ type: Button, tooltip: '弃牌按钮' })
     drumpBtn: Button = null!;
 
+    @property({ type: Button, tooltip: '补牌按钮' })
+    spawBtn: Button = null!;
+
 
     // ── 公开方法（由 TongitsView 驱动） ──────────────────
 
     /**
-     * 刷新操作按钮的可交互状态（游戏进行中始终调用，按钮可见性由 showAll/hideAll 控制）。
+     * 刷新操作按钮的可交互状态（游戏进行中始终调用，按钮可见性由 showAll
+     * /hideAll 控制）。
      *
      * @param self        本地玩家数据（含 status / isFight / changeStatus）
      * @param gameInfo    游戏状态
@@ -67,20 +71,25 @@ export class ActionPanel extends Component {
         const status       = self?.status ?? PLAYER_STATUS.INIT;
         const isFight      = self?.isFight ?? false;
         const changeStatus = self?.changeStatus ?? 0;
-        const inAction     = status === PLAYER_STATUS.ACTION;
+        // 依据当前项目规则：
+        // - status===1：可抽牌（牌堆交互在 View/HandCardPanel 控制）
+        // - status===2：可 drop/drump/spaw
+        const canPlayCards = status === PLAYER_STATUS.SELECT;
 
         const canGroup   = handButtons?.canGroup   ?? false;
         const canUngroup = handButtons?.canUngroup ?? false;
         const canDrop    = handButtons?.canDrop    ?? false;
         const canDump    = handButtons?.canDump    ?? false;
+        const canSapaw   = handButtons?.canSapaw   ?? false;
 
-        // ── drop / drump：始终可见，已摸牌(ACTION)且手牌满足条件才可点 ──
-        this._setInteractable(this.dropBtn,  inAction && canDrop);
-        this._setInteractable(this.drumpBtn, inAction && canDump);
+        // ── drop / drump / spaw：已弃牌(SELECT)且手牌满足条件才可点 ──────
+        this._setInteractable(this.dropBtn,  canPlayCards && canDrop);
+        this._setInteractable(this.drumpBtn, canPlayCards && canDump);
+        this._setInteractable(this.spawBtn,  canPlayCards && canSapaw);
 
-        // ── group / ungroup 互斥显示 ──────────────────────────────────────
+        // ── group / ungroup：本地操作，不受回合限制，由选牌条件驱动 ──────
         this._setActive(this.ungroupBtn, canUngroup);
-        this._setInteractable(this.ungroupBtn, true);
+        this._setInteractable(this.ungroupBtn, canUngroup);
 
         this._setActive(this.groupBtn, !canUngroup);
         this._setInteractable(this.groupBtn, canGroup);
@@ -90,21 +99,55 @@ export class ActionPanel extends Component {
     }
 
     /**
-     * 显示所有按钮（发牌合并完成后调用），初始全部禁用状态。
+     * 仅刷新 group / ungroup 按钮（不受回合限制，任意时刻选牌变化均可调用）。
+     * TongitsView.onSelectionChange 始终调用此方法，与 refresh 解耦。
+     */
+    refreshGroupButtons(handButtons?: ButtonStates): void {
+        const canGroup   = handButtons?.canGroup   ?? false;
+        const canUngroup = handButtons?.canUngroup ?? false;
+
+        this._setActive(this.ungroupBtn, canUngroup);
+        this._setInteractable(this.ungroupBtn, canUngroup);
+
+        this._setActive(this.groupBtn, !canUngroup);
+        this._setInteractable(this.groupBtn, canGroup);
+    }
+
+    /**
+     * 回合切换统一重置：所有按钮禁用（group/ungroup 由 refreshGroupButtons 实时驱动）。
+     * 后续是否开启由 TongitsView 在”轮到自己 + 选牌变化/手牌满足条件”时再次 refresh 决定。
+     */
+    resetForTurn(): void {
+        for (const btn of [this.dropBtn, this.drumpBtn, this.spawBtn, this.fightBtn]) {
+            this._setActive(btn, true);
+            this._setInteractable(btn, false);
+        }
+        // group/ungroup reset 到初始状态（选牌清空后全 false，等待 refreshGroupButtons 驱动）
+        this._setActive(this.ungroupBtn, false);
+        this._setInteractable(this.ungroupBtn, false);
+        this._setActive(this.groupBtn, true);
+        this._setInteractable(this.groupBtn, false);
+    }
+
+    /**
+     * 显示所有按钮（发牌合并完成后调用），初始全部禁用，等待选牌驱动。
      */
     showAll(): void {
-        [this.dropBtn, this.drumpBtn, this.groupBtn, this.fightBtn]
+        [this.dropBtn, this.drumpBtn, this.spawBtn, this.fightBtn]
             .forEach(btn => {
                 this._setActive(btn, true);
                 this._setInteractable(btn, false);
             });
-        // ungroupBtn 初始隐藏，groupBtn 作为占位显示
+        // ungroupBtn 初始隐藏，groupBtn 显示但禁用，等待 refreshGroupButtons 驱动
         this._setActive(this.ungroupBtn, false);
+        this._setInteractable(this.ungroupBtn, false);
+        this._setActive(this.groupBtn, true);
+        this._setInteractable(this.groupBtn, false);
     }
 
     /** 隐藏所有操作按钮（游戏结束 / 重置时调用） */
     hideAll(): void {
-        [this.groupBtn, this.ungroupBtn, this.dropBtn, this.drumpBtn, this.fightBtn]
+        [this.groupBtn, this.ungroupBtn, this.dropBtn, this.drumpBtn, this.fightBtn, this.spawBtn]
             .forEach(btn => this._setActive(btn, false));
     }
 
@@ -116,6 +159,7 @@ export class ActionPanel extends Component {
         this.dropBtn?.node.on(Button.EventType.CLICK,    this._onDrop,    this);
         this.drumpBtn?.node.on(Button.EventType.CLICK,   this._onDrump,   this);
         this.fightBtn?.node.on(Button.EventType.CLICK,   this._onFight,   this);
+        this.spawBtn?.node.on(Button.EventType.CLICK,    this._onSpaw,    this);
     }
 
     protected onDestroy(): void {
@@ -124,6 +168,7 @@ export class ActionPanel extends Component {
         this.dropBtn?.node.off(Button.EventType.CLICK,    this._onDrop,    this);
         this.drumpBtn?.node.off(Button.EventType.CLICK,   this._onDrump,   this);
         this.fightBtn?.node.off(Button.EventType.CLICK,   this._onFight,   this);
+        this.spawBtn?.node.off(Button.EventType.CLICK,    this._onSpaw,    this);
     }
 
     // ── 私有工具 ─────────────────────────────────────────
@@ -158,5 +203,10 @@ export class ActionPanel extends Component {
 
     private _onFight(): void {
         Nexus.emit(TongitsEvents.CMD_CHALLENGE, { changeStatus: 2 });
+    }
+
+    private _onSpaw(): void {
+        // 具体 card / targetPlayerId / targetMeldId 由 TongitsView 组装
+        Nexus.emit(TongitsEvents.CMD_LAY_OFF, { card: 0, targetPlayerId: 0, targetMeldId: 0 });
     }
 }
