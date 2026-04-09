@@ -21,7 +21,7 @@ const enum PLAYER_STATUS {
  *   ungroupBtn — 取消选中的手牌组合（本地手牌操作）
  *   dropBtn    — 打出有效组合到桌面（需 canDrop）
  *   dumpBtn    — 弃一张牌到弃牌堆
- *   spawBtn    — 将手中一张牌补到对手桌面已有的牌组（Sapaw）
+ *   spawBtn    — 将手中一张牌补到对手桌面已有的牌组（Spaw）
  *   fightBtn   — 挑战 / 接受 / 拒绝
  *
  * 节点结构：
@@ -30,7 +30,7 @@ const enum PLAYER_STATUS {
  *   ├── ungroupBtn
  *   ├── dropBtn
  *   ├── dumpBtn
- *   ├── spawBtn    ← 默认隐藏，满足 Sapaw 条件时才显示
+ *   ├── spawBtn    ← 默认隐藏，满足 Spaw 条件时才显示
  *   └── fightBtn
  */
 @ccclass('ActionPanel')
@@ -51,7 +51,7 @@ export class ActionPanel extends Component {
     @property({ type: Button, tooltip: '弃牌按钮' })
     dumpBtn: Button = null!;
 
-    @property({ type: Button, tooltip: '补牌按钮（Sapaw）默认隐藏' })
+    @property({ type: Button, tooltip: '补牌按钮（Spaw）默认隐藏' })
     spawBtn: Button = null!;
 
 
@@ -73,23 +73,23 @@ export class ActionPanel extends Component {
         const status       = self?.status ?? PLAYER_STATUS.INIT;
         const isFight      = self?.isFight ?? false;
         const changeStatus = self?.changeStatus ?? 0;
-        // status===3(ACTION)：已抽/吃牌，可 drop/dump/sapaw
+        // status===3(ACTION)：已抽/吃牌，可 drop/dump/spaw
         const canPlayCards = status === PLAYER_STATUS.ACTION;
 
         const canGroup   = handButtons?.canGroup   ?? false;
         const canUngroup = handButtons?.canUngroup ?? false;
         const canDrop    = handButtons?.canDrop    ?? false;
         const canDump    = handButtons?.canDump    ?? false;
-        const canSapaw   = handButtons?.canSapaw   ?? false;
+        const canSpaw    = handButtons?.canSpaw    ?? false;
 
         // ── drop / dump：已抽牌(ACTION)且手牌满足条件才可点 ──────────────
         this._setInteractable(this.dropBtn, canPlayCards && canDrop);
         this._setInteractable(this.dumpBtn, canPlayCards && canDump);
 
-        // ── sapaw：暂未完善，始终隐藏 ────────────────────────────────────
-        // const showSapaw = canPlayCards && canSapaw;
-        // this._setActive(this.spawBtn, showSapaw);
-        // this._setInteractable(this.spawBtn, showSapaw);
+        // ── spaw：暂未完善，始终隐藏 ─────────────────────────────────────
+        // const showSpaw = canPlayCards && canSpaw;
+        // this._setActive(this.spawBtn, showSpaw);
+        // this._setInteractable(this.spawBtn, showSpaw);
 
         // ── group / ungroup：本地操作，不受回合限制，由选牌条件驱动 ──────
         this._setActive(this.ungroupBtn, canUngroup);

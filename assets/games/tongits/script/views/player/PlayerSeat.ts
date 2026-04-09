@@ -1,6 +1,7 @@
 import { _decorator, Component, Node, Label, Sprite, SpriteFrame, EventTouch,Button} from 'cc';
 import { Nexus } from 'db://nexus-framework/index';
 import type { TongitsPlayerInfo } from '../../proto/tongits';
+import { PlayerMeldField } from './PlayerMeldField';
 
 const { ccclass, property } = _decorator;
 
@@ -84,6 +85,10 @@ export class PlayerSeat extends Component {
     /** 当前操作高亮（轮到此玩家时显示） */
     @property({ type: Node, tooltip: '当前操作高亮框，轮到此玩家操作时显示' })
     actionNode: Node = null!;
+
+    /** 牌组展示区（独立节点，在 Inspector 中拖入，不要求是本节点的子节点） */
+    @property({ type: PlayerMeldField, tooltip: '已打出牌组展示区' })
+    meldField: PlayerMeldField | null = null;
 
     /** 倒计时容器节点 */
     @property({ type: Sprite, tooltip: '倒计时容器节点，操作高亮时与 actionNode 同步显隐' })

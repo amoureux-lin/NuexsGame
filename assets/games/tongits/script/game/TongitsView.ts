@@ -1,4 +1,5 @@
 import { _decorator, Vec3, tween } from 'cc';
+import { MeldValidator } from '../utils/MeldValidator';
 import { BaseGameView } from 'db://assets/script/base/BaseGameView';
 import { Nexus } from 'db://nexus-framework/index';
 import { TongitsEvents } from '../config/TongitsEvents';
@@ -73,6 +74,8 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     @property({ type: TableAreaView, tooltip: '牌桌中央区（牌堆数量 + 弃牌展示 + 历史按钮），挂在 tableArea 节点上' })
     tableAreaView: TableAreaView = null!;
 
+;
+
     // ── 缓存本地状态 ─────────────────────────────────────
 
     private _selfUserId: number = 0;
@@ -93,6 +96,12 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     private _handButtons: ButtonStates | null = null;
     /** 当前可操作玩家（来自 ActionChangeBroadcast） */
     private _actionPlayerId: number = 0;
+    /** 最近一次弃牌堆顶牌（用于吃牌候选计算） */
+    private _lastDiscardCard: number = 0;
+    /** 当前是否处于可吃牌状态 */
+    private _canTake: boolean = false;
+    /** 已发出 CMD_TAKE 时使用的手牌（等待 TakeRes 后移除） */
+    private _pendingTakeCards: number[] = [];
 
     protected onLoad() {
         super.onLoad();
@@ -139,14 +148,16 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
                 }
             };
         }
-        // 牌堆点击抽牌（TableAreaView 内部做 enabled gate）
+        // 牌堆点击抽牌 / 弃牌区点击吃牌
         if (this.tableAreaView) {
-            this.tableAreaView.onDeckDrawClick = () => this._onDeckDrawClick();
+            this.tableAreaView.onDeckDrawClick    = () => this._onDeckDrawClick();
+            this.tableAreaView.onDiscardAreaClick = () => this._onDiscardAreaClick();
         }
         // 本地手牌操作命令（不经过服务器）
         Nexus.on(TongitsEvents.CMD_GROUP,   this._onCmdGroup,   this);
         Nexus.on(TongitsEvents.CMD_UNGROUP, this._onCmdUngroup, this);
         Nexus.on(TongitsEvents.CMD_DISCARD, this._onCmdDiscard, this);
+        Nexus.on(TongitsEvents.CMD_MELD,    this._onCmdMeld,    this);
 
         this.listen<GameStartBroadcast>(TongitsEvents.GAME_START,       (d) => this.onGameStart(d));
         this.listen<ActionChangeBroadcast>(TongitsEvents.ACTION_CHANGE, (d) => this.onActionChange(d));
@@ -285,8 +296,15 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
             const isSelfTurn = this._actionPlayerId === this._perspectiveId;
             // status===2(select)：可抽牌/吃牌/挑战 → 开启牌堆点击；其他阶段关闭
             this.handCardPanel?.setDeckDrawEnabled(isSelfTurn && data.status === 2);
-            // status===2：可 drop/dump（以及后续 sapaw）→ 按选牌驱动开启按钮
+            // status===2：可 drop/dump（以及后续 spaw）→ 按选牌驱动开启按钮
             if (isSelfTurn) this._refreshActionPanel();
+
+            // 吃牌模式：轮到自己且 status===2 时检测候选
+            if (isSelfTurn && data.status === 2) {
+                this._checkTakeMode();
+            } else {
+                this._exitTakeMode();
+            }
         }
     }
 
@@ -329,6 +347,10 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
 
     protected onMeld(data: MeldCardBroadcast): void {
         this._syncPlayerField(data.playerId, { handCardCount: data.handCardCount });
+        if (data.newMeld) {
+            const seat = this.seatManager?.getSeatByUserId(data.playerId);
+            seat?.meldField?.addMeld(data.newMeld);
+        }
     }
 
     protected onLayOff(data: LayOffCardBroadcast): void {
@@ -336,6 +358,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     }
 
     protected onDiscard(data: DiscardCardBroadcast): void {
+        if (data.discardedCard) this._lastDiscardCard = data.discardedCard;
         this._syncPlayerField(data.playerId, { handCardCount: data.handCardCount });
         if (!data.discardPile?.length) return;
 
@@ -381,6 +404,10 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
 
     protected onTake(data: TakeCardBroadcast): void {
         this._syncPlayerField(data.playerId, { handCardCount: data.handCardCount });
+        if (data.newMeld) {
+            const seat = this.seatManager?.getSeatByUserId(data.playerId);
+            seat?.meldField?.addMeld(data.newMeld);
+        }
     }
 
     protected onChallenge(data: ChallengeBroadcast): void {
@@ -414,10 +441,15 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
 
     protected onMeldRes(data: MeldCardRes): void {
         this._syncPlayerField(this._perspectiveId, { handCardCount: data.handCardCount });
+        if (data.newMeld) {
+            const selfSeat = this.seatManager?.getSeatByUserId(this._perspectiveId);
+            selfSeat?.meldField?.addMeld(data.newMeld);
+        }
         this._refreshActionPanel();
     }
 
     protected onDiscardRes(data: DiscardCardRes): void {
+        if (data.discardedCard) this._lastDiscardCard = data.discardedCard;
         // 弃牌完成 → 不可操作（status 1），等待下一个 ActionChangeBroadcast
         this._syncPlayerField(this._perspectiveId, {
             handCardCount: data.handCardCount,
@@ -431,6 +463,16 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
 
     protected onTakeRes(data: TakeCardRes): void {
         this._syncPlayerField(this._perspectiveId, { handCardCount: data.handCardCount });
+        // 移除手牌区用于吃牌的散牌
+        for (const card of this._pendingTakeCards) {
+            this.handCardPanel?.removeCard(card);
+        }
+        this._pendingTakeCards = [];
+        this._exitTakeMode();
+        if (data.newMeld) {
+            const selfSeat = this.seatManager?.getSeatByUserId(this._perspectiveId);
+            selfSeat?.meldField?.addMeld(data.newMeld);
+        }
         this._refreshActionPanel();
     }
 
@@ -536,7 +578,11 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         Nexus.off(TongitsEvents.CMD_GROUP,   this._onCmdGroup,   this);
         Nexus.off(TongitsEvents.CMD_UNGROUP, this._onCmdUngroup, this);
         Nexus.off(TongitsEvents.CMD_DISCARD, this._onCmdDiscard, this);
-        if (this.tableAreaView) this.tableAreaView.onDeckDrawClick = null;
+        Nexus.off(TongitsEvents.CMD_MELD,    this._onCmdMeld,    this);
+        if (this.tableAreaView) {
+            this.tableAreaView.onDeckDrawClick    = null;
+            this.tableAreaView.onDiscardAreaClick = null;
+        }
     }
 
     // ── 私有：本地手牌命令 ────────────────────────────────
@@ -554,6 +600,41 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         const card = this.handCardPanel?.onDumpBtn();
         if (card == null) return;
         this.discard(card);
+    }
+
+    private _onCmdMeld(): void {
+        const group = this.handCardPanel?.onDropBtn();
+        if (!group || group.cards.length === 0) return;
+        this.meld(group.cards);
+    }
+
+    private _onDiscardAreaClick(): void {
+        if (!this._canTake) return;
+        const cards = this.handCardPanel?.getSelectedTakeCards() ?? [];
+        if (cards.length === 0) return;
+        this._pendingTakeCards = cards;
+        this.take(cards);
+    }
+
+    /** 检测吃牌候选，若存在则进入吃牌模式并显示 discardTip */
+    private _checkTakeMode(): void {
+        if (!this._lastDiscardCard) { this._canTake = false; return; }
+        const ungroupCards = this.handCardPanel?.getUngroupCards() ?? [];
+        const candidates   = MeldValidator.findTakeCandidates(ungroupCards, this._lastDiscardCard);
+        if (candidates.length > 0) {
+            this._canTake = true;
+            this.handCardPanel?.enterTakeMode(candidates);
+            this.tableAreaView?.startDiscardTip();
+        } else {
+            this._canTake = false;
+        }
+    }
+
+    /** 退出吃牌模式，清除高亮与提示 */
+    private _exitTakeMode(): void {
+        this._canTake = false;
+        this.handCardPanel?.exitTakeMode();
+        this.tableAreaView?.stopDiscardTip();
     }
 
     private _onDeckDrawClick(): void {
@@ -577,6 +658,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     private _refreshAllSeats(): void {
         this.seatManager?.refreshFromPlayers(this._players, this._perspectiveId);
     }
+
 
     private _syncPlayerField(playerId: number, patch: Partial<TongitsPlayerInfo>): void {
         const idx = this._players.findIndex(p => p.playerInfo?.userId === playerId);

@@ -75,6 +75,8 @@ export class TableAreaView extends Component {
     onDeckDrawClick: (() => void) | null = null;
     /** 点击历史按钮时触发（由 TongitsView 赋值） */
     onHistoryClick:  (() => void) | null = null;
+    /** 点击弃牌区时触发（由 TongitsView 赋值，用于吃牌确认） */
+    onDiscardAreaClick: (() => void) | null = null;
 
     // ── 私有：剩余牌堆（deckNode） ────────────────────────
 
@@ -97,8 +99,9 @@ export class TableAreaView extends Component {
         this.deckNode?.removeAllChildren();
         this.sendCardNode?.removeAllChildren();
         this._updateDeckCountLabel();
-        this.deckNode?.on(Node.EventType.TOUCH_END, this._onDeckTouchEnd, this);
-        this.historyBtn?.on(Node.EventType.TOUCH_END, this._onHistoryTap,  this);
+        this.deckNode?.on(Node.EventType.TOUCH_END,    this._onDeckTouchEnd,    this);
+        this.historyBtn?.on(Node.EventType.TOUCH_END,  this._onHistoryTap,      this);
+        this.discardNode?.on(Node.EventType.TOUCH_END, this._onDiscardAreaTap,  this);
         if (this.historyBtn)  this.historyBtn.active  = false;
         if (this.deckLight)   this.deckLight.active   = false;
         if (this.deckTip)     this.deckTip.node.active = false;
@@ -106,8 +109,9 @@ export class TableAreaView extends Component {
     }
 
     onDestroy(): void {
-        this.deckNode?.off(Node.EventType.TOUCH_END, this._onDeckTouchEnd, this);
-        this.historyBtn?.off(Node.EventType.TOUCH_END, this._onHistoryTap,  this);
+        this.deckNode?.off(Node.EventType.TOUCH_END,    this._onDeckTouchEnd,   this);
+        this.historyBtn?.off(Node.EventType.TOUCH_END,  this._onHistoryTap,     this);
+        this.discardNode?.off(Node.EventType.TOUCH_END, this._onDiscardAreaTap, this);
         this.setDeckDrawEnabled(false);
     }
 
@@ -376,5 +380,9 @@ export class TableAreaView extends Component {
 
     private _onHistoryTap(): void {
         this.onHistoryClick?.();
+    }
+
+    private _onDiscardAreaTap(): void {
+        this.onDiscardAreaClick?.();
     }
 }

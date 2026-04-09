@@ -156,6 +156,11 @@ export class HandCardPanel extends Component {
      */
     private _pendingUngroupCount = 0;
 
+    // ── 吃牌模式 ──────────────────────────────────────────
+    private _inTakeMode          = false;
+    private _takeCandidates:     number[][] = [];
+    private _selectedCandidateIdx            = 0;
+
     /** 拖拽状态（null = 无拖拽） */
     private _drag: DragState | null = null;
     /** Lerp 预览目标：CardNode → 目标 X（在各自父容器坐标系中） */
@@ -534,6 +539,40 @@ export class HandCardPanel extends Component {
     onToggleAutoGroup(): void  { this._state.toggleAutoGroup(); }
     onToggleSortMode():  void  { this._state.toggleSortMode();  }
 
+    // ── 吃牌模式 API ──────────────────────────────────────
+
+    /**
+     * 进入吃牌选择模式。
+     * @param candidates 候选组列表（每项为手牌子集，按分值降序），由 MeldValidator 计算。
+     *                   第 0 项为默认选中（分值最高）。
+     */
+    enterTakeMode(candidates: number[][]): void {
+        if (candidates.length === 0) return;
+        this._inTakeMode           = true;
+        this._takeCandidates       = candidates;
+        this._selectedCandidateIdx = 0;
+        this._refreshTakeHighlight();
+    }
+
+    /** 退出吃牌模式，清除所有高亮 / 遮罩 */
+    exitTakeMode(): void {
+        if (!this._inTakeMode) return;
+        this._inTakeMode     = false;
+        this._takeCandidates = [];
+        this._clearTakeHighlight();
+    }
+
+    /** 返回当前选中候选组的手牌值列表（供 TongitsView 发请求时使用） */
+    getSelectedTakeCards(): number[] {
+        if (!this._inTakeMode || this._takeCandidates.length === 0) return [];
+        return this._takeCandidates[this._selectedCandidateIdx] ?? [];
+    }
+
+    /** 返回散牌区所有牌值（供吃牌候选计算） */
+    getUngroupCards(): number[] {
+        return [...this._state.snapshot().ungroup];
+    }
+
     get autoGroupEnabled(): boolean { return this._state.autoGroupEnabled; }
     get sortMode():         SortMode { return this._state.sortMode; }
     get point():            number  { return this._state.point; }
@@ -644,7 +683,9 @@ export class HandCardPanel extends Component {
             if (!this._ungroupNodes.has(val)) {
                 const n  = this._createCardNode(val);
                 const cn = n.getComponent(CardNode) ?? n.addComponent(CardNode);
-                cn.onClick = (v) => this._state.toggleUngroupCard(v);
+                cn.onClick = (v) => this._inTakeMode
+                    ? this._onTakeModeCardClick(v)
+                    : this._state.toggleUngroupCard(v);
                 this._bindCardDrag(cn, 'ungroup');
                 this._ungroupRoot.addChild(n);
                 // 解散组时从原组位置起飞，而非从左端(0,0,0)
@@ -1315,6 +1356,58 @@ export class HandCardPanel extends Component {
             // ungIsSource && !ungKeepNull：牌已离开散牌区，ungroupStartX 已随目标组扩展
             // 右移，slotIdx 不加 1，避免双重偏移
             this._previewTargets.set(cn, ungroupStartX + slotIdx * CARD_SPACING);
+        }
+    }
+
+    // ── 私有：吃牌模式辅助 ────────────────────────────────
+
+    /**
+     * 散牌区牌被点击时（吃牌模式下）：
+     * 若点击的牌属于另一候选组则切换选中。
+     */
+    private _onTakeModeCardClick(cardValue: number): void {
+        for (let i = 0; i < this._takeCandidates.length; i++) {
+            if (i === this._selectedCandidateIdx) continue;
+            if (this._takeCandidates[i].includes(cardValue)) {
+                this._selectedCandidateIdx = i;
+                this._refreshTakeHighlight();
+                return;
+            }
+        }
+    }
+
+    /**
+     * 刷新散牌区高亮 / 遮罩：
+     *   - 选中候选组内的牌：selected=true
+     *   - 其他候选组内的牌：不遮罩，可点击切换
+     *   - 不属于任何候选组：hinted=true（蓝色遮罩）
+     */
+    private _refreshTakeHighlight(): void {
+        const selectedSet = new Set(this._takeCandidates[this._selectedCandidateIdx] ?? []);
+        const anyCandidate = new Set<number>();
+        for (const cand of this._takeCandidates) {
+            for (const v of cand) anyCandidate.add(v);
+        }
+
+        for (const [val, cn] of this._ungroupNodes) {
+            if (selectedSet.has(val)) {
+                cn.setSelected(true);
+                cn.setHinted(false);
+            } else if (anyCandidate.has(val)) {
+                cn.setSelected(false);
+                cn.setHinted(false);
+            } else {
+                cn.setSelected(false);
+                cn.setHinted(true);
+            }
+        }
+    }
+
+    /** 清除所有散牌区的高亮 / 遮罩（退出吃牌模式时调用） */
+    private _clearTakeHighlight(): void {
+        for (const [, cn] of this._ungroupNodes) {
+            cn.setSelected(false);
+            cn.setHinted(false);
         }
     }
 }

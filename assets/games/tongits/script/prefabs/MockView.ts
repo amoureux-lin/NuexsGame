@@ -591,7 +591,7 @@ export class MockView extends UIPanel {
         this._send(MessageType.TONGITS_MELD_BROADCAST, data);
     }
 
-    // ── 按钮：补牌（LayOff / Sapaw） ─────────────────────────
+    // ── 按钮：补牌（LayOff / Spaw） ──────────────────────────
 
     /** 模拟自己补牌到 P3 的第一个 meld */
     clickLayOffSelf(): void {
