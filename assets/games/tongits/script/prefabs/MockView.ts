@@ -371,7 +371,6 @@ export class MockView extends UIPanel {
         this._gameData = {
             players: [
                 buildPlayer(SELF_ID, selfHand, false, 1, 1),
-                // buildPlayer(P2_ID,   [],       false, 0, 2),
                 { ...buildPlayer(P2_ID, [], false, 0, 2), handCardCount: 12 },
                 { ...buildPlayer(P3_ID, [], true, 0, 3), handCardCount: 13 },
             ],
@@ -455,7 +454,22 @@ export class MockView extends UIPanel {
     /** 模拟其他玩家摸牌（drawnCard = 0，只更新数量） */
     clickDrawOther(): void {
         const pid = this._actionId !== SELF_ID ? this._actionId : P2_ID;
-        const p   = this._getPlayer(pid)!;
+        this._sendDrawBroadcast(pid);
+    }
+
+    /** 模拟 P2 摸牌 */
+    clickDrawP2(): void {
+        this._sendDrawBroadcast(P2_ID);
+    }
+
+    /** 模拟 P3 摸牌 */
+    clickDrawP3(): void {
+        this._sendDrawBroadcast(P3_ID);
+    }
+
+    private _sendDrawBroadcast(pid: number): void {
+        const p = this._getPlayer(pid);
+        if (!p) return;
         this._gameData!.deck.pop();
         p.handCardCount = (p.handCardCount ?? 0) + 1;
         p.status        = PLAYER_STATUS.ACTION;
@@ -467,6 +481,7 @@ export class MockView extends UIPanel {
             drawnCard:     0,
             handCardCount: p.handCardCount,
         };
+        console.log(`[Mock→DRAW] player=${pid} handCardCount=${p.handCardCount}`);
         this._send(MessageType.TONGITS_DRAW_BROADCAST, data);
     }
 
@@ -495,17 +510,24 @@ export class MockView extends UIPanel {
         this._send(MessageType.TONGITS_DISCARD_BROADCAST, data);
     }
 
-    /** 模拟其他玩家弃牌 */
+    /** 模拟其他玩家弃牌（当前行动玩家，或默认 P2） */
     clickDiscardOther(): void {
-        const pid  = this._actionId !== SELF_ID ? this._actionId : P2_ID;
-        const p    = this._getPlayer(pid)!;
+        const pid = this._actionId !== SELF_ID ? this._actionId : P2_ID;
+        this._sendDiscardBroadcast(pid);
+    }
+
+    clickDiscardP2(): void { this._sendDiscardBroadcast(P2_ID); }
+    clickDiscardP3(): void { this._sendDiscardBroadcast(P3_ID); }
+
+    private _sendDiscardBroadcast(pid: number): void {
+        const p = this._getPlayer(pid);
+        if (!p) return;
         const card = 201; // mock 弃牌
         p.handCardCount = Math.max(0, p.handCardCount - 1);
-        p.status        = PLAYER_STATUS.INIT;   // 弃牌后回合结束
+        p.status        = PLAYER_STATUS.INIT;
         this._gameData!.gameInfo.discardPile.push(card);
         this._gameData!.gameInfo.discardCard = card;
         this._nextTurn();
-
         const data: DiscardCardBroadcast = {
             playerId:      pid,
             discardedCard: card,
@@ -514,6 +536,7 @@ export class MockView extends UIPanel {
             discardPile:   [...this._gameData!.gameInfo.discardPile],
             userId:        SELF_ID,
         };
+        console.log(`[Mock→DISCARD] player=${pid} handCardCount=${p.handCardCount}`);
         this._send(MessageType.TONGITS_DISCARD_BROADCAST, data);
     }
 

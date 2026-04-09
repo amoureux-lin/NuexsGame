@@ -300,9 +300,9 @@ export class PlayerSeat extends Component {
             this.coinLabel.string = String(info?.coin ?? 0);
         }
 
-        // 手牌数：默认隐藏，游戏开始后由 setContext 控制（自己始终隐藏）
+        // 手牌数：游戏开始后对手可见，自己始终隐藏
         if (this.cardCountNode) {
-            this.cardCountNode.active = false;
+            this.cardCountNode.active = this._isGameStarted && !this._isSelf;
         }
         if (this.cardCountLabel) {
             this.cardCountLabel.string = String(this._data!.handCardCount);

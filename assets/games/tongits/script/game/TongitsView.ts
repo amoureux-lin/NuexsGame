@@ -1,4 +1,4 @@
-import { _decorator } from 'cc';
+import { _decorator, Vec3, tween } from 'cc';
 import { BaseGameView } from 'db://assets/script/base/BaseGameView';
 import { Nexus } from 'db://nexus-framework/index';
 import { TongitsEvents } from '../config/TongitsEvents';
@@ -32,6 +32,7 @@ import type {
     ChallengeRes,
 } from '../proto/tongits';
 import {GameStartEffect} from "db://assets/games/tongits/script/views/effect/GameStartEffect";
+import { FlyUtil } from '../utils/FlyUtil';
 import { TableAreaView } from '../views/panel/TableAreaView';
 
 const { ccclass, property } = _decorator;
@@ -293,9 +294,37 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
 
     protected onDraw(data: DrawCardBroadcast): void {
         this._syncPlayerField(data.playerId, { handCardCount: data.handCardCount });
-        // 他人摸牌：牌堆视觉减一
+        // 他人摸牌：牌堆弹出顶部节点并飞向对应座位
         const pileTop = this.tableAreaView?.popDeckCard();
-        if (pileTop?.isValid) pileTop.destroy();
+        if (!pileTop?.isValid) return;
+
+        const seat          = this.seatManager?.getSeatByUserId(data.playerId);
+        const avatarNode    = seat?.cardCountNode;
+        if (!avatarNode) { pileTop.destroy(); return; }
+
+        // re-parent 到 tableAreaView 父节点，获得稳定参考系
+        const parent   = this.tableAreaView.node.parent!;
+        const fromPos  = pileTop.getWorldPosition();
+        parent.addChild(pileTop);
+
+        const toPos = avatarNode.getWorldPosition();
+
+        // 飞行前设置起始缩放
+        pileTop.setScale(0.5, 0.5, 1);
+
+        // 弧形飞行（旋转跟随切线）
+        FlyUtil.fly(pileTop, fromPos, toPos, {
+            duration:  0.3,
+            arcHeight: 150,
+            rotate:    1,
+            easing:    'quadOut',
+            onComplete: () => { if (pileTop.isValid) pileTop.destroy(); },
+        });
+
+        // 并行缩放：飞行过程中逐渐缩小至目标大小
+        tween(pileTop)
+            .to(0.3, { scale: new Vec3(0.3, 0.3, 1) }, { easing: 'quadIn' })
+            .start();
     }
 
     protected onMeld(data: MeldCardBroadcast): void {
@@ -308,10 +337,46 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
 
     protected onDiscard(data: DiscardCardBroadcast): void {
         this._syncPlayerField(data.playerId, { handCardCount: data.handCardCount });
-        // 他人弃牌也更新弃牌堆展示
-        if (data.discardPile?.length) {
+        if (!data.discardPile?.length) return;
+
+        const isSelf = data.playerId === this._perspectiveId;
+        if (isSelf) {
+            // 自己弃牌由 onDiscardRes 处理动画，这里只补同步
             this.tableAreaView?.syncDiscard(data.discardPile);
+            return;
         }
+
+        // 他人弃牌：从 cardCountNode 飞向弃牌区
+        const seat          = this.seatManager?.getSeatByUserId(data.playerId);
+        const cardCountNode = seat?.cardCountNode;
+        if (!cardCountNode || !this.tableAreaView) {
+            this.tableAreaView?.syncDiscard(data.discardPile);
+            return;
+        }
+
+        const flyCard = this.tableAreaView.makeDeckCard();
+        const parent  = this.tableAreaView.node.parent!;
+        parent.addChild(flyCard);
+        const fromPos = cardCountNode.getWorldPosition();
+        const toPos   = this.tableAreaView.discardNode.getWorldPosition();
+        flyCard.setWorldPosition(fromPos);
+        flyCard.setScale(0.3, 0.3, 1);
+
+        FlyUtil.fly(flyCard, fromPos, toPos, {
+            duration:  0.3,
+            arcHeight: 150,
+            rotate:    1,
+            easing:    'quadOut',
+            onComplete: () => {
+                if (flyCard.isValid) flyCard.destroy();
+                this.tableAreaView?.syncDiscard(data.discardPile);
+            },
+        });
+
+        // 并行缩放：飞行过程中逐渐缩小至目标大小
+        tween(flyCard)
+            .to(0.2, { scale: new Vec3(0.6, 0.6, 1) }, { easing: 'quadIn' })
+            .start();
     }
 
     protected onTake(data: TakeCardBroadcast): void {

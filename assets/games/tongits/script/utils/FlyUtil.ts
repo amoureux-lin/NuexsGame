@@ -31,10 +31,12 @@ export interface FlyArcOptions {
     arcDir?: Vec3;
 
     /**
-     * 飞行时节点是否跟随切线方向旋转（绕 Z 轴）。
-     * @default false
+     * 飞行过程中绕 Z 轴旋转的圈数（取绝对值）。
+     * 0 = 不旋转；1 = 转一圈。
+     * 方向自动判断：目标点在右侧 → 顺时针，在左侧 → 逆时针。
+     * @default 0
      */
-    rotate?: boolean;
+    rotate?: number;
 
     /**
      * tween easing 名称（Cocos Creator 内置缓动名）。
@@ -64,7 +66,7 @@ export class FlyUtil {
      * FlyUtil.fly(cardNode, deckWorldPos, handTargetWorldPos, {
      *     duration: 0.35,
      *     arcHeight: 100,
-     *     rotate: true,
+     *     rotate: 1,
      *     onComplete: () => { cardNode.destroy(); handCardPanel.finalizeAddCard(); }
      * });
      */
@@ -74,7 +76,7 @@ export class FlyUtil {
             duration  = 0.4,
             arcHeight = 120,
             arcDir,
-            rotate    = false,
+            rotate    = 0,
             easing    = 'quadOut',
             onComplete,
         } = options ?? {};
@@ -105,6 +107,10 @@ export class FlyUtil {
         const ctrlX = midX + perpX * arcHeight;
         const ctrlY = midY + perpY * arcHeight;
 
+        // ── 旋转方向：目标在右 → 顺时针（Z 负），在左 → 逆时针（Z 正）──
+        // CC3.x UI 节点：eulerAngles.z 增大 = 逆时针，减小 = 顺时针
+        const spinSign = (to.x >= from.x) ? -1 : 1;
+
         // ── 初始位置 ─────────────────────────────────────────
         node.setWorldPosition(from);
 
@@ -120,12 +126,14 @@ export class FlyUtil {
                     const y = inv * inv * from.y + 2 * inv * ratio * ctrlY + ratio * ratio * to.y;
                     target.setWorldPosition(x, y, 0);
 
-                    // 切线旋转（Z 轴）
-                    if (rotate) {
+                    // 旋转（Z 轴）：切线朝向 + 自动方向的累计圈数
+                    if (rotate !== 0) {
                         // B'(t) = 2(1-t)(ctrl - from) + 2t(to - ctrl)
                         const tx = 2 * inv * (ctrlX - from.x) + 2 * ratio * (to.x - ctrlX);
                         const ty = 2 * inv * (ctrlY - from.y) + 2 * ratio * (to.y - ctrlY);
-                        target.angle = Math.atan2(ty, tx) * (180 / Math.PI);
+                        const tangentDeg = Math.atan2(ty, tx) * (180 / Math.PI);
+                        const spinDeg    = spinSign * Math.abs(rotate) * 360 * ratio;
+                        target.eulerAngles = new Vec3(0, 0, tangentDeg + spinDeg);
                     }
                 },
             })
