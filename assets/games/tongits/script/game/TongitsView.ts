@@ -111,6 +111,15 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
             // 合并完成、展开前 → 显示所有按钮（禁用状态）
             this.handCardPanel.onDealMergeComplete = () => {
                 this._isDealing = false;
+                // 发牌期间收到的 ActionChange 只更新了 model，UI 刷新被拦截。
+                // 此时 model 已是最新，直接补刷发完牌后应有的状态。
+                const isSelfTurn = this._actionPlayerId === this._perspectiveId;
+                const actionPlayer = this._players.find(
+                    p => p.playerInfo?.userId === this._actionPlayerId,
+                );
+                this.actionPanel?.resetForTurn();
+                this.handCardPanel?.setDeckDrawEnabled(isSelfTurn && (actionPlayer?.status ?? 0) === 2);
+                if (this.tableAreaView) this.tableAreaView.node.active = true;
                 this.actionPanel?.showAll();
                 this._refreshActionPanel();
                 // cardCountNode 与 actionPanel 同时显示
@@ -123,7 +132,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
                 if (this._isDealing) return;
                 // group/ungroup 是本地操作，不受回合限制，始终随选牌状态更新
                 this.actionPanel?.refreshGroupButtons(info.buttons);
-                // drop/drump/spaw/fight 只在轮到自己时开启
+                // drop/dump/spaw/fight 只在轮到自己时开启
                 if (this._actionPlayerId === this._perspectiveId) {
                     this._refreshActionPanel();
                 }
@@ -272,9 +281,9 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         if (!this._isDealing) {
             this.actionPanel?.resetForTurn();
             const isSelfTurn = this._actionPlayerId === this._perspectiveId;
-            // status===1：可抽牌 → 开启牌堆点击与指引；其他阶段关闭
-            this.handCardPanel?.setDeckDrawEnabled(isSelfTurn && data.status === 1);
-            // status===2：可 drop/drump（以及后续 sapaw）→ 按选牌驱动开启按钮
+            // status===2(select)：可抽牌/吃牌/挑战 → 开启牌堆点击；其他阶段关闭
+            this.handCardPanel?.setDeckDrawEnabled(isSelfTurn && data.status === 2);
+            // status===2：可 drop/dump（以及后续 sapaw）→ 按选牌驱动开启按钮
             if (isSelfTurn) this._refreshActionPanel();
         }
     }
@@ -326,9 +335,13 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     // ── 自己操作的 RES 响应 ────────────────────────────────
 
     protected onDrawRes(data: DrawCardRes): void {
-        this._syncPlayerField(this._perspectiveId, { handCardCount: data.handCardCount });
+        // 摸牌完成 → 进入出牌阶段（status 3:Action），主动更新 model，无需等 ActionChangeBroadcast
+        this._syncPlayerField(this._perspectiveId, {
+            handCardCount: data.handCardCount,
+            status: 3,
+        } as Partial<TongitsPlayerInfo>);
         this.tableAreaView?.setDeckDrawEnabled(false);
-        // popDeckCard + 飞行动画 由 HandCardPanel.addCard 统一处理
+        // popDeckCard + 落牌动画 由 HandCardPanel.addCard 统一处理
         if (data.drawnCard) this.handCardPanel?.addCard(data.drawnCard);
         this._refreshActionPanel();
     }
@@ -466,10 +479,10 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     }
 
     private _onDeckDrawClick(): void {
-        // 额外保护：只在轮到自己且 status===1 时允许抽牌
+        // 额外保护：只在轮到自己且 status===2(select) 时允许抽牌
         if (this._actionPlayerId !== this._perspectiveId) return;
         const self = this._players.find(p => p.playerInfo?.userId === this._perspectiveId) ?? null;
-        if ((self?.status ?? 0) !== 1) return;
+        if ((self?.status ?? 0) !== 2) return;
         this.draw();
     }
 

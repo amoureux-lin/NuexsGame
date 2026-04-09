@@ -28,9 +28,9 @@ const { ccclass } = _decorator;
 
 // ── 玩家 status 枚举（与 proto 注释一致） ─────────────────────
 const PLAYER_STATUS = {
-    INIT:   1,  // 不可操作（等待抽牌 / 非操作回合）
-    SELECT: 2,  // 已出牌/select 阶段
-    ACTION: 3,  // 已抽牌，可出牌/弃牌
+    INIT:   1,  // 不可操作（非操作回合 / 弃牌后等待下一轮）
+    SELECT: 2,  // 可操作：抽牌 / 吃牌 / 发起挑战 三选一
+    ACTION: 3,  // 已抽/吃牌，必须弃牌或放牌
 } as const;
 
 // ── Mock 玩家 ID ───────────────────────────────────────────────
@@ -266,7 +266,7 @@ export class MockView extends UIPanel {
         const p   = this._getPlayer(SELF_ID)!;
         p.handCards     = p.handCards.filter(c => c !== req.card);
         p.handCardCount = p.handCards.length;
-        p.status        = PLAYER_STATUS.SELECT;
+        p.status        = PLAYER_STATUS.INIT;   // 弃牌后回合结束，等待下一轮
         if (this._gameData) {
             this._gameData.gameInfo.discardPile.push(req.card);
             this._gameData.gameInfo.discardCard = req.card;
@@ -477,7 +477,7 @@ export class MockView extends UIPanel {
         const p    = this._getPlayer(SELF_ID)!;
         const card = p.handCards.shift() ?? 0;
         p.handCardCount = p.handCards.length;
-        p.status        = PLAYER_STATUS.SELECT;
+        p.status        = PLAYER_STATUS.INIT;   // 弃牌后回合结束
         if (card) {
             this._gameData!.gameInfo.discardPile.push(card);
             this._gameData!.gameInfo.discardCard = card;
@@ -501,7 +501,7 @@ export class MockView extends UIPanel {
         const p    = this._getPlayer(pid)!;
         const card = 201; // mock 弃牌
         p.handCardCount = Math.max(0, p.handCardCount - 1);
-        p.status        = PLAYER_STATUS.SELECT;
+        p.status        = PLAYER_STATUS.INIT;   // 弃牌后回合结束
         this._gameData!.gameInfo.discardPile.push(card);
         this._gameData!.gameInfo.discardCard = card;
         this._nextTurn();
@@ -712,11 +712,12 @@ export class MockView extends UIPanel {
 
     // ── 私有：广播构建 ────────────────────────────────────────
 
-    /** 回合切换：重置操作玩家状态为 INIT 并发送广播 */
+    /** 回合切换：将操作玩家状态设为 SELECT 并发送广播 */
     private _sendActionChange(): void {
         const pid = this._actionId;
         const p   = this._getPlayer(pid)!;
-        p.status  = PLAYER_STATUS.INIT;
+        // 轮到该玩家：进入 SELECT 阶段（可抽牌/吃牌/挑战）
+        p.status  = PLAYER_STATUS.SELECT;
         this._gameData!.gameInfo.actionPlayerId = pid;
 
         const data: ActionChangeBroadcast = {

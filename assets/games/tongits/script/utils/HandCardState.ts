@@ -144,11 +144,15 @@ export class HandCardState {
     /**
      * 发牌后调用：设置初始手牌并触发 autoGroup（若开启）
      */
-    setCards(cards: number[]): void {
+    /**
+     * @param sortModeOverride 强制使用指定排序（发牌动画传 SortMode.BY_RANK，忽略玩家当前设置）
+     */
+    setCards(cards: number[], sortModeOverride?: SortMode): void {
         this._clearSelSilent();
         this._groups  = [];
-        this._ungroup = sortCards(cards, this._sortMode);
-        if (this._autoGroupEnabled) this._runAutoGroupAll();
+        const mode    = sortModeOverride ?? this._sortMode;
+        this._ungroup = sortCards(cards, mode);
+        if (this._autoGroupEnabled) this._runAutoGroupAll(mode);
         this._notify();
     }
 
@@ -201,10 +205,10 @@ export class HandCardState {
         const removeCards = new Set(this._selectedUngroupCards);
         this._ungroup = this._ungroup.filter(c => !removeCards.has(c));
 
-        // 创建新组
+        // 创建新组（组内牌固定用 BY_RANK 排序，与散牌排序模式无关）
         const newGroup: GroupData = {
             id:     newGroupId(),
-            cards:  sortCards(selCards, this._sortMode),
+            cards:  sortCards(selCards, SortMode.BY_RANK),
             type:   judgeGroupType(selCards),
             isAuto: false,
         };
@@ -342,7 +346,7 @@ export class HandCardState {
             ? SortMode.BY_SUIT
             : SortMode.BY_RANK;
 
-        this._groups  = this._groups.map(g => ({ ...g, cards: sortCards(g.cards, this._sortMode) }));
+        // 排序模式只影响散牌区；组内牌固定 BY_RANK，不随模式切换重排
         this._ungroup = sortCards(this._ungroup, this._sortMode);
         this._notify();
     }
@@ -420,8 +424,9 @@ export class HandCardState {
      * 假设 _groups=[] 且 _ungroup 包含所有牌，
      * 对全量牌执行 autoGroup
      */
-    private _runAutoGroupAll(): void {
-        const { groups, ungroup } = runAutoGroup(this._ungroup, this._sortMode);
+    private _runAutoGroupAll(overrideMode?: SortMode): void {
+        const mode = overrideMode ?? this._sortMode;
+        const { groups, ungroup } = runAutoGroup(this._ungroup, mode);
         this._groups.push(...groups);
         this._ungroup = ungroup;
     }

@@ -8,27 +8,29 @@ const { ccclass, property } = _decorator;
 
 /** 玩家游戏内操作状态（与服务端一致） */
 const enum PLAYER_STATUS {
-    INIT   = 1,  // 等待抽牌
-    SELECT = 2,  // 已弃牌，等待他人操作
-    ACTION = 3,  // 已抽牌，可出牌/弃牌等
+    INIT   = 1,  // 不可操作（非操作回合 / 弃牌后等待下一轮）
+    SELECT = 2,  // 可操作：抽牌 / 吃牌 / 发起挑战 三选一
+    ACTION = 3,  // 已抽/吃牌，必须弃牌或放牌
 }
 
 /**
  * ActionPanel — 游戏进行中的操作面板
  *
  * 按钮说明：
- *   group    — 将选中手牌创建组合（本地手牌操作）
- *   ungroup  — 取消选中的手牌组合（本地手牌操作）
- *   drop     — 打出有效组合到桌面（需 canDrop）
- *   drump    — 弃一张牌到弃牌堆
- *   fight    — 挑战 / 接受 / 拒绝
+ *   groupBtn   — 将选中手牌创建组合（本地手牌操作）
+ *   ungroupBtn — 取消选中的手牌组合（本地手牌操作）
+ *   dropBtn    — 打出有效组合到桌面（需 canDrop）
+ *   dumpBtn    — 弃一张牌到弃牌堆
+ *   spawBtn    — 将手中一张牌补到对手桌面已有的牌组（Sapaw）
+ *   fightBtn   — 挑战 / 接受 / 拒绝
  *
  * 节点结构：
  *   ActionPanel
  *   ├── groupBtn
  *   ├── ungroupBtn
  *   ├── dropBtn
- *   ├── drumpBtn
+ *   ├── dumpBtn
+ *   ├── spawBtn    ← 默认隐藏，满足 Sapaw 条件时才显示
  *   └── fightBtn
  */
 @ccclass('ActionPanel')
@@ -47,9 +49,9 @@ export class ActionPanel extends Component {
     ungroupBtn: Button = null!;
 
     @property({ type: Button, tooltip: '弃牌按钮' })
-    drumpBtn: Button = null!;
+    dumpBtn: Button = null!;
 
-    @property({ type: Button, tooltip: '补牌按钮' })
+    @property({ type: Button, tooltip: '补牌按钮（Sapaw）默认隐藏' })
     spawBtn: Button = null!;
 
 
@@ -71,10 +73,8 @@ export class ActionPanel extends Component {
         const status       = self?.status ?? PLAYER_STATUS.INIT;
         const isFight      = self?.isFight ?? false;
         const changeStatus = self?.changeStatus ?? 0;
-        // 依据当前项目规则：
-        // - status===1：可抽牌（牌堆交互在 View/HandCardPanel 控制）
-        // - status===2：可 drop/drump/spaw
-        const canPlayCards = status === PLAYER_STATUS.SELECT;
+        // status===3(ACTION)：已抽/吃牌，可 drop/dump/sapaw
+        const canPlayCards = status === PLAYER_STATUS.ACTION;
 
         const canGroup   = handButtons?.canGroup   ?? false;
         const canUngroup = handButtons?.canUngroup ?? false;
@@ -82,10 +82,14 @@ export class ActionPanel extends Component {
         const canDump    = handButtons?.canDump    ?? false;
         const canSapaw   = handButtons?.canSapaw   ?? false;
 
-        // ── drop / drump / spaw：已弃牌(SELECT)且手牌满足条件才可点 ──────
-        this._setInteractable(this.dropBtn,  canPlayCards && canDrop);
-        this._setInteractable(this.drumpBtn, canPlayCards && canDump);
-        this._setInteractable(this.spawBtn,  canPlayCards && canSapaw);
+        // ── drop / dump：已抽牌(ACTION)且手牌满足条件才可点 ──────────────
+        this._setInteractable(this.dropBtn, canPlayCards && canDrop);
+        this._setInteractable(this.dumpBtn, canPlayCards && canDump);
+
+        // ── sapaw：暂未完善，始终隐藏 ────────────────────────────────────
+        // const showSapaw = canPlayCards && canSapaw;
+        // this._setActive(this.spawBtn, showSapaw);
+        // this._setInteractable(this.spawBtn, showSapaw);
 
         // ── group / ungroup：本地操作，不受回合限制，由选牌条件驱动 ──────
         this._setActive(this.ungroupBtn, canUngroup);
@@ -115,13 +119,16 @@ export class ActionPanel extends Component {
 
     /**
      * 回合切换统一重置：所有按钮禁用（group/ungroup 由 refreshGroupButtons 实时驱动）。
-     * 后续是否开启由 TongitsView 在”轮到自己 + 选牌变化/手牌满足条件”时再次 refresh 决定。
+     * 后续是否开启由 TongitsView 在"轮到自己 + 选牌变化/手牌满足条件"时再次 refresh 决定。
      */
     resetForTurn(): void {
-        for (const btn of [this.dropBtn, this.drumpBtn, this.spawBtn, this.fightBtn]) {
+        for (const btn of [this.dropBtn, this.dumpBtn, this.fightBtn]) {
             this._setActive(btn, true);
             this._setInteractable(btn, false);
         }
+        // spawBtn 回合重置时始终隐藏，由 refresh 按条件显示
+        this._setActive(this.spawBtn, false);
+        this._setInteractable(this.spawBtn, false);
         // group/ungroup reset 到初始状态（选牌清空后全 false，等待 refreshGroupButtons 驱动）
         this._setActive(this.ungroupBtn, false);
         this._setInteractable(this.ungroupBtn, false);
@@ -133,11 +140,13 @@ export class ActionPanel extends Component {
      * 显示所有按钮（发牌合并完成后调用），初始全部禁用，等待选牌驱动。
      */
     showAll(): void {
-        [this.dropBtn, this.drumpBtn, this.spawBtn, this.fightBtn]
-            .forEach(btn => {
-                this._setActive(btn, true);
-                this._setInteractable(btn, false);
-            });
+        for (const btn of [this.dropBtn, this.dumpBtn, this.fightBtn]) {
+            this._setActive(btn, true);
+            this._setInteractable(btn, false);
+        }
+        // spawBtn 初始隐藏，由 refresh 按条件显示
+        this._setActive(this.spawBtn, false);
+        this._setInteractable(this.spawBtn, false);
         // ungroupBtn 初始隐藏，groupBtn 显示但禁用，等待 refreshGroupButtons 驱动
         this._setActive(this.ungroupBtn, false);
         this._setInteractable(this.ungroupBtn, false);
@@ -147,7 +156,7 @@ export class ActionPanel extends Component {
 
     /** 隐藏所有操作按钮（游戏结束 / 重置时调用） */
     hideAll(): void {
-        [this.groupBtn, this.ungroupBtn, this.dropBtn, this.drumpBtn, this.fightBtn, this.spawBtn]
+        [this.groupBtn, this.ungroupBtn, this.dropBtn, this.dumpBtn, this.fightBtn, this.spawBtn]
             .forEach(btn => this._setActive(btn, false));
     }
 
@@ -157,7 +166,7 @@ export class ActionPanel extends Component {
         this.groupBtn?.node.on(Button.EventType.CLICK,   this._onGroup,   this);
         this.ungroupBtn?.node.on(Button.EventType.CLICK, this._onUngroup, this);
         this.dropBtn?.node.on(Button.EventType.CLICK,    this._onDrop,    this);
-        this.drumpBtn?.node.on(Button.EventType.CLICK,   this._onDrump,   this);
+        this.dumpBtn?.node.on(Button.EventType.CLICK,    this._onDump,    this);
         this.fightBtn?.node.on(Button.EventType.CLICK,   this._onFight,   this);
         this.spawBtn?.node.on(Button.EventType.CLICK,    this._onSpaw,    this);
     }
@@ -166,7 +175,7 @@ export class ActionPanel extends Component {
         this.groupBtn?.node.off(Button.EventType.CLICK,   this._onGroup,   this);
         this.ungroupBtn?.node.off(Button.EventType.CLICK, this._onUngroup, this);
         this.dropBtn?.node.off(Button.EventType.CLICK,    this._onDrop,    this);
-        this.drumpBtn?.node.off(Button.EventType.CLICK,   this._onDrump,   this);
+        this.dumpBtn?.node.off(Button.EventType.CLICK,    this._onDump,    this);
         this.fightBtn?.node.off(Button.EventType.CLICK,   this._onFight,   this);
         this.spawBtn?.node.off(Button.EventType.CLICK,    this._onSpaw,    this);
     }
@@ -196,7 +205,8 @@ export class ActionPanel extends Component {
         Nexus.emit(TongitsEvents.CMD_MELD, { cards: [] });
     }
 
-    private _onDrump(): void {
+    private _onDump(): void {
+        console.log("点击 Dump")
         // 具体 card 由 HandCardPanel 选中散牌决定，TongitsView 负责组装
         Nexus.emit(TongitsEvents.CMD_DISCARD, { card: 0 });
     }

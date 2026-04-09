@@ -42,8 +42,9 @@ function newId(): string {
     return `g_${++_idCounter}_${Date.now()}`;
 }
 
-function makeGroup(cards: number[], type: GroupType, isAuto: boolean, mode: SortMode): GroupData {
-    return { id: newId(), cards: sortCards(cards, mode), type, isAuto };
+/** 组内牌始终按 BY_RANK 排序（与玩家选择的 sortMode 无关） */
+function makeGroup(cards: number[], type: GroupType, isAuto: boolean): GroupData {
+    return { id: newId(), cards: sortCards(cards, SortMode.BY_RANK), type, isAuto };
 }
 
 /** 从 remaining 中移除指定牌（原地修改），返回被移除的牌 */
@@ -152,31 +153,31 @@ export function autoGroup(cards: number[], mode: SortMode): AutoGroupResult {
 
     // ① 四条 (SPECIAL)
     for (const g of findQuads(remaining)) {
-        groups.push(makeGroup(g, GroupType.SPECIAL, true, mode));
+        groups.push(makeGroup(g, GroupType.SPECIAL, true));
         extract(remaining, g);
     }
 
     // ② 5+张同花顺 (SPECIAL)
     for (const g of findStraights(remaining, 5)) {
-        groups.push(makeGroup(g, GroupType.SPECIAL, true, mode));
+        groups.push(makeGroup(g, GroupType.SPECIAL, true));
         extract(remaining, g);
     }
 
     // ③ 三条 (VALID)
     for (const g of findTriples(remaining)) {
-        groups.push(makeGroup(g, GroupType.VALID, true, mode));
+        groups.push(makeGroup(g, GroupType.VALID, true));
         extract(remaining, g);
     }
 
     // ④ 4张同花顺 (VALID)：此时 remaining 中同花连续段最长为 4
     for (const g of findStraights(remaining, 4, 4)) {
-        groups.push(makeGroup(g, GroupType.VALID, true, mode));
+        groups.push(makeGroup(g, GroupType.VALID, true));
         extract(remaining, g);
     }
 
     // ⑤ 3张同花顺 (VALID)：此时 remaining 中同花连续段最长为 3
     for (const g of findStraights(remaining, 3, 3)) {
-        groups.push(makeGroup(g, GroupType.VALID, true, mode));
+        groups.push(makeGroup(g, GroupType.VALID, true));
         extract(remaining, g);
     }
 

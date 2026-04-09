@@ -245,7 +245,7 @@ export class HandCardPanel extends Component {
      * Phase 4 — 预判 autoGroup：组内牌收缩消失，然后 setCards 触发
      *           重排动画（散牌从展开位滑到最终位置）
      */
-    async dealCards(cards: number[], deckCardCount = 0,callback?:Function): Promise<void> {
+    async dealCards(cards: number[], deckCardCount = 0,oneCallback?:Function): Promise<void> {
         this.clear();
         if (!cards.length) return;
 
@@ -280,7 +280,7 @@ export class HandCardPanel extends Component {
                 const rotZ = (i - (cards.length - 1) / 2) * 2;
 
                 n.setSiblingIndex(cards.length - 1); // 飞行期间置顶
-
+                if (oneCallback) oneCallback();
                 tween(n)
                     // 初始：微缩 + 扇形旋转（从牌堆起飞姿态）
                     .set({ scale: new Vec3(0.68, 0.68, 1), eulerAngles: new Vec3(0, 0, rotZ) })
@@ -292,7 +292,7 @@ export class HandCardPanel extends Component {
                             .call(() => {
                                 cn.setCard(cards[i]); // 翻面前设牌值
                                 cn.setFaceDown(false);
-                                if (callback) callback();
+
                             }),
                         // 缩放+旋转：先压缩（飞行感）→ 还原旋转 → 轻微收缩（落地前）
                         tween(n)
@@ -971,8 +971,9 @@ export class HandCardPanel extends Component {
 
 
         // 触发展开（_doLayout 使用较长时长产生仪式感）
+        // 发牌合并展开固定用 BY_RANK，不受玩家当前排序设置影响
         this._dealReorderDur = DEAL_REORDER_DUR;
-        this._state.setCards(newCards);
+        this._state.setCards(newCards, SortMode.BY_RANK);
     }
 
     private _worldToLocal(worldPos: Vec3): Vec3 {

@@ -4888,7 +4888,7 @@
   },
   {
     "__type__": "cc.Node",
-    "_name": "drumpButton",
+    "_name": "dumpButton",
     "_objFlags": 0,
     "__editorExtras__": {},
     "_parent": {
@@ -5211,7 +5211,7 @@
         "__id__": 156
       }
     ],
-    "_active": true,
+    "_active": false,
     "_components": [
       {
         "__id__": 159
@@ -5554,7 +5554,7 @@
     "ungroupBtn": {
       "__id__": 147
     },
-    "drumpBtn": {
+    "dumpBtn": {
       "__id__": 154
     },
     "spawBtn": {
