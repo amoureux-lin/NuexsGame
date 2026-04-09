@@ -10,6 +10,12 @@ import type {
     TakeCardReq,
     ChallengeReq,
     GameResultDetailsRes,
+    DrawCardRes,
+    MeldCardRes,
+    DiscardCardRes,
+    TakeCardRes,
+    LayOffCardRes,
+    ChallengeRes,
 } from '../proto/tongits';
 import {SlotGameEvents} from "db://assets/games/slotGame/script/config/SlotGameEvents";
 import {CommonUI} from "db://assets/script/config/UIConfig";
@@ -58,12 +64,14 @@ export class TongitsController extends BaseGameController {
     // ── Tongits 游戏操作 ──────────────────────────────────
 
     private async onDraw(): Promise<void> {
-        await this.safeRequest(MessageType.TONGITS_DRAW_REQ, {});
+        const res = await this.safeRequest<DrawCardRes>(MessageType.TONGITS_DRAW_REQ, {});
+        if (res) (this._model as TongitsModel).applyDrawRes(res);
     }
 
     private async onMeld(data: { cards: number[] }): Promise<void> {
         const req: MeldCardReq = { cards: data.cards };
-        await this.safeRequest(MessageType.TONGITS_MELD_REQ, req);
+        const res = await this.safeRequest<MeldCardRes>(MessageType.TONGITS_MELD_REQ, req);
+        if (res) (this._model as TongitsModel).applyMeldRes(res);
     }
 
     private async onLayOff(data: { card: number; targetPlayerId: number; targetMeldId: number }): Promise<void> {
@@ -72,22 +80,26 @@ export class TongitsController extends BaseGameController {
             targetPlayerId: data.targetPlayerId,
             targetMeldId: data.targetMeldId,
         };
-        await this.safeRequest(MessageType.TONGITS_LAYOFF_REQ, req);
+        const res = await this.safeRequest<LayOffCardRes>(MessageType.TONGITS_LAYOFF_REQ, req);
+        if (res) (this._model as TongitsModel).applyLayOffRes(res);
     }
 
     private async onDiscard(data: { card: number }): Promise<void> {
         const req: DiscardCardReq = { card: data.card };
-        await this.safeRequest(MessageType.TONGITS_DISCARD_REQ, req);
+        const res = await this.safeRequest<DiscardCardRes>(MessageType.TONGITS_DISCARD_REQ, req);
+        if (res) (this._model as TongitsModel).applyDiscardRes(res);
     }
 
     private async onTake(data: { cardsFromHand: number[] }): Promise<void> {
         const req: TakeCardReq = { cardsFromHand: data.cardsFromHand };
-        await this.safeRequest(MessageType.TONGITS_TAKE_REQ, req);
+        const res = await this.safeRequest<TakeCardRes>(MessageType.TONGITS_TAKE_REQ, req);
+        if (res) (this._model as TongitsModel).applyTakeRes(res);
     }
 
     private async onChallenge(data: { changeStatus: number }): Promise<void> {
         const req: ChallengeReq = { changeStatus: data.changeStatus };
-        await this.safeRequest(MessageType.TONGITS_CHALLENGE_ACTION_REQ, req);
+        const res = await this.safeRequest<ChallengeRes>(MessageType.TONGITS_CHALLENGE_ACTION_REQ, req);
+        if (res) (this._model as TongitsModel).applyChallengeRes(res);
     }
 
     private async onStartGame(): Promise<void> {

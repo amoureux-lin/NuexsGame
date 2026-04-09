@@ -19,7 +19,7 @@ import type {
     DrawCardBroadcast, MeldCardBroadcast, LayOffCardBroadcast,
     DiscardCardBroadcast, ChallengeBroadcast,
     PKBroadcast, BeforeResultBroadcast, GameResultBroadcast,
-    RoomResetBroadcast, RoomInfo,
+    RoomResetBroadcast, RoomInfo, DrawCardRes,
 } from '../proto/tongits';
 
 const { ccclass } = _decorator;
@@ -239,7 +239,8 @@ export class MockView extends UIPanel {
         this._gameData = {
             players: [
                 buildPlayer(SELF_ID, selfHand, false, 1, 1),
-                buildPlayer(P2_ID,   [],       false, 0, 2),
+                // buildPlayer(P2_ID,   [],       false, 0, 2),
+                { ...buildPlayer(P2_ID, [], false, 0, 2), handCardCount: 12 },
                 { ...buildPlayer(P3_ID, [], true, 0, 3), handCardCount: 13 },
             ],
             gameInfo: buildGameInfo(P3_ID, remaining.length),
@@ -282,6 +283,24 @@ export class MockView extends UIPanel {
     }
 
     // ── 按钮：摸牌 ───────────────────────────────────────────
+
+    /** 模拟自己摸牌 res返回*/
+    clickDrawSelfRes(): void {
+        const p    = this._getPlayer(SELF_ID)!;
+        const card = this._gameData!.deck.pop() ?? 0;
+        if (card) p.handCards = [...p.handCards, card];
+        p.handCardCount = p.handCards.length;
+        p.status        = PLAYER_STATUS.ACTION;
+        this._gameData!.gameInfo.deckCardCount = this._gameData!.deck.length;
+
+        const data: DrawCardRes = {
+            hasTongits: false,
+            drawnCard:     card,
+            handCardCount: p.handCardCount
+        };
+        this._send(MessageType.TONGITS_DRAW_RES, data);
+    }
+
 
     /** 模拟自己摸牌 */
     clickDrawSelf(): void {

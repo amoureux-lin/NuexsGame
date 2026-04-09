@@ -41,6 +41,9 @@ export class TableAreaView extends Component {
     @property({ type: Node,  tooltip: '牌堆叠牌容器节点' })
     deckNode: Node = null!;
 
+    @property({ type: Label, tooltip: '牌堆剩余张数 Label' })
+    deckCountLabel: Label | null = null;
+
     @property({type:Node,tooltip:"摸牌堆 光效"})
     deckLight: Node = null!;
 
@@ -50,8 +53,10 @@ export class TableAreaView extends Component {
     @property({ type: Node,  tooltip: '牌堆叠牌容器节点（发牌动画起点）' })
     sendCardNode: Node = null!;
 
-    @property({ type: Label, tooltip: '牌堆剩余张数 Label' })
-    deckCountLabel: Label | null = null;
+    @property({type:sp.Skeleton,tooltip:"丢牌堆 提示"})
+    discardTip: sp.Skeleton = null!;
+
+
 
     // ── 弃牌区（右） ─────────────────────────────────────
 
@@ -97,6 +102,7 @@ export class TableAreaView extends Component {
         if (this.historyBtn)  this.historyBtn.active  = false;
         if (this.deckLight)   this.deckLight.active   = false;
         if (this.deckTip)     this.deckTip.node.active = false;
+        if (this.discardTip) this.discardTip.node.active  = false;
     }
 
     onDestroy(): void {
@@ -270,30 +276,36 @@ export class TableAreaView extends Component {
     }
 
     private _startDeckGuide(): void {
-        this._startDeckLight();
-        this._startDeckTip();
+        this.startDeckLight();
+        this.startDeckTip();
     }
 
     private _stopDeckGuide(): void {
-        this._stopDeckLight();
-        this._stopDeckTip();
+        this.stopDeckLight();
+        this.stopDeckTip();
     }
 
-    private _startDeckLight(): void {
+    /**
+     * 开始 摸牌堆光效
+     */
+    public startDeckLight(): void {
         if (!this.deckLight?.isValid) return;
-        this._stopDeckLight();
+        this.stopDeckLight();
         this.deckLight.active = true;
         this.deckLight.setScale(1, 1, 1);
         this._deckLightTween = tween(this.deckLight)
             .repeatForever(
                 tween()
-                    .to(0.4, { scale: new Vec3(1.15, 1.15, 1) }, { easing: 'sineOut' })
-                    .to(0.4, { scale: new Vec3(1.00, 1.00, 1) }, { easing: 'sineIn'  })
+                    .to(0.5, { scale: new Vec3(1.15, 1.15, 1) }, { easing: 'sineOut' })
+                    .to(0.5, { scale: new Vec3(1.00, 1.00, 1) }, { easing: 'sineIn'  })
             )
             .start();
     }
 
-    private _stopDeckLight(): void {
+    /**
+     * 停止 摸牌堆光效
+     */
+    public stopDeckLight(): void {
         if (this._deckLightTween) {
             this._deckLightTween.stop();
             this._deckLightTween = null;
@@ -304,12 +316,32 @@ export class TableAreaView extends Component {
         }
     }
 
-    private _startDeckTip(): void {
+    /**
+     * 开始 摸牌堆提示
+     */
+    public startDeckTip(): void {
         if (this.deckTip) this.deckTip.node.active = true;
     }
 
-    private _stopDeckTip(): void {
+    /**
+     * 停止 摸牌堆提示
+     */
+    public stopDeckTip(): void {
         if (this.deckTip) this.deckTip.node.active = false;
+    }
+
+    /**
+     * 开始 弃牌堆提示
+     */
+    public startDiscardTip(){
+        if (this.discardTip) this.discardTip.node.active = true;
+    }
+
+    /**
+     * 停止 弃牌堆提示
+     */
+    public stopDiscardTip(){
+        if (this.discardTip) this.discardTip.node.active = false;
     }
 
     // ── 私有：弃牌堆视觉 ──────────────────────────────────
