@@ -206,7 +206,6 @@ export class ActionPanel extends Component {
     }
 
     private _onDump(): void {
-        console.log("点击 Dump")
         // 具体 card 由 HandCardPanel 选中散牌决定，TongitsView 负责组装
         Nexus.emit(TongitsEvents.CMD_DISCARD, { card: 0 });
     }

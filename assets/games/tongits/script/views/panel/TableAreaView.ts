@@ -349,23 +349,18 @@ export class TableAreaView extends Component {
 
     private _rebuildDiscard(flyFromWorld?: Vec3): void {
         this.discardNode.removeAllChildren();
-        const visible = this._discardPile.slice(-DISCARD_MAX_VISIBLE);
-        for (let i = 0; i < visible.length; i++) {
-            const isTop = i === visible.length - 1;
-            const depth = visible.length - 1 - i;
-            const n  = this._makeDiscardCard(visible[i], !isTop);
-            const tx = depth * DISCARD_OFFSET.x;
-            const ty = depth * DISCARD_OFFSET.y;
-            this.discardNode.addChild(n);
-            n.setSiblingIndex(i);
-            if (isTop && flyFromWorld) {
-                n.setWorldPosition(flyFromWorld);
-                tween(n)
-                    .to(DISCARD_FLY_DUR, { position: new Vec3(tx, ty, 0) }, { easing: 'quadOut' })
-                    .start();
-            } else {
-                n.setPosition(tx, ty, 0);
-            }
+        if (this._discardPile.length === 0) return;
+        // 只显示最新一张，正面朝上
+        const topValue = this._discardPile[this._discardPile.length - 1];
+        const n = this._makeDiscardCard(topValue, false);
+        this.discardNode.addChild(n);
+        if (flyFromWorld) {
+            n.setWorldPosition(flyFromWorld);
+            tween(n)
+                .to(DISCARD_FLY_DUR, { position: Vec3.ZERO.clone() }, { easing: 'quadOut' })
+                .start();
+        } else {
+            n.setPosition(0, 0, 0);
         }
     }
 

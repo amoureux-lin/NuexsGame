@@ -145,6 +145,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         // 本地手牌操作命令（不经过服务器）
         Nexus.on(TongitsEvents.CMD_GROUP,   this._onCmdGroup,   this);
         Nexus.on(TongitsEvents.CMD_UNGROUP, this._onCmdUngroup, this);
+        Nexus.on(TongitsEvents.CMD_DISCARD, this._onCmdDiscard, this);
 
         this.listen<GameStartBroadcast>(TongitsEvents.GAME_START,       (d) => this.onGameStart(d));
         this.listen<ActionChangeBroadcast>(TongitsEvents.ACTION_CHANGE, (d) => this.onActionChange(d));
@@ -352,7 +353,11 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     }
 
     protected onDiscardRes(data: DiscardCardRes): void {
-        this._syncPlayerField(this._perspectiveId, { handCardCount: data.handCardCount });
+        // 弃牌完成 → 不可操作（status 1），等待下一个 ActionChangeBroadcast
+        this._syncPlayerField(this._perspectiveId, {
+            handCardCount: data.handCardCount,
+            status: 1,
+        } as Partial<TongitsPlayerInfo>);
         // 从手牌区移除弃出的牌
         if (data.discardedCard) this.handCardPanel?.removeCard(data.discardedCard);
         // 更新弃牌堆
@@ -465,6 +470,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     protected onDestroy(): void {
         Nexus.off(TongitsEvents.CMD_GROUP,   this._onCmdGroup,   this);
         Nexus.off(TongitsEvents.CMD_UNGROUP, this._onCmdUngroup, this);
+        Nexus.off(TongitsEvents.CMD_DISCARD, this._onCmdDiscard, this);
         if (this.tableAreaView) this.tableAreaView.onDeckDrawClick = null;
     }
 
@@ -476,6 +482,13 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
 
     private _onCmdUngroup(): void {
         this.handCardPanel?.onUngroupBtn();
+    }
+
+    private _onCmdDiscard(): void {
+        // 从手牌状态取出选中的散牌，立即从手牌区移除（乐观更新），再发送请求
+        const card = this.handCardPanel?.onDumpBtn();
+        if (card == null) return;
+        this.discard(card);
     }
 
     private _onDeckDrawClick(): void {
