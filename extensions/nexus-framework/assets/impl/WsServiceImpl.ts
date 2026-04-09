@@ -43,6 +43,7 @@ export class WsServiceImpl extends ServiceBase {
     private _receiveTimer: number | null = null;
     private _nextRequestId = 1;
     private readonly _pending = new Map<number, PendingRequest>();
+    private readonly _mockHandlers = new Map<number, (body: unknown) => unknown | Promise<unknown>>();
     /** 连接中的 Promise，防止并发 connectWs 创建多个 WebSocket */
     private _connectingPromise: Promise<void> | null = null;
     /** 切后台时间戳，用于判断后台时长 */
@@ -208,6 +209,12 @@ export class WsServiceImpl extends ServiceBase {
     }
 
     private _wsRequestOnce<T>(msgType: number, body: unknown, timeoutMs?: number): Promise<T> {
+        // Mock 拦截：有注册处理器则直接返回本地数据，不走真实 WS
+        const mockHandler = this._mockHandlers.get(msgType);
+        if (mockHandler) {
+            return Promise.resolve(mockHandler(body) as T | Promise<T>);
+        }
+
         if (!this._delegate) {
             console.error('[Nexus] initWs required for wsRequest');
             return Promise.reject('[Nexus] initWs required for wsRequest');
@@ -273,6 +280,16 @@ export class WsServiceImpl extends ServiceBase {
     }
 
     // ── 分发 ──────────────────────────────────────────────
+
+    /** 注册 Mock 请求拦截器，拦截指定 msgType 的 wsRequest，直接返回本地数据（不走真实 WS）。仅供开发测试使用。 */
+    registerMockHandler(msgType: number, handler: (body: unknown) => unknown | Promise<unknown>): void {
+        this._mockHandlers.set(msgType, handler);
+    }
+
+    /** 移除 Mock 拦截器 */
+    unregisterMockHandler(msgType: number): void {
+        this._mockHandlers.delete(msgType);
+    }
 
     /** 模拟收到服务端消息，仅供 MockView 测试使用 */
     simulateReceive(cmd: string | number, data: unknown): void {

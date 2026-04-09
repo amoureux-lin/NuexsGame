@@ -79,6 +79,14 @@ export class NetServiceImpl extends INetService {
         this._ws.simulateReceive(msgType, data);
     }
 
+    registerMockHandler(msgType: number, handler: (body: unknown) => unknown | Promise<unknown>): void {
+        this._ws.registerMockHandler(msgType, handler);
+    }
+
+    unregisterMockHandler(msgType: number): void {
+        this._ws.unregisterMockHandler(msgType);
+    }
+
     async onDestroy(): Promise<void> {
         await this._http.onDestroy();
         await this._ws.onDestroy();

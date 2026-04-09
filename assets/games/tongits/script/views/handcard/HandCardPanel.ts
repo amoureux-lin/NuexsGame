@@ -44,6 +44,7 @@ import { autoGroup, GroupData, judgeGroupType, GroupType } from '../../utils/Gro
 import { SortMode }                                      from '../../utils/CardDef';
 import { CardGroupView }                                 from './CardGroupView';
 import { CardNode, DEFAULT_CARD_W, DEFAULT_CARD_H, CARD_SPACING, getCardContentSize } from './CardNode';
+import { FlyUtil }                                       from '../../utils/FlyUtil';
 
 const { ccclass, property } = _decorator;
 
@@ -322,37 +323,123 @@ export class HandCardPanel extends Component {
 
     /**
      * 摸牌：加入一张牌
-     * - 先将牌堆顶部节点飞出到手牌区，再更新状态
-     * - autoGroupEnabled：合并动画 → 重新分组展开
-     * - 否则：直接插入，走普通 _doLayout（新节点从牌堆世界坐标起飞）
+     *
+     * 动画流程（Phase A + Phase B 同时启动）：
+     *   Phase A — 弧形飞入：牌堆顶部节点翻正面，FlyUtil 弧形飞到手牌目标位
+     *   Phase B — 左移腾位：所有根容器向左移 shiftX（非 autoGroup 时）
+     *   飞行落地后：
+     *     autoGroup  → _animateMergeExpand（合并展开）
+     *     otherwise  → _state.addCard（新节点从落点起步，_doLayout 无位移）
      */
     addCard(card: number): void {
-        // 弹出牌堆顶部（视觉减一）；若有节点则飞出动画后销毁
-        const pileTop = this.tableAreaView?.popDeckCard() ?? null;
+        const pileTop  = this.tableAreaView?.popDeckCard() ?? null;
+        const deckWorld = this.tableAreaView?.getDeckWorldPos() ?? this.node.getWorldPosition();
 
-        // 将新牌的起始世界坐标设为牌堆位置（供 _syncUngroupNodes 设起飞点）
-        const deckWorld = this.tableAreaView?.getDeckWorldPos();
-        if (deckWorld) this._spawnUngroupWorldPos = deckWorld;
+        // 计算新牌目标世界坐标（弧形飞行终点）
+        const targetWorldPos = this._computeNewCardWorldPos();
 
-        if (pileTop?.isValid) {
-            // 顶部牌节点轻微飞起后销毁（纯视觉过渡）
-            const curPos = pileTop.position.clone();
-            tweenTo(pileTop, FLY_DUR * 0.68,
-                { position: new Vec3(curPos.x, curPos.y + 20, 0) },
-                'sineOut',
-            ).then(() => { if (pileTop.isValid) pileTop.destroy(); });
+        // Phase B：非 autoGroup 时同步预移位（autoGroup 会通过 merge+expand 重排，无需手动偏移）
+        if (!this._state.autoGroupEnabled) {
+            this._preShiftRootsForNewCard();
         }
 
-        if (this._state.autoGroupEnabled) {
-            const snap = this._state.snapshot();
-            const allCards = [
-                ...snap.groups.reduce<number[]>((acc, g) => acc.concat(g.cards), []),
-                ...snap.ungroup,
-                card,
-            ];
-            void this._animateMergeExpand(allCards);
+        // 准备飞行节点：牌堆顶部节点翻正面，re-parent 到 HandCardPanel
+        let flyNode: Node | null = null;
+        if (pileTop?.isValid) {
+            flyNode = pileTop;
+            const wp = flyNode.getWorldPosition().clone();
+            this.node.addChild(flyNode);
+            flyNode.setWorldPosition(wp);
+            const cn = flyNode.getComponent(CardNode);
+            if (cn) { cn.setCard(card); cn.setFaceDown(false); }
+        }
+
+        const doFinalize = () => {
+            if (flyNode?.isValid) flyNode.destroy();
+            if (this._state.autoGroupEnabled) {
+                const snap = this._state.snapshot();
+                const allCards = [
+                    ...snap.groups.reduce<number[]>((acc, g) => acc.concat(g.cards), []),
+                    ...snap.ungroup,
+                    card,
+                ];
+                void this._animateMergeExpand(allCards);
+            } else {
+                // 新节点从飞行落点起步，_doLayout 无额外位移
+                this._spawnUngroupWorldPos = targetWorldPos.clone();
+                this._state.addCard(card);
+            }
+        };
+
+        if (flyNode) {
+            // Phase A：弧形飞入
+            FlyUtil.fly(flyNode, deckWorld, targetWorldPos, {
+                duration:  0.35,
+                arcHeight: 80,
+                rotate:    false,
+                onComplete: doFinalize,
+            });
         } else {
-            this._state.addCard(card);
+            // 无飞行节点时直接落点起步
+            if (!this._state.autoGroupEnabled) {
+                this._spawnUngroupWorldPos = deckWorld.clone();
+            }
+            doFinalize();
+        }
+    }
+
+    /**
+     * 计算摸牌后新牌的世界坐标目标。
+     *
+     * 推导：设 GW = 组区总宽（含组区与散牌区之间的 GROUP_GAP；无组时为 0），
+     *       n = 当前散牌张数，则新牌 panel-local X = (GW + n × CARD_SPACING) / 2。
+     */
+    private _computeNewCardWorldPos(): Vec3 {
+        const snap = this._state.snapshot();
+        const n = snap.ungroup.length;
+        let GW = 0;
+        for (const g of snap.groups) {
+            const gv = this._groupViews.get(g.id);
+            if (gv) GW += gv.width + GROUP_GAP;
+        }
+        const panelLocalX = (GW + n * CARD_SPACING) / 2;
+        const panelWorld  = this.node.getWorldPosition();
+        return new Vec3(panelWorld.x + panelLocalX, panelWorld.y, 0);
+    }
+
+    /**
+     * 将所有根容器向左移 shiftX，与弧形飞入动画同步进行，为新牌在右侧腾出位置。
+     * shiftX = (newTotalW − currentTotalW) / 2
+     */
+    private _preShiftRootsForNewCard(): void {
+        const snap  = this._state.snapshot();
+        const n     = snap.ungroup.length;
+        const cardW = this._layoutCardW();
+
+        // 计算当前 totalW 与加入新牌后的 totalW
+        let curTotalW = 0;
+        let newTotalW = 0;
+        for (const g of snap.groups) {
+            const gv = this._groupViews.get(g.id);
+            if (gv) { curTotalW += gv.width + GROUP_GAP; newTotalW += gv.width + GROUP_GAP; }
+        }
+        if (snap.groups.length > 0) { curTotalW -= GROUP_GAP; newTotalW -= GROUP_GAP; }
+
+        if (n > 0) {
+            if (snap.groups.length > 0) curTotalW += GROUP_GAP;
+            curTotalW += (n - 1) * CARD_SPACING + cardW;
+        }
+        if (snap.groups.length > 0) newTotalW += GROUP_GAP;
+        newTotalW += n * CARD_SPACING + cardW;
+
+        const shiftX = (newTotalW - curTotalW) / 2;
+        const dur  = 0.35;
+        const opts = { easing: 'quadOut' as const };
+
+        for (const root of [this._groupRoot, this._ungroupRoot, this._dragLayer, this._markerOverlayRoot]) {
+            const curX = root.position.x;
+            Tween.stopAllByTarget(root);
+            tween(root).to(dur, { position: new Vec3(curX - shiftX, 0, 0) }, opts).start();
         }
     }
 

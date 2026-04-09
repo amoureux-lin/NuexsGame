@@ -280,6 +280,14 @@ export abstract class INetService extends ServiceBase {
      * 仅供开发测试使用（MockView）。
      */
     simulateWsReceive?(msgType: string | number, data: unknown): void;
+    /**
+     * 注册 Mock 请求拦截器：wsRequest 发包前先检查此表，
+     * 有对应 handler 则直接以其返回值 resolve Promise，完全不走真实 WS。
+     * 仅供开发测试使用（MockView）。
+     */
+    registerMockHandler?(msgType: number, handler: (body: unknown) => unknown | Promise<unknown>): void;
+    /** 移除 Mock 请求拦截器。仅供开发测试使用（MockView）。 */
+    unregisterMockHandler?(msgType: number): void;
 }
 
 export abstract class IAudioService extends ServiceBase {

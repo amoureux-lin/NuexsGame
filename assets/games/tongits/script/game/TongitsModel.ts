@@ -217,6 +217,8 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
 
     private _onDrawBroadcast(msg: unknown): void {
         const data = msg as DrawCardBroadcast;
+        // 自己的抽牌已由 applyDrawRes 处理（状态+notify），避免重复
+        if (data.playerId === this.myUserId) return;
         const player = this.getPlayerByUserId(data.playerId);
         if (player) {
             const updates: Partial<TongitsPlayerInfo> = { handCardCount: data.handCardCount };
@@ -234,6 +236,8 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
 
     private _onMeldBroadcast(msg: unknown): void {
         const data = msg as MeldCardBroadcast;
+        // 自己的出牌已由 applyMeldRes 处理（状态+notify），避免重复
+        if (data.playerId === this.myUserId) return;
         const player = this.getPlayerByUserId(data.playerId);
         if (player && data.newMeld) {
             const updates: Partial<TongitsPlayerInfo> = {
@@ -249,6 +253,8 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
 
     private _onLayOffBroadcast(msg: unknown): void {
         const data = msg as LayOffCardBroadcast;
+        // 自己的补牌已由 applyLayOffRes 处理（状态+notify），避免重复
+        if (data.actionPlayerId === this.myUserId) return;
         // 更新目标牌组
         const target = this.getPlayerByUserId(data.targetPlayerId);
         if (target) {
@@ -274,6 +280,8 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
 
     private _onDiscardBroadcast(msg: unknown): void {
         const data = msg as DiscardCardBroadcast;
+        // 自己的弃牌已由 applyDiscardRes 处理（状态+notify），避免重复
+        if (data.playerId === this.myUserId) return;
         const player = this.getPlayerByUserId(data.playerId);
         if (player) {
             const updates: Partial<TongitsPlayerInfo> = {
@@ -296,6 +304,8 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
 
     private _onTakeBroadcast(msg: unknown): void {
         const data = msg as TakeCardBroadcast;
+        // 自己的吃牌已由 applyTakeRes 处理（状态+notify），避免重复
+        if (data.playerId === this.myUserId) return;
         const player = this.getPlayerByUserId(data.playerId);
         if (player && data.newMeld) {
             const updates: Partial<TongitsPlayerInfo> = {
@@ -319,6 +329,8 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
 
     private _onChallenge(msg: unknown): void {
         const data = msg as ChallengeBroadcast;
+        // 自己发起的挑战已由 applyChallengeRes 处理（状态+notify），避免重复
+        if (data.playerId === this.myUserId) return;
         if (data.basePlayers) {
             for (const bp of data.basePlayers) {
                 this.updatePlayerById(bp.playerId, {
@@ -382,6 +394,7 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
         } as Partial<TongitsPlayerInfo>);
         const gi = this.gameInfo as GameInfo | null;
         if (gi) gi.deckCardCount = Math.max(0, (gi.deckCardCount ?? 0) - 1);
+        this.notify<DrawCardRes>(TongitsEvents.DRAW_RES, res);
     }
 
     /** 出牌组响应 */
@@ -397,6 +410,7 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
             isFight: res.hasTongits,
             status: PLAYER_STATUS.ACTION,
         } as Partial<TongitsPlayerInfo>);
+        this.notify<MeldCardRes>(TongitsEvents.MELD_RES, res);
     }
 
     /** 弃牌响应 */
@@ -417,6 +431,7 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
         this.updatePlayerById(pid, updates);
         const gi = this.gameInfo as GameInfo | null;
         if (gi) gi.discardPile = res.discardPile ?? [];
+        this.notify<DiscardCardRes>(TongitsEvents.DISCARD_RES, res);
     }
 
     /** 吃牌响应 */
@@ -441,6 +456,7 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
         if (gi && res.discard) {
             gi.discardPile = gi.discardPile?.filter(c => c !== res.discard) ?? [];
         }
+        this.notify<TakeCardRes>(TongitsEvents.TAKE_RES, res);
     }
 
     /** 补牌/压牌响应 */
@@ -466,6 +482,7 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
                 status: PLAYER_STATUS.SELECT,
             } as Partial<TongitsPlayerInfo>);
         }
+        this.notify<LayOffCardRes>(TongitsEvents.LAY_OFF_RES, res);
     }
 
     /** 挑战响应 */
@@ -478,5 +495,6 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
                 } as Partial<TongitsPlayerInfo>);
             }
         }
+        this.notify<ChallengeRes>(TongitsEvents.CHALLENGE_RES, res);
     }
 }

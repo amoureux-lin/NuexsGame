@@ -25,7 +25,7 @@ import { CardNode } from '../handcard/CardNode';
 const { ccclass, property } = _decorator;
 
 // ── 牌堆常量 ──────────────────────────────────────────────
-const DECK_PILE_MAX_VISIBLE = 14;
+const DECK_PILE_MAX_VISIBLE = 15;
 const DECK_STACK_DY         = 0.8;
 
 // ── 弃牌堆常量 ────────────────────────────────────────────
@@ -118,6 +118,7 @@ export class TableAreaView extends Component {
      * @param totalCount 牌堆剩余总张数
      */
     setupDeck(totalCount: number): void {
+        console.log("游戏开始时初始化牌堆（发完手牌后、剩余牌建堆时调用）:",totalCount);
         this._deckRemaining = totalCount;
         this._buildDeckPile();
     }

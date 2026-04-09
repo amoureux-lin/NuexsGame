@@ -33,6 +33,20 @@ export const TongitsEvents = {
     /** 结算详情（主动请求返回） */
     RESULT_DETAILS: 'tongits:resultDetails',
 
+    // ---------- Model -> View（自己操作的 RES 响应） ----------
+    /** 自己抽牌响应 */
+    DRAW_RES: 'tongits:drawRes',
+    /** 自己出牌组响应 */
+    MELD_RES: 'tongits:meldRes',
+    /** 自己弃牌响应 */
+    DISCARD_RES: 'tongits:discardRes',
+    /** 自己吃牌响应 */
+    TAKE_RES: 'tongits:takeRes',
+    /** 自己补牌/压牌响应 */
+    LAY_OFF_RES: 'tongits:layOffRes',
+    /** 自己挑战操作响应 */
+    CHALLENGE_RES: 'tongits:challengeRes',
+
     // ---------- View -> Controller（用户命令） ----------
     /** 抽牌 */
     CMD_DRAW: 'tongits:cmd:draw',

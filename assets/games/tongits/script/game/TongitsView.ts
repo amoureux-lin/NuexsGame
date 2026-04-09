@@ -24,6 +24,12 @@ import type {
     RoomResetBroadcast,
     JoinRoomRes,
     GameResultDetailsRes,
+    DrawCardRes,
+    MeldCardRes,
+    DiscardCardRes,
+    TakeCardRes,
+    LayOffCardRes,
+    ChallengeRes,
 } from '../proto/tongits';
 import {GameStartEffect} from "db://assets/games/tongits/script/views/effect/GameStartEffect";
 import { TableAreaView } from '../views/panel/TableAreaView';
@@ -133,6 +139,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
 
         this.listen<GameStartBroadcast>(TongitsEvents.GAME_START,       (d) => this.onGameStart(d));
         this.listen<ActionChangeBroadcast>(TongitsEvents.ACTION_CHANGE, (d) => this.onActionChange(d));
+        // 他人操作广播
         this.listen<DrawCardBroadcast>(TongitsEvents.DRAW,              (d) => this.onDraw(d));
         this.listen<MeldCardBroadcast>(TongitsEvents.MELD,              (d) => this.onMeld(d));
         this.listen<LayOffCardBroadcast>(TongitsEvents.LAY_OFF,         (d) => this.onLayOff(d));
@@ -140,6 +147,13 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         this.listen<TakeCardBroadcast>(TongitsEvents.TAKE,              (d) => this.onTake(d));
         this.listen<ChallengeBroadcast>(TongitsEvents.CHALLENGE,        (d) => this.onChallenge(d));
         this.listen<PKBroadcast>(TongitsEvents.PK,                      (d) => this.onPK(d));
+        // 自己操作的 RES 响应
+        this.listen<DrawCardRes>(TongitsEvents.DRAW_RES,                (d) => this.onDrawRes(d));
+        this.listen<MeldCardRes>(TongitsEvents.MELD_RES,                (d) => this.onMeldRes(d));
+        this.listen<DiscardCardRes>(TongitsEvents.DISCARD_RES,          (d) => this.onDiscardRes(d));
+        this.listen<TakeCardRes>(TongitsEvents.TAKE_RES,                (d) => this.onTakeRes(d));
+        this.listen<LayOffCardRes>(TongitsEvents.LAY_OFF_RES,           (d) => this.onLayOffRes(d));
+        this.listen<ChallengeRes>(TongitsEvents.CHALLENGE_RES,          (d) => this.onChallengeRes(d));
         this.listen<BeforeResultBroadcast>(TongitsEvents.BEFORE_RESULT, (d) => this.onBeforeResult(d));
         this.listen<GameResultBroadcast>(TongitsEvents.GAME_RESULT,     (d) => this.onGameResult(d));
         this.listen<RoomResetBroadcast>(TongitsEvents.ROOM_RESET,       (d) => this.onRoomReset(d));
@@ -265,15 +279,13 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         }
     }
 
+    // ── 他人操作广播（playerId !== self） ────────────────────
+
     protected onDraw(data: DrawCardBroadcast): void {
         this._syncPlayerField(data.playerId, { handCardCount: data.handCardCount });
-        // 每次摸牌牌堆减一（弹出顶部视觉节点并销毁）
+        // 他人摸牌：牌堆视觉减一
         const pileTop = this.tableAreaView?.popDeckCard();
         if (pileTop?.isValid) pileTop.destroy();
-        // 自己抽牌：drawnCard 有值时追加到手牌区
-        if (data.userId === this._perspectiveId && data.drawnCard) {
-            this.handCardPanel?.addCard(data.drawnCard);
-        }
     }
 
     protected onMeld(data: MeldCardBroadcast): void {
@@ -286,11 +298,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
 
     protected onDiscard(data: DiscardCardBroadcast): void {
         this._syncPlayerField(data.playerId, { handCardCount: data.handCardCount });
-        // 自己出牌：从手牌区移除对应节点
-        if (data.userId === this._perspectiveId && data.discardedCard) {
-            this.handCardPanel?.removeCard(data.discardedCard);
-        }
-        // 同步弃牌堆展示（所有玩家弃牌均更新）
+        // 他人弃牌也更新弃牌堆展示
         if (data.discardPile?.length) {
             this.tableAreaView?.syncDiscard(data.discardPile);
         }
@@ -300,10 +308,55 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         this._syncPlayerField(data.playerId, { handCardCount: data.handCardCount });
     }
 
-    protected onChallenge(_data: ChallengeBroadcast): void {
-        // challenge/PK 会改变 fight 按钮的可点条件（isFight/changeStatus）
-        // 这里先同步本地 player 字段，避免按钮状态滞后
-        const data = _data as ChallengeBroadcast;
+    protected onChallenge(data: ChallengeBroadcast): void {
+        if (data.basePlayers) {
+            for (const bp of data.basePlayers) {
+                this._syncPlayerField(bp.playerId, {
+                    changeStatus: bp.changeStatus,
+                    countdown: bp.countdown,
+                } as Partial<TongitsPlayerInfo>);
+            }
+        }
+        if (!this._isDealing && this._actionPlayerId === this._perspectiveId) {
+            this._refreshActionPanel();
+        }
+        this._refreshAllSeats();
+    }
+
+    // ── 自己操作的 RES 响应 ────────────────────────────────
+
+    protected onDrawRes(data: DrawCardRes): void {
+        this._syncPlayerField(this._perspectiveId, { handCardCount: data.handCardCount });
+        this.tableAreaView?.setDeckDrawEnabled(false);
+        // popDeckCard + 飞行动画 由 HandCardPanel.addCard 统一处理
+        if (data.drawnCard) this.handCardPanel?.addCard(data.drawnCard);
+        this._refreshActionPanel();
+    }
+
+    protected onMeldRes(data: MeldCardRes): void {
+        this._syncPlayerField(this._perspectiveId, { handCardCount: data.handCardCount });
+        this._refreshActionPanel();
+    }
+
+    protected onDiscardRes(data: DiscardCardRes): void {
+        this._syncPlayerField(this._perspectiveId, { handCardCount: data.handCardCount });
+        // 从手牌区移除弃出的牌
+        if (data.discardedCard) this.handCardPanel?.removeCard(data.discardedCard);
+        // 更新弃牌堆
+        if (data.discardPile?.length) this.tableAreaView?.syncDiscard(data.discardPile);
+    }
+
+    protected onTakeRes(data: TakeCardRes): void {
+        this._syncPlayerField(this._perspectiveId, { handCardCount: data.handCardCount });
+        this._refreshActionPanel();
+    }
+
+    protected onLayOffRes(data: LayOffCardRes): void {
+        this._syncPlayerField(this._perspectiveId, { handCardCount: data.handCardCount });
+        this._refreshActionPanel();
+    }
+
+    protected onChallengeRes(data: ChallengeRes): void {
         if (data.basePlayers) {
             for (const bp of data.basePlayers) {
                 this._syncPlayerField(bp.playerId, {

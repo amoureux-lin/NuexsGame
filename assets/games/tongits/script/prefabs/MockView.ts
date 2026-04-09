@@ -19,7 +19,9 @@ import type {
     DrawCardBroadcast, MeldCardBroadcast, LayOffCardBroadcast,
     DiscardCardBroadcast, ChallengeBroadcast,
     PKBroadcast, BeforeResultBroadcast, GameResultBroadcast,
-    RoomResetBroadcast, RoomInfo, DrawCardRes,
+    RoomResetBroadcast, RoomInfo,
+    DrawCardRes, MeldCardRes, DiscardCardRes, TakeCardRes, LayOffCardRes, ChallengeRes,
+    MeldCardReq, DiscardCardReq, TakeCardReq, LayOffCardReq, ChallengeReq,
 } from '../proto/tongits';
 
 const { ccclass } = _decorator;
@@ -180,9 +182,139 @@ export class MockView extends UIPanel {
 
     // ── UIPanel ───────────────────────────────────────────────
 
-    onShow(): void { /* 面板打开时不自动触发，手动点按钮 */ }
+    onShow(): void {
+        this._registerMockHandlers();
+    }
 
-    onClickClose(): void { this.close(); }
+    onClickClose(): void {
+        this._unregisterMockHandlers();
+        this.close();
+    }
+
+    // ── Mock 请求拦截器 ────────────────────────────────────────
+
+    private _registerMockHandlers(): void {
+        Nexus.net.registerMockHandler?.(MessageType.TONGITS_DRAW_REQ,              (b) => this._mockDraw(b));
+        Nexus.net.registerMockHandler?.(MessageType.TONGITS_MELD_REQ,              (b) => this._mockMeld(b));
+        Nexus.net.registerMockHandler?.(MessageType.TONGITS_LAYOFF_REQ,            (b) => this._mockLayOff(b));
+        Nexus.net.registerMockHandler?.(MessageType.TONGITS_DISCARD_REQ,           (b) => this._mockDiscard(b));
+        Nexus.net.registerMockHandler?.(MessageType.TONGITS_TAKE_REQ,              (b) => this._mockTake(b));
+        Nexus.net.registerMockHandler?.(MessageType.TONGITS_CHALLENGE_ACTION_REQ,  (b) => this._mockChallenge(b));
+    }
+
+    private _unregisterMockHandlers(): void {
+        Nexus.net.unregisterMockHandler?.(MessageType.TONGITS_DRAW_REQ);
+        Nexus.net.unregisterMockHandler?.(MessageType.TONGITS_MELD_REQ);
+        Nexus.net.unregisterMockHandler?.(MessageType.TONGITS_LAYOFF_REQ);
+        Nexus.net.unregisterMockHandler?.(MessageType.TONGITS_DISCARD_REQ);
+        Nexus.net.unregisterMockHandler?.(MessageType.TONGITS_TAKE_REQ);
+        Nexus.net.unregisterMockHandler?.(MessageType.TONGITS_CHALLENGE_ACTION_REQ);
+    }
+
+    /** 拦截 DRAW_REQ：摸一张牌，返回 DrawCardRes */
+    private _mockDraw(_body: unknown): DrawCardRes {
+        const p    = this._getPlayer(SELF_ID)!;
+        const card = this._gameData?.deck.pop() ?? 0;
+        if (card) p.handCards = [...p.handCards, card];
+        p.handCardCount = p.handCards.length;
+        p.status        = PLAYER_STATUS.ACTION;
+        if (this._gameData) this._gameData.gameInfo.deckCardCount = this._gameData.deck.length;
+        console.log(`[Mock←RES] DRAW  card=${card}`);
+        return { drawnCard: card, hasTongits: false, handCardCount: p.handCardCount };
+    }
+
+    /** 拦截 MELD_REQ：从手牌移除这些牌，生成新牌组，返回 MeldCardRes */
+    private _mockMeld(body: unknown): MeldCardRes {
+        const req = body as MeldCardReq;
+        const p   = this._getPlayer(SELF_ID)!;
+        p.handCards     = p.handCards.filter(c => !req.cards.includes(c));
+        p.handCardCount = p.handCards.length;
+        const newMeld: Meld = {
+            meldId:         p.displayedMelds.length + 1,
+            cards:          [...req.cards],
+            ownerId:        SELF_ID,
+            highlightCards: 0,
+            locked:         false,
+        };
+        p.displayedMelds = [...p.displayedMelds, newMeld];
+        console.log(`[Mock←RES] MELD  cards=${req.cards}`);
+        return { newMeld, hasTongits: false, handCardCount: p.handCardCount };
+    }
+
+    /** 拦截 LAYOFF_REQ：从手牌移除该牌，追加到目标牌组，返回 LayOffCardRes */
+    private _mockLayOff(body: unknown): LayOffCardRes {
+        const req    = body as LayOffCardReq;
+        const p      = this._getPlayer(SELF_ID)!;
+        p.handCards  = p.handCards.filter(c => c !== req.card);
+        p.handCardCount = p.handCards.length;
+        const target = this._getPlayer(req.targetPlayerId);
+        const meld   = target?.displayedMelds.find(m => m.meldId === req.targetMeldId);
+        if (meld) meld.cards = [...meld.cards, req.card];
+        console.log(`[Mock←RES] LAYOFF  card=${req.card} → player=${req.targetPlayerId} meld=${req.targetMeldId}`);
+        return {
+            cardAdded:      req.card,
+            targetPlayerId: req.targetPlayerId,
+            targetMeldId:   req.targetMeldId,
+            hasTongits:     false,
+            handCardCount:  p.handCardCount,
+        };
+    }
+
+    /** 拦截 DISCARD_REQ：从手牌移除该牌，推入弃牌堆，返回 DiscardCardRes */
+    private _mockDiscard(body: unknown): DiscardCardRes {
+        const req = body as DiscardCardReq;
+        const p   = this._getPlayer(SELF_ID)!;
+        p.handCards     = p.handCards.filter(c => c !== req.card);
+        p.handCardCount = p.handCards.length;
+        p.status        = PLAYER_STATUS.SELECT;
+        if (this._gameData) {
+            this._gameData.gameInfo.discardPile.push(req.card);
+            this._gameData.gameInfo.discardCard = req.card;
+        }
+        console.log(`[Mock←RES] DISCARD  card=${req.card}`);
+        return {
+            discardedCard:  req.card,
+            unlockMelds:    [],
+            handCardCount:  p.handCardCount,
+            discardPile:    [...(this._gameData?.gameInfo.discardPile ?? [])],
+        };
+    }
+
+    /** 拦截 TAKE_REQ：用手牌 + 弃牌组成新牌组，返回 TakeCardRes */
+    private _mockTake(body: unknown): TakeCardRes {
+        const req         = body as TakeCardReq;
+        const p           = this._getPlayer(SELF_ID)!;
+        const discardCard = this._gameData?.gameInfo.discardCard ?? 0;
+        p.handCards       = p.handCards.filter(c => !req.cardsFromHand.includes(c));
+        p.handCardCount   = p.handCards.length;
+        const allCards    = [...req.cardsFromHand, discardCard].filter(Boolean);
+        const newMeld: Meld = {
+            meldId:         p.displayedMelds.length + 1,
+            cards:          allCards,
+            ownerId:        SELF_ID,
+            highlightCards: discardCard,
+            locked:         false,
+        };
+        p.displayedMelds = [...p.displayedMelds, newMeld];
+        if (this._gameData) this._gameData.gameInfo.discardCard = 0;
+        console.log(`[Mock←RES] TAKE  fromHand=${req.cardsFromHand} discard=${discardCard}`);
+        return { newMeld, hasTongits: false, handCardCount: p.handCardCount, discard: discardCard };
+    }
+
+    /** 拦截 CHALLENGE_ACTION_REQ：更新自身 changeStatus，返回 ChallengeRes */
+    private _mockChallenge(body: unknown): ChallengeRes {
+        const req = body as ChallengeReq;
+        const p   = this._getPlayer(SELF_ID)!;
+        p.changeStatus = req.changeStatus;
+        console.log(`[Mock←RES] CHALLENGE  changeStatus=${req.changeStatus}`);
+        return {
+            basePlayers: (this._gameData?.players ?? []).map(pl => ({
+                playerId:     pl.playerInfo!.userId,
+                changeStatus: pl.changeStatus,
+                countdown:    10,
+            })),
+        };
+    }
 
     // ── 按钮：进房 ────────────────────────────────────────────
 
