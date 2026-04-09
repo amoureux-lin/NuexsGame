@@ -167,7 +167,7 @@ export class HandCardState {
             this._ungroup = sortCards(all, this._sortMode);
             this._runAutoGroupAll();
         } else {
-            this._ungroup = sortCards([...this._ungroup, card], this._sortMode);
+            this._ungroup = [...this._ungroup, card];
         }
         this._notify();
     }

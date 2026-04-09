@@ -44,7 +44,6 @@ import { autoGroup, GroupData, judgeGroupType, GroupType } from '../../utils/Gro
 import { SortMode }                                      from '../../utils/CardDef';
 import { CardGroupView }                                 from './CardGroupView';
 import { CardNode, DEFAULT_CARD_W, DEFAULT_CARD_H, CARD_SPACING, getCardContentSize } from './CardNode';
-import { FlyUtil }                                       from '../../utils/FlyUtil';
 
 const { ccclass, property } = _decorator;
 
@@ -150,6 +149,12 @@ export class HandCardPanel extends Component {
     private _unsubscribe: (() => void) | null = null;
     /** 发牌后第一次 _doLayout 使用更长的重排时长，之后自动还原 */
     private _dealReorderDur: number = LAYOUT_DUR;
+    /**
+     * 已启动动画但尚未写入 state 的散牌数。
+     * _computeNewCardLocalX / _preShiftRootsForNewCard 用此修正 n，
+     * 确保连续摸牌时每张新牌都按真实张数计算位置。
+     */
+    private _pendingUngroupCount = 0;
 
     /** 拖拽状态（null = 无拖拽） */
     private _drag: DragState | null = null;
@@ -326,85 +331,102 @@ export class HandCardPanel extends Component {
      *
      * 动画流程（Phase A + Phase B 同时启动）：
      *   Phase A — 弧形飞入：牌堆顶部节点翻正面，FlyUtil 弧形飞到手牌目标位
-     *   Phase B — 左移腾位：所有根容器向左移 shiftX（非 autoGroup 时）
+     *   Phase B — 左移腾位：所有根容器向左移 shiftX
      *   飞行落地后：
      *     autoGroup  → _animateMergeExpand（合并展开）
      *     otherwise  → _state.addCard（新节点从落点起步，_doLayout 无位移）
      */
     addCard(card: number): void {
-        const pileTop  = this.tableAreaView?.popDeckCard() ?? null;
-        const deckWorld = this.tableAreaView?.getDeckWorldPos() ?? this.node.getWorldPosition();
+        const pileTop = this.tableAreaView?.popDeckCard() ?? null;
 
-        // 计算新牌目标世界坐标（弧形飞行终点）
-        const targetWorldPos = this._computeNewCardWorldPos();
+        // 新牌目标：panel 本地坐标（flyNode 是 this.node 的直接子节点，直接用本地坐标）
+        const targetLocalX   = this._computeNewCardLocalX();
+        const targetLocal    = new Vec3(targetLocalX, 0, 0);
+        // 世界坐标用于 _spawnUngroupWorldPos（_syncUngroupNodes 调用 setWorldPosition）
+        const targetWorldPos = this._localToWorld(targetLocal);
 
-        // Phase B：非 autoGroup 时同步预移位（autoGroup 会通过 merge+expand 重排，无需手动偏移）
-        if (!this._state.autoGroupEnabled) {
-            this._preShiftRootsForNewCard();
-        }
+        // 所有根容器同步左移腾位（与落牌动画同时进行）
+        this._preShiftRootsForNewCard();
+        // 记录本次摸牌已占位（state.addCard 尚未调用，需要用此计数修正下次摸牌的目标位置）
+        this._pendingUngroupCount++;
 
-        // 准备飞行节点：牌堆顶部节点翻正面，re-parent 到 HandCardPanel
+        // 落牌节点：翻正面后挂在 HandCardPanel，从目标上方滑落到目标位置
+        const DROP_HEIGHT = 80;
+        const DROP_DUR    = 0.25;
+
         let flyNode: Node | null = null;
         if (pileTop?.isValid) {
             flyNode = pileTop;
-            const wp = flyNode.getWorldPosition().clone();
             this.node.addChild(flyNode);
-            flyNode.setWorldPosition(wp);
             const cn = flyNode.getComponent(CardNode);
             if (cn) { cn.setCard(card); cn.setFaceDown(false); }
+            flyNode.setPosition(targetLocal.x, targetLocal.y + DROP_HEIGHT, 0);
         }
 
-        const doFinalize = () => {
-            if (flyNode?.isValid) flyNode.destroy();
+        const doFinalize = async () => {
+            this._pendingUngroupCount--;
             if (this._state.autoGroupEnabled) {
+                // flyNode 加入 _ungroupRoot 一起参与合并动画，_animateMergeExpand 统一清理
+                if (flyNode?.isValid) {
+                    const wp = flyNode.getWorldPosition().clone();
+                    this._ungroupRoot.addChild(flyNode);
+                    flyNode.setWorldPosition(wp);
+                }
                 const snap = this._state.snapshot();
                 const allCards = [
                     ...snap.groups.reduce<number[]>((acc, g) => acc.concat(g.cards), []),
                     ...snap.ungroup,
                     card,
                 ];
-                void this._animateMergeExpand(allCards);
+                await delay(DEAL_PAUSE_MS);
+                await this._animateMergeExpand(allCards);
             } else {
-                // 新节点从飞行落点起步，_doLayout 无额外位移
+                if (flyNode?.isValid) flyNode.destroy();
+                // 新节点从落点起步，_doLayout 无额外位移
                 this._spawnUngroupWorldPos = targetWorldPos.clone();
                 this._state.addCard(card);
             }
         };
 
         if (flyNode) {
-            // Phase A：弧形飞入
-            FlyUtil.fly(flyNode, deckWorld, targetWorldPos, {
-                duration:  0.35,
-                arcHeight: 80,
-                rotate:    false,
-                onComplete: doFinalize,
-            });
+            // 下降动画：从上方滑落到目标位置
+            tween(flyNode)
+                .to(DROP_DUR,
+                    { position: new Vec3(targetLocal.x, targetLocal.y, 0) },
+                    { easing: 'quadOut' })
+                .call(() => { void doFinalize(); })
+                .start();
         } else {
-            // 无飞行节点时直接落点起步
-            if (!this._state.autoGroupEnabled) {
-                this._spawnUngroupWorldPos = deckWorld.clone();
-            }
-            doFinalize();
+            void doFinalize();
         }
     }
 
     /**
-     * 计算摸牌后新牌的世界坐标目标。
+     * 计算摸牌后新牌在 HandCardPanel 本地坐标系中的目标 X。
      *
      * 推导：设 GW = 组区总宽（含组区与散牌区之间的 GROUP_GAP；无组时为 0），
      *       n = 当前散牌张数，则新牌 panel-local X = (GW + n × CARD_SPACING) / 2。
+     *
+     * flyNode 是 this.node 的直接子节点，直接用本地坐标设位置，无需世界坐标转换。
      */
-    private _computeNewCardWorldPos(): Vec3 {
+    private _computeNewCardLocalX(): number {
         const snap = this._state.snapshot();
-        const n = snap.ungroup.length;
+        const n = snap.ungroup.length + this._pendingUngroupCount;
         let GW = 0;
         for (const g of snap.groups) {
             const gv = this._groupViews.get(g.id);
             if (gv) GW += gv.width + GROUP_GAP;
         }
-        const panelLocalX = (GW + n * CARD_SPACING) / 2;
-        const panelWorld  = this.node.getWorldPosition();
-        return new Vec3(panelWorld.x + panelLocalX, panelWorld.y, 0);
+        return (GW + n * CARD_SPACING) / 2;
+    }
+
+    /** 将 HandCardPanel 本地坐标转为世界坐标（正确处理节点缩放与旋转） */
+    private _localToWorld(localPos: Vec3): Vec3 {
+        const tf = this.node.getComponent(UITransform);
+        if (tf) return tf.convertToWorldSpaceAR(localPos);
+        const s = this.node.worldScale;
+        const w = this.node.getWorldPosition();
+        return new Vec3(w.x + localPos.x * s.x, w.y + localPos.y * s.y, 0);
     }
 
     /**
@@ -413,33 +435,26 @@ export class HandCardPanel extends Component {
      */
     private _preShiftRootsForNewCard(): void {
         const snap  = this._state.snapshot();
-        const n     = snap.ungroup.length;
+        const n     = snap.ungroup.length + this._pendingUngroupCount;
         const cardW = this._layoutCardW();
 
-        // 计算当前 totalW 与加入新牌后的 totalW
-        let curTotalW = 0;
+        // 计算加入新牌后的 totalW（与 _doLayout 公式一致）
+        // 组区：sum(gv.width + GROUP_GAP)，两次 ±GROUP_GAP 相抵，直接用 sum
         let newTotalW = 0;
         for (const g of snap.groups) {
             const gv = this._groupViews.get(g.id);
-            if (gv) { curTotalW += gv.width + GROUP_GAP; newTotalW += gv.width + GROUP_GAP; }
+            if (gv) newTotalW += gv.width + GROUP_GAP;
         }
-        if (snap.groups.length > 0) { curTotalW -= GROUP_GAP; newTotalW -= GROUP_GAP; }
-
-        if (n > 0) {
-            if (snap.groups.length > 0) curTotalW += GROUP_GAP;
-            curTotalW += (n - 1) * CARD_SPACING + cardW;
-        }
-        if (snap.groups.length > 0) newTotalW += GROUP_GAP;
         newTotalW += n * CARD_SPACING + cardW;
 
-        const shiftX = (newTotalW - curTotalW) / 2;
+        // 与 _doLayout 使用相同的绝对终点公式，避免从中间动画值出发导致目标偏移
+        const targetX = -newTotalW / 2;
         const dur  = 0.35;
         const opts = { easing: 'quadOut' as const };
 
         for (const root of [this._groupRoot, this._ungroupRoot, this._dragLayer, this._markerOverlayRoot]) {
-            const curX = root.position.x;
             Tween.stopAllByTarget(root);
-            tween(root).to(dur, { position: new Vec3(curX - shiftX, 0, 0) }, opts).start();
+            tween(root).to(dur, { position: new Vec3(targetX, 0, 0) }, opts).start();
         }
     }
 
@@ -886,6 +901,28 @@ export class HandCardPanel extends Component {
      */
     private async _animateMergeExpand(newCards: number[]): Promise<void> {
         const MERGE_DUR = 0.18;
+
+        // ── 根容器归零，保持子节点世界坐标不变 ────────────────────────────
+        // 无论 _doLayout 将根节点偏移到何处，合并动画始终收敛到 panel 中心（local 0,0）。
+        // 发牌路径：根节点本就在原点，此处为无操作。
+        // 摸牌路径：根节点已被 _doLayout 偏移，须先归零再收集。
+        for (const root of [this._groupRoot, this._ungroupRoot, this._dragLayer, this._markerOverlayRoot]) {
+            Tween.stopAllByTarget(root);
+        }
+        for (const root of [this._groupRoot, this._ungroupRoot]) {
+            if (root.position.x !== 0 || root.position.y !== 0) {
+                const worldPositions = [...root.children].map(c => c.getWorldPosition().clone());
+                root.setPosition(0, 0, 0);
+                [...root.children].forEach((c, i) => c.setWorldPosition(worldPositions[i]));
+            }
+        }
+        this._dragLayer.setPosition(0, 0, 0);
+        this._markerOverlayRoot.setPosition(0, 0, 0);
+
+        // 隐藏所有组标记（合并期间不参与动画；展开后随新 CardGroupView 重建）
+        for (const gv of this._groupViews.values()) {
+            if (gv.groupMarker?.node) gv.groupMarker.node.active = false;
+        }
 
         // 收集：_ungroupRoot 的直接子节点 + 所有 GroupView 根节点
         const allNodes: Node[] = [
