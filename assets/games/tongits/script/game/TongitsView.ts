@@ -289,6 +289,12 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
             isFight: data.isFight,
         } as Partial<TongitsPlayerInfo>);
 
+        // meldField 呼吸高亮：先全部停止，再点亮当前操作玩家
+        for (let i = 0; i < 3; i++) {
+            this.seatManager?.getSeatByIndex(i)?.meldField?.stopTurnHighlight();
+        }
+        this.seatManager?.getSeatByUserId(data.actionPlayerId)?.meldField?.startTurnHighlight();
+
         // 每回合切换先做统一按钮重置（不依赖是否轮到自己）
         if (!this._isDealing) {
             this.actionPanel?.resetForTurn();
@@ -539,6 +545,9 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     protected onGameResult(_data: GameResultBroadcast): void {
         this.seatManager?.updateActionPlayer(0);
         this.actionPanel?.hideAll();
+        for (let i = 0; i < 3; i++) {
+            this.seatManager?.getSeatByIndex(i)?.meldField?.stopTurnHighlight();
+        }
     }
 
     protected onRoomReset(data: RoomResetBroadcast): void {
@@ -556,6 +565,9 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         this._handButtons = null;
         this.seatManager?.setContext(this._isLocalOwner, false);
         this.seatManager?.updateActionPlayer(0);
+        for (let i = 0; i < 3; i++) {
+            this.seatManager?.getSeatByIndex(i)?.meldField?.stopTurnHighlight();
+        }
         this._refreshAllSeats();
         if (this.tableAreaView) this.tableAreaView.node.active = false;
         this.handCardPanel?.clear();

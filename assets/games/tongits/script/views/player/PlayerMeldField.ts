@@ -14,7 +14,7 @@
  *   - right 玩家（rtl=true） ：Anchor (1,   1)，右边缘起点，RTL
  */
 
-import { _decorator, Component, Node, Prefab, instantiate, Vec3, tween, UITransform, sp } from 'cc';
+import { _decorator, Component, Node, Prefab, instantiate, Vec3, tween, Tween, UITransform, UIOpacity, sp } from 'cc';
 import { CardNode, DEFAULT_CARD_W, DEFAULT_CARD_H, CARD_SPACING } from '../handcard/CardNode';
 import type { Meld } from '../../proto/tongits';
 
@@ -68,6 +68,8 @@ export class PlayerMeldField extends Component {
     private _rows: Array<{ node: Node; usedWidth: number }> = [];
     /** meldId → blockNode，供 layOffToMeld 定位目标块 */
     private _blocks = new Map<number, Node>();
+    /** bgNode 呼吸动画 tween 句柄 */
+    private _bgTween: Tween<UIOpacity> | null = null;
     /** 从 prefab 读取的实际牌宽（缩放前） */
     private _rawCardW: number = DEFAULT_CARD_W;
     /** 从 prefab 读取的实际牌高（缩放前） */
@@ -76,6 +78,8 @@ export class PlayerMeldField extends Component {
     // ── 生命周期 ──────────────────────────────────────────
 
     protected onLoad(): void {
+        if (this.bgNode) this.bgNode.active = false;
+
         if (this.cardPrefab) {
             const n  = instantiate(this.cardPrefab);
             const tf = n.getComponent(UITransform);
@@ -85,6 +89,11 @@ export class PlayerMeldField extends Component {
             }
             n.destroy();
         }
+    }
+
+    protected onDestroy(): void {
+        this._bgTween?.stop();
+        this._bgTween = null;
     }
 
     // ── 计算属性 ──────────────────────────────────────────
@@ -105,6 +114,31 @@ export class PlayerMeldField extends Component {
 
     private _blockW(cardCount: number): number {
         return this._cw + this._step * (cardCount - 1);
+    }
+
+    // ── 回合高亮 ──────────────────────────────────────────
+
+    /** 轮到该玩家时：显示 bgNode 并播放呼吸动画 */
+    startTurnHighlight(): void {
+        if (!this.bgNode) return;
+        this.bgNode.active = true;
+        const opacity = this.bgNode.getComponent(UIOpacity);
+        if (!opacity) return;
+        opacity.opacity = 255;
+        this._bgTween?.stop();
+        this._bgTween = tween(opacity)
+            .to(0.8, { opacity: 60 },  { easing: 'sineInOut' })
+            .to(0.8, { opacity: 255 }, { easing: 'sineInOut' })
+            .union()
+            .repeatForever()
+            .start();
+    }
+
+    /** 回合结束时：停止动画并隐藏 bgNode */
+    stopTurnHighlight(): void {
+        this._bgTween?.stop();
+        this._bgTween = null;
+        if (this.bgNode) this.bgNode.active = false;
     }
 
     // ── 公开 API ──────────────────────────────────────────
