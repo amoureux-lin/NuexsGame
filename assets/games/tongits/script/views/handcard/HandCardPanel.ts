@@ -178,12 +178,12 @@ export class HandCardPanel extends Component {
     /** 拖拽预览：组容器目标宽度（gv.node → 目标宽度，驱动组的视觉展宽/收缩） */
     private _slotTargetWidths = new Map<Node, number>();
     /** 拖拽释放时 floatNode 的世界坐标（新节点起飞点），-1 表示无待处理 */
-    private _spawnCardValue  = -1;
-    private _spawnWorldPos3  = new Vec3();
+    private _sapawCardValue  = -1;
+    private _sapawWorldPos3  = new Vec3();
     /** createGroup 时选中牌的世界坐标中心（供新组起始位置使用） */
-    private _spawnGroupWorldPos: Vec3 | null = null;
+    private _sapawGroupWorldPos: Vec3 | null = null;
     /** dissolveGroup 时被解散组的世界坐标（供散牌起始位置使用） */
-    private _spawnUngroupWorldPos: Vec3 | null = null;
+    private _sapawUngroupWorldPos: Vec3 | null = null;
 
     // ── 生命周期 ──────────────────────────────────────────
 
@@ -347,7 +347,7 @@ export class HandCardPanel extends Component {
         // 新牌目标：panel 本地坐标（flyNode 是 this.node 的直接子节点，直接用本地坐标）
         const targetLocalX   = this._computeNewCardLocalX();
         const targetLocal    = new Vec3(targetLocalX, 0, 0);
-        // 世界坐标用于 _spawnUngroupWorldPos（_syncUngroupNodes 调用 setWorldPosition）
+        // 世界坐标用于 _sapawUngroupWorldPos（_syncUngroupNodes 调用 setWorldPosition）
         const targetWorldPos = this._localToWorld(targetLocal);
 
         // 所有根容器同步左移腾位（与落牌动画同时进行）
@@ -388,7 +388,7 @@ export class HandCardPanel extends Component {
             } else {
                 if (flyNode?.isValid) flyNode.destroy();
                 // 新节点从落点起步，_doLayout 无额外位移
-                this._spawnUngroupWorldPos = targetWorldPos.clone();
+                this._sapawUngroupWorldPos = targetWorldPos.clone();
                 this._state.addCard(card);
             }
         };
@@ -504,7 +504,7 @@ export class HandCardPanel extends Component {
             const cn = this._ungroupNodes.get(val);
             if (cn) { const wp = cn.node.getWorldPosition(); sumX += wp.x; sumY += wp.y; count++; }
         }
-        if (count > 0) this._spawnGroupWorldPos = new Vec3(sumX / count, sumY / count, 0);
+        if (count > 0) this._sapawGroupWorldPos = new Vec3(sumX / count, sumY / count, 0);
         this._state.createGroup();
     }
 
@@ -514,7 +514,7 @@ export class HandCardPanel extends Component {
         const [gId] = [...snap.selectedGroupIds];
         if (gId) {
             const gv = this._groupViews.get(gId);
-            if (gv) this._spawnUngroupWorldPos = gv.node.getWorldPosition().clone();
+            if (gv) this._sapawUngroupWorldPos = gv.node.getWorldPosition().clone();
         }
         this._state.dissolveGroup();
     }
@@ -639,9 +639,9 @@ export class HandCardPanel extends Component {
                     : new Node(`Group_${g.id}`);
                 this._groupRoot.addChild(groupNode);
                 // 手动组合时从选中牌的中心起飞；其他情况（autoGroup / prefab 偏移）从原点出发
-                if (this._spawnGroupWorldPos && !g.isAuto) {
-                    groupNode.setWorldPosition(this._spawnGroupWorldPos);
-                    this._spawnGroupWorldPos = null;
+                if (this._sapawGroupWorldPos && !g.isAuto) {
+                    groupNode.setWorldPosition(this._sapawGroupWorldPos);
+                    this._sapawGroupWorldPos = null;
                 } else {
                     groupNode.setPosition(0, 0, 0);
                 }
@@ -689,8 +689,8 @@ export class HandCardPanel extends Component {
                 this._bindCardDrag(cn, 'ungroup');
                 this._ungroupRoot.addChild(n);
                 // 解散组时从原组位置起飞，而非从左端(0,0,0)
-                if (this._spawnUngroupWorldPos) {
-                    n.setWorldPosition(this._spawnUngroupWorldPos);
+                if (this._sapawUngroupWorldPos) {
+                    n.setWorldPosition(this._sapawUngroupWorldPos);
                 }
                 // 按数组顺序设置 sibling index，保证叠牌 Z 序正确
                 n.setSiblingIndex(ungroup.indexOf(val));
@@ -700,7 +700,7 @@ export class HandCardPanel extends Component {
             // 更新选中状态
             this._ungroupNodes.get(val)?.setSelected(selectedCards.has(val));
         }
-        this._spawnUngroupWorldPos = null;
+        this._sapawUngroupWorldPos = null;
     }
 
     // ── 布局 ──────────────────────────────────────────────
@@ -766,13 +766,13 @@ export class HandCardPanel extends Component {
         }
 
         // ── 3. 应用拖拽释放起飞点（仅普通 layout，仅散牌目标）──
-        if (this._spawnCardValue >= 0 && dur <= LAYOUT_DUR) {
-            const spawnCn = this._ungroupNodes.get(this._spawnCardValue);
-            if (spawnCn) {
+        if (this._sapawCardValue >= 0 && dur <= LAYOUT_DUR) {
+            const sapawCn = this._ungroupNodes.get(this._sapawCardValue);
+            if (sapawCn) {
                 // 容器已就位，setWorldPosition 可正确转换到容器本地坐标
-                spawnCn.node.setWorldPosition(this._spawnWorldPos3);
+                sapawCn.node.setWorldPosition(this._sapawWorldPos3);
             }
-            this._spawnCardValue = -1;
+            this._sapawCardValue = -1;
         }
 
         // ── 4. 各组容器 tween ─────────────────────────────────
@@ -1115,8 +1115,8 @@ export class HandCardPanel extends Component {
         this._drag = null;
 
         // 记录释放点（世界坐标），供 _doLayout 设置新节点起飞位置
-        drag.floatNode.getWorldPosition(this._spawnWorldPos3);
-        this._spawnCardValue = drag.cardValue;
+        drag.floatNode.getWorldPosition(this._sapawWorldPos3);
+        this._sapawCardValue = drag.cardValue;
 
         const target = drag.hoverKind === 'group' && drag.hoverGroupId
             ? drag.hoverGroupId

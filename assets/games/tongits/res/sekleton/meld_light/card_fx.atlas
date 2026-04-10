@@ -1,0 +1,48 @@
+
+card_fx.png
+size: 1576,882
+format: RGBA8888
+filter: Linear,Linear
+repeat: none
+Big_Glow_3_00
+  rotate: false
+  xy: 2, 7
+  size: 929, 873
+  orig: 1024, 1024
+  offset: 95, 68
+  index: -1
+Circle_17
+  rotate: false
+  xy: 1211, 53
+  size: 244, 245
+  orig: 256, 256
+  offset: 6, 5
+  index: -1
+Glow
+  rotate: false
+  xy: 1457, 182
+  size: 116, 116
+  orig: 130, 130
+  offset: 7, 7
+  index: -1
+Light_22
+  rotate: true
+  xy: 933, 300
+  size: 580, 641
+  orig: 768, 768
+  offset: 112, 45
+  index: -1
+Spark_15
+  rotate: false
+  xy: 1211, 2
+  size: 49, 49
+  orig: 52, 51
+  offset: 1, 1
+  index: -1
+fx_dust
+  rotate: true
+  xy: 933, 17
+  size: 281, 276
+  orig: 304, 304
+  offset: 12, 14
+  index: -1

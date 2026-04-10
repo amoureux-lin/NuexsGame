@@ -31,7 +31,7 @@ export interface ButtonStates {
     /** 选中了1张散牌且无组 → 可弃牌（外部再叠加"出牌阶段"判断） */
     canDump:    boolean;
     /** 与 canDump 相同（外部再叠加"可压牌"判断） */
-    canSpaw:   boolean;
+    canSapaw:   boolean;
     /** 当前唯一选中的散牌（供外部做 Spaw/Dump 具体判断） */
     selectedSingleCard: number | null;
 }
@@ -125,10 +125,10 @@ export class HandCardState {
         const canDrop    = selGIds.size === 1 && selCards.size === 0
                         && (selGroupType === GroupType.VALID || selGroupType === GroupType.SPECIAL);
         const canDump    = selCards.size === 1 && selGIds.size === 0;
-        const canSpaw    = selCards.size === 1 && selGIds.size === 0;
+        const canSapaw    = selCards.size === 1 && selGIds.size === 0;
         const selectedSingleCard = canDump ? [...selCards][0] : null;
 
-        return { canGroup, canUngroup, canDrop, canDump, canSpaw, selectedSingleCard };
+        return { canGroup, canUngroup, canDrop, canDump, canSapaw, selectedSingleCard };
     }
 
     private _calcPoint(): number {

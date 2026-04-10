@@ -69,6 +69,7 @@ export class TongitsController extends BaseGameController {
     }
 
     private async onMeld(data: { cards: number[] }): Promise<void> {
+        console.log("Starting Tongits Controller onMeld:",data);
         const req: MeldCardReq = { cards: data.cards };
         const res = await this.safeRequest<MeldCardRes>(MessageType.TONGITS_MELD_REQ, req);
         if (res) (this._model as TongitsModel).applyMeldRes(res);

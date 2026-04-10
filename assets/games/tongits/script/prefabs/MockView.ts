@@ -566,12 +566,19 @@ export class MockView extends UIPanel {
         this._send(MessageType.TONGITS_MELD_BROADCAST, data);
     }
 
-    /** 模拟其他玩家 Meld */
-    clickMeldOther(): void {
-        const pid  = P2_ID;
-        const p    = this._getPlayer(pid)!;
-        const meldCards = [301, 302, 303];
-        p.handCardCount = Math.max(0, p.handCardCount - 3);
+    /** 模拟 P2 Meld */
+    clickMeldP2(): void {
+        this._sendMeldBroadcast(P2_ID, [301, 302, 303]);
+    }
+
+    /** 模拟 P3 Meld */
+    clickMeldP3(): void {
+        this._sendMeldBroadcast(P3_ID, [401, 402, 403]);
+    }
+
+    private _sendMeldBroadcast(pid: number, meldCards: number[]): void {
+        const p = this._getPlayer(pid)!;
+        p.handCardCount = Math.max(0, p.handCardCount - meldCards.length);
         p.status        = PLAYER_STATUS.ACTION;
         const newMeld: Meld = {
             meldId:         p.displayedMelds.length + 1,
@@ -588,10 +595,11 @@ export class MockView extends UIPanel {
             handCardCount: p.handCardCount,
             userId:        SELF_ID,
         };
+        console.log(`[Mock→MELD] player=${pid} cards=${meldCards}`);
         this._send(MessageType.TONGITS_MELD_BROADCAST, data);
     }
 
-    // ── 按钮：补牌（LayOff / Spaw） ──────────────────────────
+    // ── 按钮：补牌（LayOff / Sapaw） ─────────────────────────
 
     /** 模拟自己补牌到 P3 的第一个 meld */
     clickLayOffSelf(): void {
@@ -616,6 +624,47 @@ export class MockView extends UIPanel {
             handCardCount:  p.handCardCount,
             userId:         SELF_ID,
         };
+        this._send(MessageType.TONGITS_LAYOFF_BROADCAST, data);
+    }
+
+    /** 模拟 P2 补牌到 P3 的第一个 meld（追加 304） */
+    clickLayOffP2(): void {
+        this._sendLayOffBroadcast(P2_ID, P3_ID, 1, 304);
+    }
+
+    /** 模拟 P3 补牌到 P2 的第一个 meld（追加 404） */
+    clickLayOffP3(): void {
+        this._sendLayOffBroadcast(P3_ID, P2_ID, 1, 404);
+    }
+
+    private _sendLayOffBroadcast(
+        actionPid:    number,
+        targetPid:    number,
+        targetMeldId: number,
+        card:         number,
+    ): void {
+        const actor  = this._getPlayer(actionPid);
+        const target = this._getPlayer(targetPid);
+        if (!actor || !target) return;
+
+        actor.handCardCount = Math.max(0, actor.handCardCount - 1);
+        actor.status        = PLAYER_STATUS.INIT;
+
+        const targetMeld = target.displayedMelds.find(m => m.meldId === targetMeldId);
+        if (targetMeld) {
+            targetMeld.cards          = [...targetMeld.cards, card];
+            targetMeld.highlightCards = card;
+        }
+
+        const data: LayOffCardBroadcast = {
+            actionPlayerId: actionPid,
+            targetPlayerId: targetPid,
+            targetMeldId,
+            cardAdded:      card,
+            handCardCount:  actor.handCardCount,
+            userId:         SELF_ID,
+        };
+        console.log(`[Mock→LAYOFF] player=${actionPid} card=${card} → player=${targetPid} meld=${targetMeldId}`);
         this._send(MessageType.TONGITS_LAYOFF_BROADCAST, data);
     }
 

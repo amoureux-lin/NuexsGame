@@ -74,8 +74,6 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     @property({ type: TableAreaView, tooltip: '牌桌中央区（牌堆数量 + 弃牌展示 + 历史按钮），挂在 tableArea 节点上' })
     tableAreaView: TableAreaView = null!;
 
-;
-
     // ── 缓存本地状态 ─────────────────────────────────────
 
     private _selfUserId: number = 0;
@@ -154,10 +152,11 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
             this.tableAreaView.onDiscardAreaClick = () => this._onDiscardAreaClick();
         }
         // 本地手牌操作命令（不经过服务器）
-        Nexus.on(TongitsEvents.CMD_GROUP,   this._onCmdGroup,   this);
-        Nexus.on(TongitsEvents.CMD_UNGROUP, this._onCmdUngroup, this);
-        Nexus.on(TongitsEvents.CMD_DISCARD, this._onCmdDiscard, this);
-        Nexus.on(TongitsEvents.CMD_MELD,    this._onCmdMeld,    this);
+        Nexus.on(TongitsEvents.CMD_GROUP,    this._onCmdGroup,   this);
+        Nexus.on(TongitsEvents.CMD_UNGROUP,  this._onCmdUngroup, this);
+        // UI 按钮信号 → View 填入真实数据后再 dispatch 给 Controller
+        Nexus.on(TongitsEvents.CMD_DUMP_BTN, this._onCmdDiscard, this);
+        Nexus.on(TongitsEvents.CMD_DROP_BTN, this._onCmdMeld,    this);
 
         this.listen<GameStartBroadcast>(TongitsEvents.GAME_START,       (d) => this.onGameStart(d));
         this.listen<ActionChangeBroadcast>(TongitsEvents.ACTION_CHANGE, (d) => this.onActionChange(d));
@@ -349,12 +348,27 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         this._syncPlayerField(data.playerId, { handCardCount: data.handCardCount });
         if (data.newMeld) {
             const seat = this.seatManager?.getSeatByUserId(data.playerId);
-            seat?.meldField?.addMeld(data.newMeld);
+            if (seat) {
+                const fromWorldPos = seat.node.worldPosition.clone();
+                seat.meldField?.addMeld(data.newMeld, fromWorldPos);
+            }
         }
     }
 
     protected onLayOff(data: LayOffCardBroadcast): void {
         this._syncPlayerField(data.actionPlayerId, { handCardCount: data.handCardCount });
+        // 找到目标玩家的 meldField，飞入补牌动画（追加到末尾）
+        const actionSeat = this.seatManager?.getSeatByUserId(data.actionPlayerId);
+        const targetSeat = this.seatManager?.getSeatByUserId(data.targetPlayerId);
+        if (targetSeat) {
+            const fromWorldPos = actionSeat?.node.worldPosition.clone();
+            targetSeat.meldField?.layOffToMeld(
+                data.targetMeldId,
+                data.cardAdded,
+                Number.MAX_SAFE_INTEGER, // 追加到末尾，由 layOffToMeld 内部 clamp
+                fromWorldPos,
+            );
+        }
     }
 
     protected onDiscard(data: DiscardCardBroadcast): void {
@@ -478,6 +492,13 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
 
     protected onLayOffRes(data: LayOffCardRes): void {
         this._syncPlayerField(this._perspectiveId, { handCardCount: data.handCardCount });
+        // 自己补牌动画：无飞入（已在手上），追加到目标 meld 末尾
+        const targetSeat = this.seatManager?.getSeatByUserId(data.targetPlayerId);
+        targetSeat?.meldField?.layOffToMeld(
+            data.targetMeldId,
+            data.cardAdded,
+            Number.MAX_SAFE_INTEGER,
+        );
         this._refreshActionPanel();
     }
 
@@ -575,10 +596,10 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     // ── 生命周期 ─────────────────────────────────────────
 
     protected onDestroy(): void {
-        Nexus.off(TongitsEvents.CMD_GROUP,   this._onCmdGroup,   this);
-        Nexus.off(TongitsEvents.CMD_UNGROUP, this._onCmdUngroup, this);
-        Nexus.off(TongitsEvents.CMD_DISCARD, this._onCmdDiscard, this);
-        Nexus.off(TongitsEvents.CMD_MELD,    this._onCmdMeld,    this);
+        Nexus.off(TongitsEvents.CMD_GROUP,    this._onCmdGroup,   this);
+        Nexus.off(TongitsEvents.CMD_UNGROUP,  this._onCmdUngroup, this);
+        Nexus.off(TongitsEvents.CMD_DUMP_BTN, this._onCmdDiscard, this);
+        Nexus.off(TongitsEvents.CMD_DROP_BTN, this._onCmdMeld,    this);
         if (this.tableAreaView) {
             this.tableAreaView.onDeckDrawClick    = null;
             this.tableAreaView.onDiscardAreaClick = null;

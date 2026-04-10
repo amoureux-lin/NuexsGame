@@ -70,4 +70,8 @@ export const TongitsEvents = {
     CMD_GROUP: 'tongits:cmd:group',
     /** 手牌取消分组（本地操作） */
     CMD_UNGROUP: 'tongits:cmd:ungroup',
+    /** Drop 按钮点击（UI信号，TongitsView 填入真实 cards 后再发 CMD_MELD） */
+    CMD_DROP_BTN: 'tongits:cmd:dropBtn',
+    /** Dump 按钮点击（UI信号，TongitsView 填入真实 card 后再发 CMD_DISCARD） */
+    CMD_DUMP_BTN: 'tongits:cmd:dumpBtn',
 } as const;
