@@ -13,7 +13,7 @@ import { UIPanel } from 'db://nexus-framework/base/UIPanel';
 import { Nexus } from 'db://nexus-framework/core/Nexus';
 import { MessageType } from '../proto/message_type';
 import { PlayerInfo } from 'db://assets/script/proto/game_common_room';
-import type {
+import {
     TongitsPlayerInfo, GameInfo, PotInfo, Meld, PlayerResult,
     JoinRoomRes, GameStartBroadcast, ActionChangeBroadcast,
     DrawCardBroadcast, MeldCardBroadcast, LayOffCardBroadcast,
@@ -21,7 +21,7 @@ import type {
     PKBroadcast, BeforeResultBroadcast, GameResultBroadcast,
     RoomResetBroadcast, RoomInfo,
     DrawCardRes, MeldCardRes, DiscardCardRes, TakeCardRes, LayOffCardRes, ChallengeRes,
-    MeldCardReq, DiscardCardReq, TakeCardReq, LayOffCardReq, ChallengeReq,
+    MeldCardReq, DiscardCardReq, TakeCardReq, LayOffCardReq, ChallengeReq, DrawCardReq,
 } from '../proto/tongits';
 
 const { ccclass } = _decorator;
@@ -40,6 +40,14 @@ const P3_ID   = 1003;
 
 /** 出牌顺序（逆时针：庄家先） */
 const TURN_ORDER = [P3_ID, SELF_ID, P2_ID];
+
+/**
+ * 吃牌测试场景：
+ *   P3 弃出 TAKE_BAIT_CARD（301 = A♣）
+ *   SELF 手牌含 SELF_TAKE_CARDS（101=A♠, 201=A♥），三张 A 组成 set 可吃
+ */
+const TAKE_BAIT_CARD  = 301;
+const SELF_TAKE_CARDS = [101, 201];
 
 // ── 52 张牌完整牌库 ────────────────────────────────────────────
 const FULL_DECK: number[] = [
@@ -358,13 +366,26 @@ export class MockView extends UIPanel {
 
     /**
      * 初始化牌局数据（洗牌发牌）
-     * 庄家(P3) 13 张，Self 12 张，P2 12 张，牌堆 15 张
+     * 庄家(P3) 13 张，Self 12 张，P2 12 张，牌堆 ~14 张
+     *
+     * 吃牌测试场景：
+     *   SELF 手牌固定含 101(A♠)、201(A♥)，
+     *   P3 庄家回合会弃出 301(A♣)，SELF 可用手牌中的两张 A 吃牌。
      */
     clickInitGame(): void {
-        const deck     = shuffle(FULL_DECK);
-        const selfHand = deck.slice(0, 12);
-        // P2/P3 手牌客户端不存明文，仅通过 handCardCount 展示
-        const remaining = deck.slice(37);   // 15 张
+        // 从牌堆中移除预留给吃牌场景的三张牌，再随机洗剩余 49 张
+        const reservedCards = [...SELF_TAKE_CARDS, TAKE_BAIT_CARD];
+        const baseDeck = shuffle(FULL_DECK.filter(c => !reservedCards.includes(c)));
+
+        // SELF：固定持有 101,201，再补 10 张随机牌，共 12 张
+        const selfHand = [...SELF_TAKE_CARDS, ...baseDeck.splice(0, 10)];
+
+        // P2 消耗 12 张，P3 消耗 13 张（客户端不存明文手牌）
+        baseDeck.splice(0, 12); // P2
+        baseDeck.splice(0, 13); // P3
+
+        // 剩余 ~14 张作为牌堆（301 在 P3 手中，游戏开始后 P3 会弃出）
+        const remaining = [...baseDeck];
 
         this._actionIdx = TURN_ORDER.indexOf(P3_ID); // 庄家先手
 
@@ -378,15 +399,66 @@ export class MockView extends UIPanel {
             deck:     remaining,
         };
 
-        console.log('[Mock] 牌局已初始化', {
+        console.log('[Mock] 牌局已初始化（吃牌测试）', {
             selfHand,
+            takeBaitCard: TAKE_BAIT_CARD,
             deckCount: remaining.length,
         });
     }
 
     // ── 按钮：游戏开始 ────────────────────────────────────────
 
-    /** 模拟游戏开始广播（若未初始化则自动调用 clickInitGame） */
+    roundMsg(){
+        console.log("roundMsg");
+        setTimeout(()=>{
+            console.log("============")
+            //通知p3玩家操作
+            this.roundP3Action();
+        },7000)
+    }
+
+    roundP3Action(){
+        //通知p3玩家操作
+        this._actionIdx = TURN_ORDER.indexOf(P3_ID);
+        this._sendActionChange();
+        //2s之后玩家摸牌
+        setTimeout(()=>{
+            this.roundP3Draw();
+        },2000)
+    }
+
+    roundP3Draw(){
+        //P3玩家摸牌
+        this._sendDrawBroadcast(P3_ID);
+        //2s之后玩家打牌
+        setTimeout(()=>{
+            this.roundP3Discard();
+        },2000)
+    }
+
+    roundP3Discard(){
+        //玩家打牌（弃出 TAKE_BAIT_CARD，SELF 可吃）
+        this._sendDiscardBroadcast(P3_ID, TAKE_BAIT_CARD);
+        setTimeout(()=>{
+            //通知下一家，也就是我自己操作
+            this.roundP1Action();
+        }, 1500)
+    }
+
+    roundP1Action(){
+        //通知下一家，也就是我自己操作
+        this._actionIdx = TURN_ORDER.indexOf(SELF_ID);
+        this._sendActionChange();
+    }
+
+    /**
+     * 模拟游戏开始广播，并自动串联庄家（P3）的第一个回合：
+     *   1. 游戏开始广播
+     *   2. ActionChange → P3（庄家先手，status=SELECT）
+     *   3. P3 摸牌广播
+     *   4. P3 弃出 301（A♣），SELF 手中有 101+201 可吃
+     *   5. ActionChange → SELF（status=SELECT，进入吃牌检测）
+     */
     clickGameStart(): void {
         if (!this._gameData) this.clickInitGame();
         const data: GameStartBroadcast = {
@@ -395,6 +467,7 @@ export class MockView extends UIPanel {
             userId:   SELF_ID,
         };
         this._send(MessageType.TONGITS_START_GAME_BROADCAST, data);
+        this.roundMsg()
     }
 
     // ── 按钮：操作变动 ────────────────────────────────────────
@@ -519,10 +592,9 @@ export class MockView extends UIPanel {
     clickDiscardP2(): void { this._sendDiscardBroadcast(P2_ID); }
     clickDiscardP3(): void { this._sendDiscardBroadcast(P3_ID); }
 
-    private _sendDiscardBroadcast(pid: number): void {
+    private _sendDiscardBroadcast(pid: number, card = 201): void {
         const p = this._getPlayer(pid);
         if (!p) return;
-        const card = 201; // mock 弃牌
         p.handCardCount = Math.max(0, p.handCardCount - 1);
         p.status        = PLAYER_STATUS.INIT;
         this._gameData!.gameInfo.discardPile.push(card);
