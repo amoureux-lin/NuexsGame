@@ -76,13 +76,11 @@ const LERP_SPEED = 20;
 /** 发牌后"按组重排"动画时长（更长，有仪式感） */
 const DEAL_REORDER_DUR   = 0.30;
 /** 发牌每张飞行时长 */
-const FLY_DUR            = 0.22;
+const FLY_DUR            = 0.2;
 /** 发牌每张间隔（ms） */
-const DEAL_INTERVAL      = 55;
+const DEAL_INTERVAL      = 45;
 /** 弹跳单步时长 */
-const BOUNCE_STEP        = 0.16;
-/** 全部落牌后暂停时长（让玩家看清手牌） */
-const DEAL_PAUSE_MS      = 100;
+const BOUNCE_STEP        = 0.12;
 
 // ── 模块级辅助函数 ─────────────────────────────────────────
 
@@ -155,6 +153,10 @@ export class HandCardPanel extends Component {
      * 确保连续摸牌时每张新牌都按真实张数计算位置。
      */
     private _pendingUngroupCount = 0;
+
+    // ── 补牌提示 ──────────────────────────────────────────
+    /** 当前有效的补牌提示集合，merge-expand 后自动恢复 */
+    private _layoffTipsSet: Set<number> | null = null;
 
     // ── 吃牌模式 ──────────────────────────────────────────
     private _inTakeMode          = false;
@@ -316,9 +318,6 @@ export class HandCardPanel extends Component {
             }))
         ));
 
-        // 让玩家短暂看清手牌
-        await delay(DEAL_PAUSE_MS);
-
         // ── Phase 4: 合并 → 按组重排展开 ────────────────────────
         await this._animateMergeExpand(cards);
     }
@@ -383,7 +382,6 @@ export class HandCardPanel extends Component {
                     ...snap.ungroup,
                     card,
                 ];
-                await delay(DEAL_PAUSE_MS);
                 await this._animateMergeExpand(allCards);
             } else {
                 if (flyNode?.isValid) flyNode.destroy();
@@ -615,6 +613,7 @@ export class HandCardPanel extends Component {
         this._syncGroupViews(snap.groups, snap.selectedGroupIds);
         this._syncUngroupNodes(snap.ungroup, snap.selectedUngroupCards);
         this._doLayout(snap.groups, snap.ungroup);
+        if (this._layoffTipsSet) this.showLayoffTips(this._layoffTipsSet);
         this._emitSelection(snap);
     }
 
@@ -623,16 +622,18 @@ export class HandCardPanel extends Component {
         const selectedCards  = [...snap.selectedUngroupCards];
         const selectedGroups = snap.groups.filter(g => snap.selectedGroupIds.has(g.id));
 
-        console.log('[Selection]', {
-            cards:   selectedCards,
-            groups:  selectedGroups.map(g => ({ type: g.type, cards: g.cards })),
-            buttons: snap.buttonStates,
-        });
+        // canSapaw：仅当选中的单张散牌在当前补牌提示集合中才为 true
+        const base = snap.buttonStates;
+        const canSapaw = base.canSapaw
+            && this._layoffTipsSet !== null
+            && base.selectedSingleCard !== null
+            && this._layoffTipsSet.has(base.selectedSingleCard);
+        const buttons: ButtonStates = { ...base, canSapaw };
 
         this.onSelectionChange?.({
             selectedCards,
             selectedGroups,
-            buttons: snap.buttonStates,
+            buttons,
         });
     }
 
@@ -967,7 +968,7 @@ export class HandCardPanel extends Component {
      * 4. _state.setCards(newCards) → _onStateChange → _doLayout 展开动画
      */
     private async _animateMergeExpand(newCards: number[]): Promise<void> {
-        const MERGE_DUR = 0.18;
+        const MERGE_DUR = 0.14;
 
         // ── 根容器归零，保持子节点世界坐标不变 ────────────────────────────
         // 无论 _doLayout 将根节点偏移到何处，合并动画始终收敛到 panel 中心（local 0,0）。
@@ -1483,6 +1484,30 @@ export class HandCardPanel extends Component {
                 cn.setSelected(selectedSet.has(cn.cardValue));
                 cn.setMasked(!anyCandidateSet.has(cn.cardValue));
             }
+        }
+    }
+
+    // ── 补牌提示 API ──────────────────────────────────────
+
+    /** 显示补牌提示（tipNode）：cardSet 中包含的手牌显示 tipNode，其余隐藏 */
+    showLayoffTips(cardSet: Set<number>): void {
+        this._layoffTipsSet = cardSet;
+        for (const [val, cn] of this._ungroupNodes) {
+            cn.setTipped(cardSet.has(val));
+        }
+        for (const [, gv] of this._groupViews) {
+            for (const cn of gv.cardNodes) {
+                cn.setTipped(cardSet.has(cn.cardValue));
+            }
+        }
+    }
+
+    /** 清除所有手牌的补牌提示 */
+    clearLayoffTips(): void {
+        this._layoffTipsSet = null;
+        for (const [, cn] of this._ungroupNodes) cn.setTipped(false);
+        for (const [, gv] of this._groupViews) {
+            for (const cn of gv.cardNodes) cn.setTipped(false);
         }
     }
 

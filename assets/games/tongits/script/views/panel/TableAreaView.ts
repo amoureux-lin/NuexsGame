@@ -17,8 +17,8 @@
  */
 
 import {
-    _decorator, Component, Node, Prefab, Label,
-    instantiate, Vec3, tween, Tween,sp
+    _decorator, Component, Node, Prefab, Label, UITransform,
+    instantiate, Vec3, tween, Tween,
 } from 'cc';
 import { CardNode } from '../handcard/CardNode';
 
@@ -47,15 +47,14 @@ export class TableAreaView extends Component {
     @property({type:Node,tooltip:"摸牌堆 光效"})
     deckLight: Node = null!;
 
-    @property({type:sp.Skeleton,tooltip:"摸牌堆 提示"})
-    deckTip: sp.Skeleton = null!;
-
     @property({ type: Node,  tooltip: '牌堆叠牌容器节点（发牌动画起点）' })
     sendCardNode: Node = null!;
 
-    @property({type:sp.Skeleton,tooltip:"丢牌堆 提示"})
-    discardTip: sp.Skeleton = null!;
+    @property({ type: Prefab, tooltip: '操作提示预制体（摸牌堆/弃牌堆共用同一份）' })
+    tipPrefab: Prefab | null = null;
 
+    @property({ tooltip: '提示节点在父容器顶部基础上的额外 Y 偏移（px，正值继续向上）' })
+    tipOffsetY: number = 30;
 
 
     // ── 弃牌区（右） ─────────────────────────────────────
@@ -84,6 +83,8 @@ export class TableAreaView extends Component {
     private _deckRemaining   = 0;
     private _deckDrawEnabled = false;
     private _deckLightTween: Tween<Node> | null = null;
+    private _deckTipNode:    Node | null = null;
+    private _discardTipNode: Node | null = null;
 
     // ── 私有：发牌堆（sendCardNode） ─────────────────────
 
@@ -102,10 +103,8 @@ export class TableAreaView extends Component {
         this.deckNode?.on(Node.EventType.TOUCH_END,    this._onDeckTouchEnd,    this);
         this.historyBtn?.on(Node.EventType.TOUCH_END,  this._onHistoryTap,      this);
         this.discardNode?.on(Node.EventType.TOUCH_END, this._onDiscardAreaTap,  this);
-        if (this.historyBtn)  this.historyBtn.active  = false;
-        if (this.deckLight)   this.deckLight.active   = false;
-        if (this.deckTip)     this.deckTip.node.active = false;
-        if (this.discardTip) this.discardTip.node.active  = false;
+        if (this.historyBtn) this.historyBtn.active = false;
+        if (this.deckLight)  this.deckLight.active  = false;
     }
 
     onDestroy(): void {
@@ -224,6 +223,7 @@ export class TableAreaView extends Component {
         this._clearSendPile();
         this.sendCardNode?.removeAllChildren();
 
+        this.stopDiscardTip();
         this._discardPile = [];
         this.discardNode?.removeAllChildren();
         if (this.historyBtn) this.historyBtn.active = false;
@@ -282,7 +282,7 @@ export class TableAreaView extends Component {
 
     private _startDeckGuide(): void {
         this.startDeckLight();
-        this.startDeckTip();
+        // this.startDeckTip();
     }
 
     private _stopDeckGuide(): void {
@@ -325,28 +325,40 @@ export class TableAreaView extends Component {
      * 开始 摸牌堆提示
      */
     public startDeckTip(): void {
-        if (this.deckTip) this.deckTip.node.active = true;
+        if (!this.tipPrefab || !this.deckNode) return;
+        this.stopDeckTip();
+        this._deckTipNode = instantiate(this.tipPrefab);
+        const h = this.deckNode.getComponent(UITransform)?.contentSize.height ?? 0;
+        this._deckTipNode.setPosition(0, h / 2 + this.tipOffsetY, 0);
+        this.deckNode.addChild(this._deckTipNode);
     }
 
     /**
      * 停止 摸牌堆提示
      */
     public stopDeckTip(): void {
-        if (this.deckTip) this.deckTip.node.active = false;
+        if (this._deckTipNode?.isValid) this._deckTipNode.destroy();
+        this._deckTipNode = null;
     }
 
     /**
      * 开始 弃牌堆提示
      */
-    public startDiscardTip(){
-        if (this.discardTip) this.discardTip.node.active = true;
+    public startDiscardTip(): void {
+        if (!this.tipPrefab || !this.discardNode) return;
+        this.stopDiscardTip();
+        this._discardTipNode = instantiate(this.tipPrefab);
+        const h = this.discardNode.getComponent(UITransform)?.contentSize.height ?? 0;
+        this._discardTipNode.setPosition(0, h / 2 + this.tipOffsetY, 0);
+        this.discardNode.addChild(this._discardTipNode);
     }
 
     /**
      * 停止 弃牌堆提示
      */
-    public stopDiscardTip(){
-        if (this.discardTip) this.discardTip.node.active = false;
+    public stopDiscardTip(): void {
+        if (this._discardTipNode?.isValid) this._discardTipNode.destroy();
+        this._discardTipNode = null;
     }
 
     // ── 私有：弃牌堆视觉 ──────────────────────────────────

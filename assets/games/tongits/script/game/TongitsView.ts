@@ -1,6 +1,6 @@
 import { _decorator, Vec3, tween } from 'cc';
-import { MeldValidator } from '../utils/MeldValidator';
 import { BaseGameView } from 'db://assets/script/base/BaseGameView';
+import type { LayoffHints, ActionChangePayload, DrawResPayload, MeldResPayload, TakeResPayload, LayOffResPayload } from './TongitsModel';
 import { Nexus } from 'db://nexus-framework/index';
 import { TongitsEvents } from '../config/TongitsEvents';
 import { PlayerSeatManager } from '../views/player/PlayerSeatManager';
@@ -94,8 +94,6 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     private _handButtons: ButtonStates | null = null;
     /** 当前可操作玩家（来自 ActionChangeBroadcast） */
     private _actionPlayerId: number = 0;
-    /** 最近一次弃牌堆顶牌（用于吃牌候选计算） */
-    private _lastDiscardCard: number = 0;
     /** 当前是否处于可吃牌状态 */
     private _canTake: boolean = false;
     /** 已发出 CMD_TAKE 时使用的手牌（等待 TakeRes 后移除） */
@@ -159,7 +157,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         Nexus.on(TongitsEvents.CMD_DROP_BTN, this._onCmdMeld,    this);
 
         this.listen<GameStartBroadcast>(TongitsEvents.GAME_START,       (d) => this.onGameStart(d));
-        this.listen<ActionChangeBroadcast>(TongitsEvents.ACTION_CHANGE, (d) => this.onActionChange(d));
+        this.listen<ActionChangePayload>(TongitsEvents.ACTION_CHANGE, (d) => this.onActionChange(d));
         // 他人操作广播
         this.listen<DrawCardBroadcast>(TongitsEvents.DRAW,              (d) => this.onDraw(d));
         this.listen<MeldCardBroadcast>(TongitsEvents.MELD,              (d) => this.onMeld(d));
@@ -169,11 +167,11 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         this.listen<ChallengeBroadcast>(TongitsEvents.CHALLENGE,        (d) => this.onChallenge(d));
         this.listen<PKBroadcast>(TongitsEvents.PK,                      (d) => this.onPK(d));
         // 自己操作的 RES 响应
-        this.listen<DrawCardRes>(TongitsEvents.DRAW_RES,                (d) => this.onDrawRes(d));
-        this.listen<MeldCardRes>(TongitsEvents.MELD_RES,                (d) => this.onMeldRes(d));
+        this.listen<DrawResPayload>(TongitsEvents.DRAW_RES,              (d) => this.onDrawRes(d));
+        this.listen<MeldResPayload>(TongitsEvents.MELD_RES,              (d) => this.onMeldRes(d));
         this.listen<DiscardCardRes>(TongitsEvents.DISCARD_RES,          (d) => this.onDiscardRes(d));
-        this.listen<TakeCardRes>(TongitsEvents.TAKE_RES,                (d) => this.onTakeRes(d));
-        this.listen<LayOffCardRes>(TongitsEvents.LAY_OFF_RES,           (d) => this.onLayOffRes(d));
+        this.listen<TakeResPayload>(TongitsEvents.TAKE_RES,              (d) => this.onTakeRes(d));
+        this.listen<LayOffResPayload>(TongitsEvents.LAY_OFF_RES,         (d) => this.onLayOffRes(d));
         this.listen<ChallengeRes>(TongitsEvents.CHALLENGE_RES,          (d) => this.onChallengeRes(d));
         this.listen<BeforeResultBroadcast>(TongitsEvents.BEFORE_RESULT, (d) => this.onBeforeResult(d));
         this.listen<GameResultBroadcast>(TongitsEvents.GAME_RESULT,     (d) => this.onGameResult(d));
@@ -277,7 +275,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         );
     }
 
-    protected onActionChange(data: ActionChangeBroadcast): void {
+    protected onActionChange(data: ActionChangePayload): void {
         this.seatManager?.updateActionPlayer(data.actionPlayerId);
         this.seatManager?.updateCountdown(data.actionPlayerId, data.countdown);
 
@@ -304,11 +302,22 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
             // status===2：可 drop/dump（以及后续 spaw）→ 按选牌驱动开启按钮
             if (isSelfTurn) this._refreshActionPanel();
 
-            // 吃牌模式：轮到自己且 status===2 时检测候选
+            // 吃牌模式：Model 已计算好候选，View 直接应用
             if (isSelfTurn && data.status === 2) {
-                this._checkTakeMode();
+                if (data.takeCandidates.length > 0) {
+                    this._canTake = true;
+                    this.handCardPanel?.enterTakeMode(data.takeCandidates);
+                    this.tableAreaView?.startDiscardTip();
+                } else {
+                    this._canTake = false;
+                }
+                this._applyLayoffTips(data.layoffHints, 2);
+            } else if (isSelfTurn && data.status === 3) {
+                this._exitTakeMode();
+                this._applyLayoffTips(data.layoffHints, 3);
             } else {
                 this._exitTakeMode();
+                this._clearLayoffTips();
             }
         }
     }
@@ -378,7 +387,6 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     }
 
     protected onDiscard(data: DiscardCardBroadcast): void {
-        if (data.discardedCard) this._lastDiscardCard = data.discardedCard;
         this._syncPlayerField(data.playerId, { handCardCount: data.handCardCount });
         if (!data.discardPile?.length) return;
 
@@ -447,7 +455,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
 
     // ── 自己操作的 RES 响应 ────────────────────────────────
 
-    protected onDrawRes(data: DrawCardRes): void {
+    protected onDrawRes(data: DrawResPayload): void {
         // 摸牌完成 → 进入出牌阶段（status 3:Action），主动更新 model，无需等 ActionChangeBroadcast
         this._syncPlayerField(this._perspectiveId, {
             handCardCount: data.handCardCount,
@@ -459,19 +467,20 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         // popDeckCard + 落牌动画 由 HandCardPanel.addCard 统一处理
         if (data.drawnCard) this.handCardPanel?.addCard(data.drawnCard);
         this._refreshActionPanel();
+        this._applyLayoffTips(data.layoffHints, 3);
     }
 
-    protected onMeldRes(data: MeldCardRes): void {
+    protected onMeldRes(data: MeldResPayload): void {
         this._syncPlayerField(this._perspectiveId, { handCardCount: data.handCardCount });
         if (data.newMeld) {
             const selfSeat = this.seatManager?.getSeatByUserId(this._perspectiveId);
             selfSeat?.meldField?.addMeld(data.newMeld);
         }
         this._refreshActionPanel();
+        this._applyLayoffTips(data.layoffHints, 3);
     }
 
     protected onDiscardRes(data: DiscardCardRes): void {
-        if (data.discardedCard) this._lastDiscardCard = data.discardedCard;
         // 弃牌完成 → 不可操作（status 1），等待下一个 ActionChangeBroadcast
         this._syncPlayerField(this._perspectiveId, {
             handCardCount: data.handCardCount,
@@ -483,7 +492,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         if (data.discardPile?.length) this.tableAreaView?.syncDiscard(data.discardPile);
     }
 
-    protected onTakeRes(data: TakeCardRes): void {
+    protected onTakeRes(data: TakeResPayload): void {
         // 吃牌成功 → 进入出牌阶段（status 3:Action），禁用摸牌/吃牌/挑战
         this._syncPlayerField(this._perspectiveId, {
             handCardCount: data.handCardCount,
@@ -492,25 +501,20 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         this.tableAreaView?.setDeckDrawEnabled(false);
         // 先退出吃牌模式（恢复 click handler、清除高亮），再修改手牌状态
         this._exitTakeMode();
-        this._lastDiscardCard = 0;
         // 移除手牌区用于吃牌的牌（散牌或牌组内的牌，含牌组解散逻辑）
         this.handCardPanel?.removeTakeCards(this._pendingTakeCards);
         this._pendingTakeCards = [];
-        // 从 model 弃牌堆移除被吃走的牌，并刷新弃牌区视图
-        if (data.discard && this._gameInfo) {
-            this._gameInfo.discardPile = this._gameInfo.discardPile.filter(c => c !== data.discard);
-            const pile = this._gameInfo.discardPile;
-            this._gameInfo.discardCard = pile.length > 0 ? pile[pile.length - 1] : 0;
-            this.tableAreaView?.syncDiscard(this._gameInfo.discardPile);
-        }
+        // 刷新弃牌区视图（Model 已过滤被吃走的牌）
+        this.tableAreaView?.syncDiscard(data.discardPile);
         if (data.newMeld) {
             const selfSeat = this.seatManager?.getSeatByUserId(this._perspectiveId);
             selfSeat?.meldField?.addMeld(data.newMeld);
         }
         this._refreshActionPanel();
+        this._applyLayoffTips(data.layoffHints, 3);
     }
-
-    protected onLayOffRes(data: LayOffCardRes): void {
+    
+    protected onLayOffRes(data: LayOffResPayload): void {
         this._syncPlayerField(this._perspectiveId, { handCardCount: data.handCardCount });
         // 自己补牌动画：无飞入（已在手上），追加到目标 meld 末尾
         const targetSeat = this.seatManager?.getSeatByUserId(data.targetPlayerId);
@@ -520,6 +524,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
             Number.MAX_SAFE_INTEGER,
         );
         this._refreshActionPanel();
+        this._applyLayoffTips(data.layoffHints, 3);
     }
 
     protected onChallengeRes(data: ChallengeRes): void {
@@ -587,6 +592,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
             meldField?.stopTurnHighlight();
             meldField?.clear();
         }
+        this._clearLayoffTips();
         this._refreshAllSeats();
         if (this.tableAreaView) this.tableAreaView.node.active = false;
         this.handCardPanel?.clear();
@@ -668,25 +674,48 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         this.take(cards);
     }
 
-    /** 检测吃牌候选，若存在则进入吃牌模式并显示 discardTip */
-    private _checkTakeMode(): void {
-        if (!this._lastDiscardCard) { this._canTake = false; return; }
-        const allCards   = this.handCardPanel?.getAllHandCards() ?? [];
-        const candidates = MeldValidator.findTakeCandidates(allCards, this._lastDiscardCard);
-        if (candidates.length > 0) {
-            this._canTake = true;
-            this.handCardPanel?.enterTakeMode(candidates);
-            this.tableAreaView?.startDiscardTip();
-        } else {
-            this._canTake = false;
-        }
-    }
-
     /** 退出吃牌模式，清除高亮与提示 */
     private _exitTakeMode(): void {
         this._canTake = false;
         this.handCardPanel?.exitTakeMode();
         this.tableAreaView?.stopDiscardTip();
+    }
+
+    /**
+     * 将 Model 预计算好的补牌提示应用到 View（纯展示，无业务计算）。
+     * status=2：仅显示手牌 tipNode；status=3：手牌 tipNode + meld 块提示节点。
+     */
+    private _applyLayoffTips(hints: LayoffHints, status: number): void {
+        if (hints.tippedCards.size === 0) {
+            this._clearLayoffTips();
+            return;
+        }
+        this.handCardPanel?.showLayoffTips(hints.tippedCards);
+        for (const player of this._players) {
+            const uid = player.playerInfo?.userId;
+            if (!uid) continue;
+            const meldField = this.seatManager?.getSeatByUserId(uid)?.meldField;
+            if (status === 3) {
+                const ids = hints.meldTipsByOwner.get(uid);
+                if (ids && ids.length > 0) {
+                    meldField?.showLayoffTipOnMelds(ids);
+                } else {
+                    meldField?.clearLayoffTips();
+                }
+            } else {
+                meldField?.clearLayoffTips();
+            }
+        }
+    }
+
+    /** 清除所有补牌提示（手牌 tipNode + 所有玩家 meld 块提示节点） */
+    private _clearLayoffTips(): void {
+        this.handCardPanel?.clearLayoffTips();
+        for (const player of this._players) {
+            const uid = player.playerInfo?.userId;
+            if (!uid) continue;
+            this.seatManager?.getSeatByUserId(uid)?.meldField?.clearLayoffTips();
+        }
     }
 
     private _onDeckDrawClick(): void {

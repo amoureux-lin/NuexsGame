@@ -50,6 +50,7 @@ export class CardNode extends Component {
     @property({ type: SpriteAtlas, tooltip: '牌面图集'               }) pokerAtlas:       SpriteAtlas | null = null;
     @property({ type: SpriteFrame, tooltip: '牌背 SpriteFrame'       }) pokerNormalBacks: SpriteFrame | null = null;
     @property({ type: Node,        tooltip: '遮罩节点'           }) maskNode:   Node        | null = null;
+    @property({ type: Node,        tooltip: '提示节点'           }) tipNode:   Node        | null = null;
     @property({ type: Node,        tooltip: '选中高亮节点'           }) selectedBorder:   Node        | null = null;
     @property({ type: Node,        tooltip: 'Meld 提示高亮节点'     }) hintOverlay:      Node        | null = null;
 
@@ -80,6 +81,7 @@ export class CardNode extends Component {
 
     onLoad(): void {
         if (this.maskNode) this.maskNode.active = false;
+        if (this.tipNode) this.tipNode.active = false;
         this._ensureVisuals();
         this.node.on(Node.EventType.TOUCH_START,  this._onTouchStart,  this);
         this.node.on(Node.EventType.TOUCH_MOVE,   this._onTouchMove,   this);
@@ -131,6 +133,13 @@ export class CardNode extends Component {
     }
 
     get isMasked(): boolean { return this.maskNode?.active ?? false; }
+
+    /** 补牌提示：true → 显示 tipNode */
+    setTipped(tipped: boolean): void {
+        if (this.tipNode) this.tipNode.active = tipped;
+    }
+
+    get isTipped(): boolean { return this.tipNode?.active ?? false; }
 
     /** Meld 提示态：true → 上移 + 蓝色蒙层 */
     setHinted(hinted: boolean): void {

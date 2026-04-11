@@ -420,7 +420,7 @@ export class MockView extends UIPanel {
             console.log("============")
             //通知p3玩家操作
             this.roundP3Action();
-        },7000)
+        },5000)
     }
 
     roundP3Action(){
@@ -430,7 +430,7 @@ export class MockView extends UIPanel {
         //2s之后玩家摸牌
         setTimeout(()=>{
             this.roundP3Draw();
-        },2000)
+        },1500)
     }
 
     roundP3Draw(){
@@ -438,8 +438,16 @@ export class MockView extends UIPanel {
         this._sendDrawBroadcast(P3_ID);
         //2s之后玩家打牌
         setTimeout(()=>{
+            this.roundDrop();
+        },1500)
+    }
+
+    roundDrop(){
+        // P3 打出 ♠7♠8♠9 顺子（SELF 有 106=♠6 可以补入头部）
+        this._sendMeldBroadcast(P3_ID, [107, 108, 109]);
+        setTimeout(()=>{
             this.roundP3Discard();
-        },2000)
+        },1500)
     }
 
     roundP3Discard(){

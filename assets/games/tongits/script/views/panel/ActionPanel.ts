@@ -82,14 +82,15 @@ export class ActionPanel extends Component {
         const canDump    = handButtons?.canDump    ?? false;
         const canSapaw    = handButtons?.canSapaw    ?? false;
 
-        // ── drop / dump：已抽牌(ACTION)且手牌满足条件才可点 ──────────────
+        // ── drop：已抽牌(ACTION)且手牌满足条件才可点 ────────────────────────
         this._setInteractable(this.dropBtn, canPlayCards && canDrop);
-        this._setInteractable(this.dumpBtn, canPlayCards && canDump);
 
-        // ── sapaw：暂未完善，始终隐藏 ─────────────────────────────────────
-        // const showSapaw = canPlayCards && canSapaw;
-        // this._setActive(this.sapawBtn, showSapaw);
-        // this._setInteractable(this.sapawBtn, showSapaw);
+        // ── sapaw / dump 互斥：选中牌能补时只显示 sapaw，否则只显示 dump ──
+        const showSapaw = canPlayCards && canSapaw;
+        this._setActive(this.sapawBtn, showSapaw);
+        this._setInteractable(this.sapawBtn, showSapaw);
+        this._setActive(this.dumpBtn, !showSapaw);
+        this._setInteractable(this.dumpBtn, !showSapaw && canPlayCards && canDump);
 
         // ── group / ungroup：本地操作，不受回合限制，由选牌条件驱动 ──────
         this._setActive(this.ungroupBtn, canUngroup);

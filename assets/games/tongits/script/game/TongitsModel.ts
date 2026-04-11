@@ -2,6 +2,7 @@ import { Nexus } from 'db://nexus-framework/index';
 import { BaseGameModel, ROOM_STATE, type JoinRoomData } from 'db://assets/script/base/BaseGameModel';
 import { MessageType } from '../proto/message_type';
 import { TongitsEvents } from '../config/TongitsEvents';
+import { MeldValidator } from '../utils/MeldValidator';
 import type {
     TongitsPlayerInfo,
     GameInfo,
@@ -27,11 +28,47 @@ import type {
 } from '../proto/tongits';
 import type { PlayerInfo } from 'db://assets/script/proto/game_common_room';
 
-/** 玩家游戏内状态 */
+/** 玩家游戏内状态 */ // 吃牌，抽牌，发起挑战 三选一
 const enum PLAYER_STATUS {
     INIT = 1,
     SELECT = 2,
     ACTION = 3,
+}
+
+/** 补牌提示数据（Model 计算后随事件 payload 传递给 View） */
+export interface LayoffHints {
+    /** 手牌中可以补牌的牌值集合 */
+    tippedCards: Set<number>;
+    /** 各玩家 meldField 中有候选的 meldId 列表（playerId → meldIds） */
+    meldTipsByOwner: Map<number, number[]>;
+}
+
+/** ActionChange 事件的扩展 payload */
+export interface ActionChangePayload extends ActionChangeBroadcast {
+    takeCandidates: number[][];
+    layoffHints: LayoffHints;
+}
+
+/** DrawRes 事件的扩展 payload */
+export interface DrawResPayload extends DrawCardRes {
+    layoffHints: LayoffHints;
+}
+
+/** MeldRes 事件的扩展 payload */
+export interface MeldResPayload extends MeldCardRes {
+    layoffHints: LayoffHints;
+}
+
+/** TakeRes 事件的扩展 payload */
+export interface TakeResPayload extends TakeCardRes {
+    layoffHints: LayoffHints;
+    /** Model 过滤后的弃牌堆（吃牌后移除了被吃的牌） */
+    discardPile: number[];
+}
+
+/** LayOffRes 事件的扩展 payload */
+export interface LayOffResPayload extends LayOffCardRes {
+    layoffHints: LayoffHints;
 }
 
 /**
@@ -212,7 +249,22 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
             countdown: data.countdown,
             isFight: data.isFight,
         } as Partial<TongitsPlayerInfo>);
-        this.notify(TongitsEvents.ACTION_CHANGE, data);
+
+        // 计算吃牌候选和补牌提示（仅轮到自己且在 SELECT 阶段时）
+        let takeCandidates: number[][] = [];
+        let layoffHints: LayoffHints = this._emptyLayoffHints();
+        if (data.actionPlayerId === this.myUserId && data.status === PLAYER_STATUS.SELECT) {
+            const handCards = this.getHandCards();
+            const pile = gi?.discardPile ?? [];
+            const discardCard = pile.length > 0 ? pile[pile.length - 1] : 0;
+            if (discardCard) {
+                takeCandidates = MeldValidator.findTakeCandidates(handCards, discardCard);
+            }
+            layoffHints = this._computeLayoffHints(handCards);
+        }
+
+        const payload: ActionChangePayload = { ...data, takeCandidates, layoffHints };
+        this.notify(TongitsEvents.ACTION_CHANGE, payload);
     }
 
     private _onDrawBroadcast(msg: unknown): void {
@@ -386,15 +438,17 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
         const pid = this.myUserId;
         const player = this.getPlayerByUserId(pid);
         if (!player) return;
+        const newHandCards = [...(player.handCards ?? []), res.drawnCard];
         this.updatePlayerById(pid, {
-            handCards: [...(player.handCards ?? []), res.drawnCard],
+            handCards: newHandCards,
             handCardCount: res.handCardCount,
             isFight: res.hasTongits,
             status: PLAYER_STATUS.ACTION,
         } as Partial<TongitsPlayerInfo>);
         const gi = this.gameInfo as GameInfo | null;
         if (gi) gi.deckCardCount = Math.max(0, (gi.deckCardCount ?? 0) - 1);
-        this.notify<DrawCardRes>(TongitsEvents.DRAW_RES, res);
+        const layoffHints = this._computeLayoffHints(newHandCards);
+        this.notify<DrawResPayload>(TongitsEvents.DRAW_RES, { ...res, layoffHints });
     }
 
     /** 出牌组响应 */
@@ -403,14 +457,17 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
         const pid = this.myUserId;
         const player = this.getPlayerByUserId(pid);
         if (!player) return;
+        const newHandCards = player.handCards?.filter(c => !res.newMeld!.cards.includes(c)) ?? [];
         this.updatePlayerById(pid, {
-            handCards: player.handCards?.filter(c => !res.newMeld!.cards.includes(c)) ?? [],
+            handCards: newHandCards,
             displayedMelds: [...(player.displayedMelds ?? []), res.newMeld],
             handCardCount: res.handCardCount,
             isFight: res.hasTongits,
             status: PLAYER_STATUS.ACTION,
         } as Partial<TongitsPlayerInfo>);
-        this.notify<MeldCardRes>(TongitsEvents.MELD_RES, res);
+        // updatePlayerById 已更新 displayedMelds，_computeLayoffHints 读最新 players 数据
+        const layoffHints = this._computeLayoffHints(newHandCards);
+        this.notify<MeldResPayload>(TongitsEvents.MELD_RES, { ...res, layoffHints });
     }
 
     /** 弃牌响应 */
@@ -446,17 +503,19 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
             isFight: res.hasTongits,
             status: PLAYER_STATUS.ACTION,
         };
-        // 从手牌移除：newMeld.cards 中除了弃牌(discard)以外的牌来自手牌
-        if (player.handCards && res.discard) {
+        let newHandCards = player.handCards ?? [];
+        if (res.discard) {
             const usedFromHand = res.newMeld.cards.filter(c => c !== res.discard);
-            updates.handCards = player.handCards.filter(c => !usedFromHand.includes(c));
+            newHandCards = newHandCards.filter(c => !usedFromHand.includes(c));
+            updates.handCards = newHandCards;
         }
         this.updatePlayerById(pid, updates);
         const gi = this.gameInfo as GameInfo | null;
         if (gi && res.discard) {
             gi.discardPile = gi.discardPile?.filter(c => c !== res.discard) ?? [];
         }
-        this.notify<TakeCardRes>(TongitsEvents.TAKE_RES, res);
+        const layoffHints = this._computeLayoffHints(newHandCards);
+        this.notify<TakeResPayload>(TongitsEvents.TAKE_RES, { ...res, layoffHints, discardPile: gi?.discardPile ?? [] });
     }
 
     /** 补牌/压牌响应 */
@@ -475,14 +534,50 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
         }
         // 从自己手牌移除
         const me = this.getPlayerByUserId(pid);
+        let newHandCards: number[] = me?.handCards ?? [];
         if (me) {
+            newHandCards = me.handCards?.filter(c => c !== res.cardAdded) ?? [];
             this.updatePlayerById(pid, {
-                handCards: me.handCards?.filter(c => c !== res.cardAdded) ?? [],
+                handCards: newHandCards,
                 handCardCount: res.handCardCount,
                 status: PLAYER_STATUS.SELECT,
             } as Partial<TongitsPlayerInfo>);
         }
-        this.notify<LayOffCardRes>(TongitsEvents.LAY_OFF_RES, res);
+        // 更新完 displayedMelds 和手牌后再计算（反映最新牌组状态）
+        const layoffHints = this._computeLayoffHints(newHandCards);
+        this.notify<LayOffResPayload>(TongitsEvents.LAY_OFF_RES, { ...res, layoffHints });
+    }
+
+    // ── 私有：提示数据计算 ────────────────────────────────
+
+    /** 空提示数据（无候选时使用） */
+    private _emptyLayoffHints(): LayoffHints {
+        return { tippedCards: new Set(), meldTipsByOwner: new Map() };
+    }
+
+    /**
+     * 计算手牌中哪些牌可以补入哪些玩家的牌组。
+     * 逐玩家检测避免不同玩家 meldId 碰撞。
+     */
+    private _computeLayoffHints(handCards: number[]): LayoffHints {
+        if (handCards.length === 0) return this._emptyLayoffHints();
+        const tippedCards     = new Set<number>();
+        const meldTipsByOwner = new Map<number, number[]>();
+        for (const player of this.players) {
+            const uid = player.playerInfo?.userId;
+            if (!uid) continue;
+            const meldData = (player.displayedMelds ?? []).map(m => ({ meldId: m.meldId, cards: m.cards }));
+            if (meldData.length === 0) continue;
+            const candidateMap = MeldValidator.findLayoffCandidates(handCards, meldData);
+            if (candidateMap.size === 0) continue;
+            for (const card of candidateMap.keys()) tippedCards.add(card);
+            const affectedIds = new Set<number>();
+            for (const ids of candidateMap.values()) {
+                for (const id of ids) affectedIds.add(id);
+            }
+            meldTipsByOwner.set(uid, [...affectedIds]);
+        }
+        return { tippedCards, meldTipsByOwner };
     }
 
     /** 挑战响应 */

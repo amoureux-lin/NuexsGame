@@ -76,6 +76,45 @@ export class MeldValidator {
         return candidates;
     }
 
+    // ── 补牌候选计算 ──────────────────────────────────────
+
+    /**
+     * 计算手牌中哪些牌可以补入哪些已亮出牌组（Sapaw/LayOff）。
+     *
+     * @param handCards 手上所有牌（散牌 + 组内牌）
+     * @param melds     场上已亮出的牌组 [{meldId, cards}]
+     * @returns Map<cardValue, meldId[]> — 每张可补牌对应的 meld 列表（不可补牌无条目）
+     */
+    static findLayoffCandidates(
+        handCards: number[],
+        melds: { meldId: number; cards: number[] }[],
+    ): Map<number, number[]> {
+        const result = new Map<number, number[]>();
+        for (const meld of melds) {
+            for (const card of handCards) {
+                if (this._canLayOff(card, meld.cards)) {
+                    if (!result.has(card)) result.set(card, []);
+                    result.get(card)!.push(meld.meldId);
+                }
+            }
+        }
+        return result;
+    }
+
+    private static _canLayOff(card: number, meldCards: number[]): boolean {
+        if (meldCards.length === 0) return false;
+        if (this._isSet(meldCards)) {
+            return meldCards.length < 4 && getRank(card) === getRank(meldCards[0]);
+        }
+        if (this._isSequence(meldCards)) {
+            if (getSuit(card) !== getSuit(meldCards[0])) return false;
+            const ranks = meldCards.map(getRank).sort((a, b) => a - b);
+            const r = getRank(card);
+            return r === ranks[0] - 1 || r === ranks[ranks.length - 1] + 1;
+        }
+        return false;
+    }
+
     // ── 内部工具 ──────────────────────────────────────────
 
     private static _combinations<T>(

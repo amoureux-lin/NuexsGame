@@ -24,9 +24,9 @@ const { ccclass, property } = _decorator;
 const CARD_SCALE = 0.4;
 
 /** 飞入动画时长（秒） */
-const FLY_DUR = 0.35;
+const FLY_DUR = 0.25;
 /** 展开动画时长（秒） */
-const EXPAND_DUR = 0.25;
+const EXPAND_DUR = 0.1;
 /** 每张牌展开的错开时间（秒） */
 const EXPAND_STAGGER = 0.03;
 
@@ -60,6 +60,11 @@ export class PlayerMeldField extends Component {
     @property({ tooltip: '单行模式：全部牌组排在同一行不换行（自己用，content Anchor (0.5,1)）' })
     singleRow: boolean = false;
 
+    @property({ type: Prefab, tooltip: '补牌提示预制体（放置在可补牌的牌组块上）' })
+    meldTipPrefab: Prefab | null = null;
+
+    meldTipOffsetY: number = 10;
+
     // ── 内部状态 ──────────────────────────────────────────
 
     /** 已添加的 meldId 集合（防重复） */
@@ -68,6 +73,10 @@ export class PlayerMeldField extends Component {
     private _rows: Array<{ node: Node; usedWidth: number }> = [];
     /** meldId → blockNode，供 layOffToMeld 定位目标块 */
     private _blocks = new Map<number, Node>();
+    /** meldId → cards，供补牌检测使用 */
+    private _meldData = new Map<number, number[]>();
+    /** meldId → 补牌提示节点 */
+    private _meldTipNodes = new Map<number, Node>();
     /** bgNode 呼吸动画 tween 句柄 */
     private _bgTween: Tween<UIOpacity> | null = null;
     /** 从 prefab 读取的实际牌宽（缩放前） */
@@ -159,6 +168,7 @@ export class PlayerMeldField extends Component {
         const blockNode = this._createBlock(meld, !!fromWorldPos);
         this._fitBlock(blockNode, bw);
         this._blocks.set(meld.meldId, blockNode);
+        this._meldData.set(meld.meldId, [...meld.cards]);
 
         if (fromWorldPos) {
             this._animateMeldFlyIn(blockNode, fromWorldPos, meld.cards.length);
@@ -181,6 +191,45 @@ export class PlayerMeldField extends Component {
         this._rows = [];
         this._placedIds.clear();
         this._blocks.clear();
+        this._meldData.clear();
+        this.clearLayoffTips();
+    }
+
+    /** 获取当前所有已亮出牌组数据（供补牌候选检测使用） */
+    getMeldsData(): { meldId: number; cards: number[] }[] {
+        const result: { meldId: number; cards: number[] }[] = [];
+        for (const [meldId, cards] of this._meldData) {
+            result.push({ meldId, cards: [...cards] });
+        }
+        return result;
+    }
+
+    /** 在指定 meld 块上显示补牌提示节点（status=3 时调用） */
+    showLayoffTipOnMelds(meldIds: number[]): void {
+        this.clearLayoffTips();
+        if (!this.meldTipPrefab) {
+            console.warn('[PlayerMeldField] meldTipPrefab 未赋值，请在 Inspector 中拖入提示预制体');
+            return;
+        }
+        for (const meldId of meldIds) {
+            const blockNode = this._blocks.get(meldId);
+            if (!blockNode?.isValid) continue;
+            const tip = instantiate(this.meldTipPrefab);
+            // 用 _meldData 取准确牌数（避免 meldLight 子节点干扰 children.length）
+            const cardCount = this._meldData.get(meldId)?.length ?? 1;
+            const centerX   = this._cw / 2 + (cardCount > 1 ? (cardCount - 1) * this._step / 2 : 0);
+            tip.setPosition(centerX, this._ch / 2 + this.meldTipOffsetY, 0);
+            blockNode.addChild(tip);
+            this._meldTipNodes.set(meldId, tip);
+        }
+    }
+
+    /** 清除所有 meld 块上的补牌提示节点 */
+    clearLayoffTips(): void {
+        for (const [, tipNode] of this._meldTipNodes) {
+            if (tipNode.isValid) tipNode.destroy();
+        }
+        this._meldTipNodes.clear();
     }
 
     /**
@@ -199,6 +248,11 @@ export class PlayerMeldField extends Component {
         const cw         = this._cw;
         const cardCount  = blockNode.children.length;
         const clampedIdx = Math.max(0, Math.min(insertIndex, cardCount));
+
+        // 同步 meldData 记录
+        const existingCards = this._meldData.get(meldId) ?? [];
+        existingCards.splice(clampedIdx, 0, newCard);
+        this._meldData.set(meldId, existingCards);
 
         const CARD_DUR     = 0.18;
         const CARD_STAGGER = 0.04;
@@ -477,9 +531,9 @@ export class PlayerMeldField extends Component {
         for (let i = 0; i < cardCount; i++) {
             const card = blockNode.children[i];
             tween(card)
-                .delay(i * 0.06)
-                .to(0.1, { scale: pop  }, { easing: 'quadOut' })
-                .to(0.1, { scale: normal }, { easing: 'quadIn'  })
+                .delay(i * 0.03)
+                .to(0.05, { scale: pop  }, { easing: 'quadOut' })
+                .to(0.05, { scale: normal }, { easing: 'quadIn'  })
                 .start();
         }
     }

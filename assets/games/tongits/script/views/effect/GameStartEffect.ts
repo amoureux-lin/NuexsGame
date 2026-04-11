@@ -33,15 +33,15 @@ export class GameStartEffect extends Component {
     // ── 配置常量 ──────────────────────────────────────────
 
     /** 每个座位发射的金币数量 */
-    private readonly COINS_PER_SEAT = 8;
+    private readonly COINS_PER_SEAT = 10;
     /** Phase1 单个金币飞行时长（秒） */
-    private readonly FLY_TO_CENTER_DUR = 0.25;
+    private readonly FLY_TO_CENTER_DUR = 0.15;
     /** Phase1 金币发射错开间隔（秒） */
     private readonly STAGGER = 0.03;
     /** Phase2 金币飞向图标时长 */
     private readonly FLY_TO_ICON_DUR = 0.3;
     /** Phase2 数字滚动时长 */
-    private readonly COUNTER_DUR = 0.3;
+    private readonly COUNTER_DUR = 0.2;
     /** 图标 bounce 放大倍数 */
     private readonly ICON_BOUNCE_SCALE = 1.35;
 
@@ -133,23 +133,17 @@ export class GameStartEffect extends Component {
                 return;
             }
 
-            let arrived = 0;
-            for (let i = 0; i < total; i++) {
-                const coin = coins[i];
+            // 所有金币同时飞向图标，飞行时长相同
+            for (const coin of coins) {
                 tween(coin)
-                    .delay(i * 0.02)
                     .to(this.FLY_TO_ICON_DUR,
                         { position: targetLocal },
                         { easing: 'quadOut' })
-                    .call(() => {
-                        this._recycleCoin(coin);
-                        arrived++;
-                        if (arrived === total) {
-                            this._bounceNode(this.coinIconTarget);
-                        }
-                    })
+                    .call(() => this._recycleCoin(coin))
                     .start();
             }
+            // 飞行结束时 bounce 图标
+            this.scheduleOnce(() => this._bounceNode(this.coinIconTarget), this.FLY_TO_ICON_DUR);
 
             // 数字滚动与飞行并行，两者都完成后 resolve
             let counterDone = false;
@@ -157,9 +151,8 @@ export class GameStartEffect extends Component {
             const tryResolve = () => { if (counterDone && flyDone) resolve(); };
 
             this._animateCounter(potAmount, () => { counterDone = true; tryResolve(); });
-            // 飞行最长时长 = 最后一枚延迟 + 飞行时长
             this.scheduleOnce(() => { flyDone = true; tryResolve(); },
-                (total - 1) * 0.02 + this.FLY_TO_ICON_DUR + 0.1);
+                this.FLY_TO_ICON_DUR + 0.1);
         });
     }
 
