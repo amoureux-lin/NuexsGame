@@ -74,4 +74,6 @@ export const TongitsEvents = {
     CMD_DROP_BTN: 'tongits:cmd:dropBtn',
     /** Dump 按钮点击（UI信号，TongitsView 填入真实 card 后再发 CMD_DISCARD） */
     CMD_DUMP_BTN: 'tongits:cmd:dumpBtn',
+    /** Sapaw 按钮点击（UI信号，TongitsView 自动选目标后再发 CMD_LAY_OFF） */
+    CMD_SAPAW_BTN: 'tongits:cmd:sapawBtn',
 } as const;

@@ -41,6 +41,8 @@ export interface LayoffHints {
     tippedCards: Set<number>;
     /** 各玩家 meldField 中有候选的 meldId 列表（playerId → meldIds） */
     meldTipsByOwner: Map<number, number[]>;
+    /** 每张手牌对应的可补候选列表（card → [{playerId, meldId}]） */
+    cardCandidates: Map<number, { playerId: number; meldId: number }[]>;
 }
 
 /** ActionChange 事件的扩展 payload */
@@ -552,7 +554,7 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
 
     /** 空提示数据（无候选时使用） */
     private _emptyLayoffHints(): LayoffHints {
-        return { tippedCards: new Set(), meldTipsByOwner: new Map() };
+        return { tippedCards: new Set(), meldTipsByOwner: new Map(), cardCandidates: new Map() };
     }
 
     /**
@@ -563,6 +565,7 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
         if (handCards.length === 0) return this._emptyLayoffHints();
         const tippedCards     = new Set<number>();
         const meldTipsByOwner = new Map<number, number[]>();
+        const cardCandidates  = new Map<number, { playerId: number; meldId: number }[]>();
         for (const player of this.players) {
             const uid = player.playerInfo?.userId;
             if (!uid) continue;
@@ -570,14 +573,20 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
             if (meldData.length === 0) continue;
             const candidateMap = MeldValidator.findLayoffCandidates(handCards, meldData);
             if (candidateMap.size === 0) continue;
-            for (const card of candidateMap.keys()) tippedCards.add(card);
+            for (const [card, meldIds] of candidateMap) {
+                tippedCards.add(card);
+                if (!cardCandidates.has(card)) cardCandidates.set(card, []);
+                for (const meldId of meldIds) {
+                    cardCandidates.get(card)!.push({ playerId: uid, meldId });
+                }
+            }
             const affectedIds = new Set<number>();
             for (const ids of candidateMap.values()) {
                 for (const id of ids) affectedIds.add(id);
             }
             meldTipsByOwner.set(uid, [...affectedIds]);
         }
-        return { tippedCards, meldTipsByOwner };
+        return { tippedCards, meldTipsByOwner, cardCandidates };
     }
 
     /** 挑战响应 */

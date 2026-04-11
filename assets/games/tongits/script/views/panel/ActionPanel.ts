@@ -214,7 +214,7 @@ export class ActionPanel extends Component {
     }
 
     private _onSapaw(): void {
-        // 具体 card / targetPlayerId / targetMeldId 由 TongitsView 组装
-        Nexus.emit(TongitsEvents.CMD_LAY_OFF, { card: 0, targetPlayerId: 0, targetMeldId: 0 });
+        // 具体 card / targetPlayerId / targetMeldId 由 TongitsView._onCmdSapaw 组装
+        Nexus.emit(TongitsEvents.CMD_SAPAW_BTN);
     }
 }

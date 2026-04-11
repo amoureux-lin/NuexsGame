@@ -16,6 +16,7 @@
 
 import { _decorator, Component, Node, Prefab, instantiate, Vec3, tween, Tween, UITransform, UIOpacity, sp } from 'cc';
 import { CardNode, DEFAULT_CARD_W, DEFAULT_CARD_H, CARD_SPACING } from '../handcard/CardNode';
+import { FlyUtil } from '../../utils/FlyUtil';
 import type { Meld } from '../../proto/tongits';
 
 const { ccclass, property } = _decorator;
@@ -24,9 +25,9 @@ const { ccclass, property } = _decorator;
 const CARD_SCALE = 0.4;
 
 /** 飞入动画时长（秒） */
-const FLY_DUR = 0.25;
+const FLY_DUR = 0.3;
 /** 展开动画时长（秒） */
-const EXPAND_DUR = 0.1;
+const EXPAND_DUR = 0.14;
 /** 每张牌展开的错开时间（秒） */
 const EXPAND_STAGGER = 0.03;
 
@@ -63,7 +64,10 @@ export class PlayerMeldField extends Component {
     @property({ type: Prefab, tooltip: '补牌提示预制体（放置在可补牌的牌组块上）' })
     meldTipPrefab: Prefab | null = null;
 
-    meldTipOffsetY: number = 10;
+    meldTipOffsetY: number = 30;
+
+    /** 补牌提示节点被点击时的回调（meldId → 手动选定该牌组） */
+    onMeldTipClick: ((meldId: number) => void) | null = null;
 
     // ── 内部状态 ──────────────────────────────────────────
 
@@ -221,15 +225,24 @@ export class PlayerMeldField extends Component {
             tip.setPosition(centerX, this._ch / 2 + this.meldTipOffsetY, 0);
             blockNode.addChild(tip);
             this._meldTipNodes.set(meldId, tip);
+            // 绑定点击回调（闭包捕获 meldId）
+            const capturedId = meldId;
+            tip.on(Node.EventType.TOUCH_END, () => {
+                this.onMeldTipClick?.(capturedId);
+            }, this);
         }
     }
 
-    /** 清除所有 meld 块上的补牌提示节点 */
+    /** 清除所有 meld 块上的补牌提示节点，同时重置点击回调 */
     clearLayoffTips(): void {
         for (const [, tipNode] of this._meldTipNodes) {
-            if (tipNode.isValid) tipNode.destroy();
+            if (tipNode.isValid) {
+                tipNode.off(Node.EventType.TOUCH_END);
+                tipNode.destroy();
+            }
         }
         this._meldTipNodes.clear();
+        this.onMeldTipClick = null;
     }
 
     /**
@@ -244,9 +257,11 @@ export class PlayerMeldField extends Component {
         const blockNode = this._blocks.get(meldId);
         if (!blockNode || !blockNode.isValid) return;
 
-        const step       = this._step;
-        const cw         = this._cw;
-        const cardCount  = blockNode.children.length;
+        const step = this._step;
+        const cw   = this._cw;
+        // 用 _meldData 作为权威牌数，避免 blockNode.children 中残留的 tip/meldLight
+        // 节点（destroy() 在 CC 中延迟生效）导致 cardCount 多算
+        const cardCount  = this._meldData.get(meldId)?.length ?? 0;
         const clampedIdx = Math.max(0, Math.min(insertIndex, cardCount));
 
         // 同步 meldData 记录
@@ -283,19 +298,41 @@ export class PlayerMeldField extends Component {
             : 0;
 
         if (fromWorldPos) {
+            // 先放到目标本地坐标，读取世界坐标作为飞行终点，再移到起始位置
+            n.setPosition(finalX, 0, 0);
+            const toPos = n.worldPosition.clone();
             n.setWorldPosition(fromWorldPos);
-            n.setScale(0.5, 0.5, 1);
-            tween(n)
-                .delay(shiftEnd)
-                .to(FLY_DUR, { position: new Vec3(finalX, 0, 0), scale: new Vec3(CARD_SCALE, CARD_SCALE, 1) }, { easing: 'quadOut' })
-                .call(() => this._playMeldLight(blockNode, blockNode.children.length))
-                .start();
+            n.setScale(1, 1, 1);
+
+            const startFly = () => {
+                if (!n.isValid) return;
+                FlyUtil.fly(n, n.worldPosition.clone(), toPos, {
+                    duration:   FLY_DUR,
+                    arcHeight:  350,
+                    rotate:     1,
+                    easing:     'quadOut',
+                    onComplete: () => {
+                        if (n.isValid) {
+                            // FlyUtil 使用世界坐标，动画结束后回正本地坐标并重置旋转
+                            n.setPosition(finalX, 0, 0);
+                            n.setScale(CARD_SCALE, CARD_SCALE, 1);
+                            n.angle = 0;
+                        }
+                    },
+                });
+                // 并行缩放至正常牌大小
+                tween(n)
+                    .to(FLY_DUR, { scale: new Vec3(CARD_SCALE, CARD_SCALE, 1) }, { easing: 'quadOut' })
+                    .start();
+            };
+
+            if (shiftEnd > 0) {
+                tween(n).delay(shiftEnd).call(startFly).start();
+            } else {
+                startFly();
+            }
         } else {
             n.setPosition(finalX, 0, 0);
-            tween(n)
-                .delay(shiftEnd)
-                .call(() => this._playMeldLight(blockNode, blockNode.children.length))
-                .start();
         }
 
         // ── 3. 同行后续块平移 + 行溢出换行 ───────────────────────
@@ -329,7 +366,7 @@ export class PlayerMeldField extends Component {
         let virtualLen = rowNode.children.length;
         while (row.usedWidth > this._innerW + 0.5 && virtualLen > posInRow + 1) {
             const last  = rowNode.children[virtualLen - 1];
-            const lastW = this._blockW(last.children.length);
+            const lastW = this._blockW(this._cardCountForBlock(last));
             const sep   = virtualLen > 1 ? this.blockSpacing : 0;
             row.usedWidth -= (lastW + sep);
             overflowNodes.unshift(last); // 保持原顺序
@@ -375,7 +412,7 @@ export class PlayerMeldField extends Component {
             ? this._rows[nextRowIdx]
             : this._newRow();
 
-        const bW    = this._blockW(blockNode.children.length);
+        const bW    = this._blockW(this._cardCountForBlock(blockNode));
         const extra = nextRow.usedWidth > 0 ? this.blockSpacing : 0;
         const off   = nextRow.usedWidth + extra;
         const targetX = this.rtl
@@ -399,6 +436,14 @@ export class PlayerMeldField extends Component {
             nextRow.usedWidth -= (lastW + this.blockSpacing);
             this._moveBlockToNextRow(last, nextRowIdx + 1, dur);
         }
+    }
+
+    /** 通过反向查找 _blocks 得到 blockNode 对应的准确牌数（来自 _meldData） */
+    private _cardCountForBlock(blockNode: Node): number {
+        for (const [meldId, bn] of this._blocks) {
+            if (bn === blockNode) return this._meldData.get(meldId)?.length ?? 0;
+        }
+        return 0;
     }
 
     // ── 私有：布局 ────────────────────────────────────────
@@ -514,10 +559,14 @@ export class PlayerMeldField extends Component {
 
     private _playMeldLight(blockNode: Node, cardCount: number): void {
         if (!this.meldLightPrefab || !blockNode.isValid) return;
+        const rowNode = blockNode.parent;
+        if (!rowNode?.isValid) return;
+
         const light = instantiate(this.meldLightPrefab);
-        // 居中对齐 block（block 从 x=0 延伸到 bw）
-        light.setPosition(this._blockW(cardCount) / 2, 0, 0);
-        blockNode.addChild(light);
+        // 挂到 rowNode（与 blockNode 同坐标系），避免污染 blockNode.children
+        light.setPosition(blockNode.position.x + this._blockW(cardCount) / 2, 0, 0);
+        rowNode.addChild(light);
+
         const skeleton = light.getComponent(sp.Skeleton);
         if (!skeleton) { light.destroy(); return; }
         skeleton.setAnimation(0, 'drop_card', false);
@@ -525,14 +574,14 @@ export class PlayerMeldField extends Component {
             if (light.isValid) light.destroy();
         });
 
-        // 同步：每张牌错开放大再回弹
+        // 同步：每张牌错开放大再回弹（children 此时只有 CardNode，索引安全）
         const normal = new Vec3(CARD_SCALE, CARD_SCALE, 1);
         const pop    = new Vec3(CARD_SCALE * 1.3, CARD_SCALE * 1.3, 1);
         for (let i = 0; i < cardCount; i++) {
             const card = blockNode.children[i];
             tween(card)
                 .delay(i * 0.03)
-                .to(0.05, { scale: pop  }, { easing: 'quadOut' })
+                .to(0.05, { scale: pop    }, { easing: 'quadOut' })
                 .to(0.05, { scale: normal }, { easing: 'quadIn'  })
                 .start();
         }

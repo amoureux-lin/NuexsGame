@@ -35,11 +35,11 @@ export class GameStartEffect extends Component {
     /** 每个座位发射的金币数量 */
     private readonly COINS_PER_SEAT = 10;
     /** Phase1 单个金币飞行时长（秒） */
-    private readonly FLY_TO_CENTER_DUR = 0.15;
+    private readonly FLY_TO_CENTER_DUR = 0.2;
     /** Phase1 金币发射错开间隔（秒） */
-    private readonly STAGGER = 0.03;
+    private readonly STAGGER = 0.02;
     /** Phase2 金币飞向图标时长 */
-    private readonly FLY_TO_ICON_DUR = 0.3;
+    private readonly FLY_TO_ICON_DUR = 0.32;
     /** Phase2 数字滚动时长 */
     private readonly COUNTER_DUR = 0.2;
     /** 图标 bounce 放大倍数 */
@@ -60,6 +60,7 @@ export class GameStartEffect extends Component {
     ): void {
         this.node.active = true;
         this._phase1_flyToCenter(avatarWorldPositions)
+            .then(() => new Promise<void>(r => this.scheduleOnce(r, 0.1)))
             .then(() => this._phase2_flyToIcon(potAmount))
             .then(() => this._phase3_skeleton())
             .then(() => {

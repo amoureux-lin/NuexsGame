@@ -1489,6 +1489,17 @@ export class HandCardPanel extends Component {
 
     // ── 补牌提示 API ──────────────────────────────────────
 
+    /** 返回指定牌值对应节点的世界坐标（散牌区或牌组均查找），不存在返回 null */
+    getCardWorldPos(card: number): Vec3 | null {
+        const cn = this._ungroupNodes.get(card);
+        if (cn?.node.isValid) return cn.node.worldPosition.clone();
+        for (const gv of this._groupViews.values()) {
+            const found = gv.cardNodes.find(c => c.cardValue === card);
+            if (found?.node.isValid) return found.node.worldPosition.clone();
+        }
+        return null;
+    }
+
     /** 显示补牌提示（tipNode）：cardSet 中包含的手牌显示 tipNode，其余隐藏 */
     showLayoffTips(cardSet: Set<number>): void {
         this._layoffTipsSet = cardSet;
