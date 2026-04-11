@@ -35,13 +35,13 @@ export class GameStartEffect extends Component {
     /** 每个座位发射的金币数量 */
     private readonly COINS_PER_SEAT = 8;
     /** Phase1 单个金币飞行时长（秒） */
-    private readonly FLY_TO_CENTER_DUR = 0.35;
+    private readonly FLY_TO_CENTER_DUR = 0.25;
     /** Phase1 金币发射错开间隔（秒） */
-    private readonly STAGGER = 0.05;
+    private readonly STAGGER = 0.03;
     /** Phase2 金币飞向图标时长 */
-    private readonly FLY_TO_ICON_DUR = 0.4;
+    private readonly FLY_TO_ICON_DUR = 0.3;
     /** Phase2 数字滚动时长 */
-    private readonly COUNTER_DUR = 0.8;
+    private readonly COUNTER_DUR = 0.3;
     /** 图标 bounce 放大倍数 */
     private readonly ICON_BOUNCE_SCALE = 1.35;
 

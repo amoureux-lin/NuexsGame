@@ -49,6 +49,7 @@ export class CardNode extends Component {
     @property({ type: Sprite,      tooltip: '牌面/牌背显示 Sprite'  }) cardSprite:       Sprite      | null = null;
     @property({ type: SpriteAtlas, tooltip: '牌面图集'               }) pokerAtlas:       SpriteAtlas | null = null;
     @property({ type: SpriteFrame, tooltip: '牌背 SpriteFrame'       }) pokerNormalBacks: SpriteFrame | null = null;
+    @property({ type: Node,        tooltip: '遮罩节点'           }) maskNode:   Node        | null = null;
     @property({ type: Node,        tooltip: '选中高亮节点'           }) selectedBorder:   Node        | null = null;
     @property({ type: Node,        tooltip: 'Meld 提示高亮节点'     }) hintOverlay:      Node        | null = null;
 
@@ -78,6 +79,7 @@ export class CardNode extends Component {
     // ── 生命周期 ──────────────────────────────────────────
 
     onLoad(): void {
+        if (this.maskNode) this.maskNode.active = false;
         this._ensureVisuals();
         this.node.on(Node.EventType.TOUCH_START,  this._onTouchStart,  this);
         this.node.on(Node.EventType.TOUCH_MOVE,   this._onTouchMove,   this);
@@ -122,6 +124,13 @@ export class CardNode extends Component {
     }
 
     get isSelected(): boolean { return this._selected; }
+
+    /** 遮罩：true → 显示 maskNode（不能吃的牌等场景） */
+    setMasked(masked: boolean): void {
+        if (this.maskNode) this.maskNode.active = masked;
+    }
+
+    get isMasked(): boolean { return this.maskNode?.active ?? false; }
 
     /** Meld 提示态：true → 上移 + 蓝色蒙层 */
     setHinted(hinted: boolean): void {

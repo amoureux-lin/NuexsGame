@@ -454,6 +454,8 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
             status: 3,
         } as Partial<TongitsPlayerInfo>);
         this.tableAreaView?.setDeckDrawEnabled(false);
+        // 选择摸牌 → 退出吃牌模式
+        this._exitTakeMode();
         // popDeckCard + 落牌动画 由 HandCardPanel.addCard 统一处理
         if (data.drawnCard) this.handCardPanel?.addCard(data.drawnCard);
         this._refreshActionPanel();
@@ -482,13 +484,25 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     }
 
     protected onTakeRes(data: TakeCardRes): void {
-        this._syncPlayerField(this._perspectiveId, { handCardCount: data.handCardCount });
-        // 移除手牌区用于吃牌的散牌
-        for (const card of this._pendingTakeCards) {
-            this.handCardPanel?.removeCard(card);
-        }
-        this._pendingTakeCards = [];
+        // 吃牌成功 → 进入出牌阶段（status 3:Action），禁用摸牌/吃牌/挑战
+        this._syncPlayerField(this._perspectiveId, {
+            handCardCount: data.handCardCount,
+            status: 3,
+        } as Partial<TongitsPlayerInfo>);
+        this.tableAreaView?.setDeckDrawEnabled(false);
+        // 先退出吃牌模式（恢复 click handler、清除高亮），再修改手牌状态
         this._exitTakeMode();
+        this._lastDiscardCard = 0;
+        // 移除手牌区用于吃牌的牌（散牌或牌组内的牌，含牌组解散逻辑）
+        this.handCardPanel?.removeTakeCards(this._pendingTakeCards);
+        this._pendingTakeCards = [];
+        // 从 model 弃牌堆移除被吃走的牌，并刷新弃牌区视图
+        if (data.discard && this._gameInfo) {
+            this._gameInfo.discardPile = this._gameInfo.discardPile.filter(c => c !== data.discard);
+            const pile = this._gameInfo.discardPile;
+            this._gameInfo.discardCard = pile.length > 0 ? pile[pile.length - 1] : 0;
+            this.tableAreaView?.syncDiscard(this._gameInfo.discardPile);
+        }
         if (data.newMeld) {
             const selfSeat = this.seatManager?.getSeatByUserId(this._perspectiveId);
             selfSeat?.meldField?.addMeld(data.newMeld);
@@ -517,6 +531,9 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
                 } as Partial<TongitsPlayerInfo>);
             }
         }
+        // 选择发起挑战 → 退出吃牌模式，禁用摸牌/吃牌/挑战
+        this._exitTakeMode();
+        this.tableAreaView?.setDeckDrawEnabled(false);
         if (!this._isDealing && this._actionPlayerId === this._perspectiveId) {
             this._refreshActionPanel();
         }
@@ -566,7 +583,9 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         this.seatManager?.setContext(this._isLocalOwner, false);
         this.seatManager?.updateActionPlayer(0);
         for (let i = 0; i < 3; i++) {
-            this.seatManager?.getSeatByIndex(i)?.meldField?.stopTurnHighlight();
+            const meldField = this.seatManager?.getSeatByIndex(i)?.meldField;
+            meldField?.stopTurnHighlight();
+            meldField?.clear();
         }
         this._refreshAllSeats();
         if (this.tableAreaView) this.tableAreaView.node.active = false;
@@ -652,8 +671,8 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     /** 检测吃牌候选，若存在则进入吃牌模式并显示 discardTip */
     private _checkTakeMode(): void {
         if (!this._lastDiscardCard) { this._canTake = false; return; }
-        const ungroupCards = this.handCardPanel?.getUngroupCards() ?? [];
-        const candidates   = MeldValidator.findTakeCandidates(ungroupCards, this._lastDiscardCard);
+        const allCards   = this.handCardPanel?.getAllHandCards() ?? [];
+        const candidates = MeldValidator.findTakeCandidates(allCards, this._lastDiscardCard);
         if (candidates.length > 0) {
             this._canTake = true;
             this.handCardPanel?.enterTakeMode(candidates);

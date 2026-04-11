@@ -185,6 +185,44 @@ export class HandCardState {
         this._notify();
     }
 
+    /**
+     * 吃牌确认后批量移除手牌（散牌 + 牌组内的牌）。
+     *
+     * 牌组剩余处理规则：
+     *   - 0 张剩余 → 整组删除
+     *   - 1 张剩余 → 解散到散牌区
+     *   - 2+ 张剩余 → 保留为牌组（不重新判断合法性，保持原 isAuto 状态）
+     */
+    removeTakeCards(cards: number[]): void {
+        this._clearSelSilent();
+        const cardSet = new Set(cards);
+
+        // 从散牌区移除
+        this._ungroup = this._ungroup.filter(c => !cardSet.has(c));
+
+        // 处理各牌组
+        const removedGroupIds: string[] = [];
+        for (const g of this._groups) {
+            const removed    = g.cards.filter(c => cardSet.has(c));
+            if (removed.length === 0) continue;
+
+            const remaining  = g.cards.filter(c => !cardSet.has(c));
+            if (remaining.length === 0) {
+                // 整组被用完 → 删除
+                removedGroupIds.push(g.id);
+            } else if (remaining.length === 1) {
+                // 只剩 1 张 → 解散到散牌
+                this._ungroup = sortCards([...this._ungroup, ...remaining], this._sortMode);
+                removedGroupIds.push(g.id);
+            } else {
+                // 2+ 张 → 保留牌组，更新牌列表；不重新计算类型，由后续 autoSort 或用户手动处理
+                g.cards = remaining;
+            }
+        }
+        this._groups = this._groups.filter(g => !removedGroupIds.includes(g.id));
+        this._notify();
+    }
+
     // ── Group / Ungroup / Drop ─────────────────────────────
 
     /**

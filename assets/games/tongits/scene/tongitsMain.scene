@@ -3336,9 +3336,9 @@
       "__uuid__": "949593b6-9f97-4243-afd7-2f21c1032dc7",
       "__expectedType__": "cc.Prefab"
     },
-    "padding": 8,
-    "blockSpacing": 25,
-    "rowSpacing": 8,
+    "padding": 10,
+    "blockSpacing": 10,
+    "rowSpacing": 10,
     "rtl": false,
     "singleRow": true,
     "_id": "46Gh7ModVJOZOKY9CImQlY"

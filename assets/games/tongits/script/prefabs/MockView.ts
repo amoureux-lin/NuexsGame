@@ -42,12 +42,20 @@ const P3_ID   = 1003;
 const TURN_ORDER = [P3_ID, SELF_ID, P2_ID];
 
 /**
- * 吃牌测试场景：
+ * 吃牌测试场景（多种组合）：
  *   P3 弃出 TAKE_BAIT_CARD（301 = A♣）
- *   SELF 手牌含 SELF_TAKE_CARDS（101=A♠, 201=A♥），三张 A 组成 set 可吃
+ *
+ * 固定手牌 SELF_FIXED_HAND（12张）及可形成的组合：
+ *   ① [101, 201]       + 301 → A♠ A♥ A♣  set（3张）
+ *   ② [101, 401]       + 301 → A♠ A♦ A♣  set（3张）
+ *   ③ [201, 401]       + 301 → A♥ A♦ A♣  set（3张）
+ *   ④ [302, 303]       + 301 → A♣ 2♣ 3♣  顺子（3张）
+ *   ⑤ [101, 201, 401]  + 301 → 四张 A    set（4张）
+ *
+ *   其余：[104,105,106] 黑桃顺子可放牌；[204,205,206] 红心顺子可放牌；110 散牌
  */
-const TAKE_BAIT_CARD  = 301;
-const SELF_TAKE_CARDS = [101, 201];
+const TAKE_BAIT_CARD   = 301;
+const SELF_FIXED_HAND  = [101, 201, 401, 302, 303, 104, 105, 106, 204, 205, 206, 110];
 
 // ── 52 张牌完整牌库 ────────────────────────────────────────────
 const FULL_DECK: number[] = [
@@ -373,18 +381,16 @@ export class MockView extends UIPanel {
      *   P3 庄家回合会弃出 301(A♣)，SELF 可用手牌中的两张 A 吃牌。
      */
     clickInitGame(): void {
-        // 从牌堆中移除预留给吃牌场景的三张牌，再随机洗剩余 49 张
-        const reservedCards = [...SELF_TAKE_CARDS, TAKE_BAIT_CARD];
-        const baseDeck = shuffle(FULL_DECK.filter(c => !reservedCards.includes(c)));
+        const selfHand = [...SELF_FIXED_HAND];
 
-        // SELF：固定持有 101,201，再补 10 张随机牌，共 12 张
-        const selfHand = [...SELF_TAKE_CARDS, ...baseDeck.splice(0, 10)];
+        // 从剩余牌库中去掉 SELF 手牌和 P3 要弃的牌，剩下的洗牌后分给 P2/P3 并留作牌堆
+        const baseDeck = shuffle(FULL_DECK.filter(c => !selfHand.includes(c) && c !== TAKE_BAIT_CARD));
 
         // P2 消耗 12 张，P3 消耗 13 张（客户端不存明文手牌）
         baseDeck.splice(0, 12); // P2
         baseDeck.splice(0, 13); // P3
 
-        // 剩余 ~14 张作为牌堆（301 在 P3 手中，游戏开始后 P3 会弃出）
+        // 剩余作为牌堆（TAKE_BAIT_CARD 概念上在 P3 手中，游戏开始后 P3 会弃出）
         const remaining = [...baseDeck];
 
         this._actionIdx = TURN_ORDER.indexOf(P3_ID); // 庄家先手
@@ -399,7 +405,7 @@ export class MockView extends UIPanel {
             deck:     remaining,
         };
 
-        console.log('[Mock] 牌局已初始化（吃牌测试）', {
+        console.log('[Mock] 牌局已初始化', {
             selfHand,
             takeBaitCard: TAKE_BAIT_CARD,
             deckCount: remaining.length,
