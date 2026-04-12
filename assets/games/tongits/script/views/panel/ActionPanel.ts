@@ -55,7 +55,7 @@ export class ActionPanel extends Component {
     sapawBtn: Button = null!;
 
     @property({ type: Node, tooltip: '挑战按钮上的禁止标记节点（被补牌 ban 时显示）' })
-    fightBanNode: Node | null = null;;
+    fightBanNode: Node | null = null;
 
 
     // ── 公开方法（由 TongitsView 驱动） ──────────────────

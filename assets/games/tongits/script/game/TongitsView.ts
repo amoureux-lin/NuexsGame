@@ -284,7 +284,8 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
 
     protected onActionChange(data: ActionChangePayload): void {
         // 若该玩家本局被补牌，轮到他操作时解除 ban（清遮罩 + 移出集合）
-        if (this._layoffBannedIds.has(data.actionPlayerId)) {
+        // SELF 的 ban 要等到自己弃牌后才解除（onDiscardRes 处理），这里跳过
+        if (this._layoffBannedIds.has(data.actionPlayerId) && data.actionPlayerId !== this._perspectiveId) {
             this._layoffBannedIds.delete(data.actionPlayerId);
             this.seatManager?.getSeatByUserId(data.actionPlayerId)?.meldField?.clearAllMasks();
         }
@@ -311,8 +312,8 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
             const isSelfTurn = this._actionPlayerId === this._perspectiveId;
             // status===2(select)：可抽牌/吃牌/挑战 → 开启牌堆点击；其他阶段关闭
             this.handCardPanel?.setDeckDrawEnabled(isSelfTurn && data.status === 2);
-            // status===2：可 drop/dump（以及后续 spaw）→ 按选牌驱动开启按钮
-            if (isSelfTurn) this._refreshActionPanel();
+            // 每次回合切换都刷新面板：非自己回合时仅用于恢复 ban 标志（其他按钮因 status=INIT 保持禁用）
+            this._refreshActionPanel();
 
             // 吃牌模式：Model 已计算好候选，View 直接应用
             if (isSelfTurn && data.status === 2) {
@@ -386,6 +387,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         this._syncPlayerField(data.actionPlayerId, { handCardCount: data.handCardCount });
         // 目标玩家被补牌，记入 ban 集合
         this._layoffBannedIds.add(data.targetPlayerId);
+        this._refreshActionPanel();
         // 找到目标玩家的 meldField，飞入补牌动画（追加到末尾）
         const actionSeat = this.seatManager?.getSeatByUserId(data.actionPlayerId);
         const targetSeat = this.seatManager?.getSeatByUserId(data.targetPlayerId);
@@ -504,6 +506,12 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         if (data.discardedCard) this.handCardPanel?.removeCard(data.discardedCard);
         // 更新弃牌堆
         if (data.discardPile?.length) this.tableAreaView?.syncDiscard(data.discardPile);
+        // 弃牌完成才解除 ban（含清遮罩），让挑战禁止标记持续到打完牌
+        if (this._layoffBannedIds.has(this._perspectiveId)) {
+            this._layoffBannedIds.delete(this._perspectiveId);
+            this.seatManager?.getSeatByUserId(this._perspectiveId)?.meldField?.clearAllMasks();
+            this._refreshActionPanel();
+        }
     }
 
     protected onTakeRes(data: TakeResPayload): void {
@@ -797,10 +805,10 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
 
     /** 用当前缓存状态刷新 ActionPanel 的可交互状态 */
     private _refreshActionPanel(): void {
-        // 只允许”轮到自己”时由选牌状态驱动按钮开启
-        if (this._actionPlayerId !== this._perspectiveId) return;
-        const self     = this._players.find(p => p.playerInfo?.userId === this._perspectiveId) ?? null;
         const isBanned = this._layoffBannedIds.has(this._perspectiveId);
+        // 非自己回合：只有 ban 标志需要更新时才继续，其余按钮状态不变
+        if (this._actionPlayerId !== this._perspectiveId && !isBanned) return;
+        const self     = this._players.find(p => p.playerInfo?.userId === this._perspectiveId) ?? null;
         this.actionPanel?.refresh(self, this._gameInfo, this._handButtons ?? undefined, isBanned);
     }
 

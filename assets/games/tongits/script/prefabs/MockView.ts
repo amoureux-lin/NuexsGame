@@ -414,55 +414,94 @@ export class MockView extends UIPanel {
 
     // ── 按钮：游戏开始 ────────────────────────────────────────
 
-    roundMsg(){
-        console.log("roundMsg");
-        setTimeout(()=>{
-            console.log("============")
-            //通知p3玩家操作
-            this.roundP3Action();
-        },5000)
-    }
+    /**
+     * 多圈自动模拟流程（async 链式）：
+     *
+     * Round 1 · P3  : 摸牌 → meld[♠7♠8♠9] → 弃301
+     * Round 2 · SELF: 摸牌 → meld[♠4♠5♠6] → 弃302
+     * Round 3 · P2  : 摸牌 → layoff ♠3→SELF牌组(ban!) → 弃202   ← 测试禁用
+     * Round 4 · P3  : 摸牌 → 弃308（SELF 仍处于 ban）
+     * Round 5 · SELF: 回合开始(ban清除!) → 摸牌 → 弃303
+     */
+    async roundMsg(): Promise<void> {
+        const W = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+        const STEP = 1500;
 
-    roundP3Action(){
-        //通知p3玩家操作
+        await W(5000);
+
+        // ── Round 1: P3 ─────────────────────────────────────────
+        console.log('[Round 1] P3 action');
         this._actionIdx = TURN_ORDER.indexOf(P3_ID);
         this._sendActionChange();
-        //2s之后玩家摸牌
-        setTimeout(()=>{
-            this.roundP3Draw();
-        },1500)
-    }
+        await W(STEP);
 
-    roundP3Draw(){
-        //P3玩家摸牌
         this._sendDrawBroadcast(P3_ID);
-        //2s之后玩家打牌
-        setTimeout(()=>{
-            this.roundDrop();
-        },1500)
-    }
+        await W(STEP);
 
-    roundDrop(){
-        // P3 打出 ♠7♠8♠9 顺子（SELF 有 106=♠6 可以补入头部）
+        // P3 meld ♠7♠8♠9（meldId=1）
         this._sendMeldBroadcast(P3_ID, [107, 108, 109]);
-        setTimeout(()=>{
-            this.roundP3Discard();
-        },1500)
-    }
+        await W(STEP);
 
-    roundP3Discard(){
-        //玩家打牌（弃出 TAKE_BAIT_CARD，SELF 可吃）
         this._sendDiscardBroadcast(P3_ID, TAKE_BAIT_CARD);
-        setTimeout(()=>{
-            //通知下一家，也就是我自己操作
-            this.roundP1Action();
-        }, 1500)
-    }
+        await W(STEP);
 
-    roundP1Action(){
-        //通知下一家，也就是我自己操作
+        // ── Round 2: SELF ────────────────────────────────────────
+        console.log('[Round 2] SELF action');
         this._actionIdx = TURN_ORDER.indexOf(SELF_ID);
         this._sendActionChange();
+        await W(STEP);
+
+        this._send(MessageType.TONGITS_DRAW_RES, this._mockDraw(null));
+        await W(STEP);
+
+        // SELF meld ♥4♥5♥6（meldId=1）
+        this._send(MessageType.TONGITS_MELD_RES, this._mockMeld({ cards: [204, 205, 206] }));
+        await W(STEP);
+
+        // SELF 弃 302（2♣）
+        this._send(MessageType.TONGITS_DISCARD_RES, this._mockDiscard({ card: 302 }));
+        await W(STEP);
+
+        // ── Round 3: P2 ──────────────────────────────────────────
+        // P2 直接补到 SELF 的 meld[♥4♥5♥6] 头部 → [♥3♥4♥5♥6]，触发 SELF ban
+        console.log('[Round 3] P2 action → layoff to SELF → BAN!');
+        this._actionIdx = TURN_ORDER.indexOf(P2_ID);
+        this._sendActionChange();
+        await W(STEP);
+
+        this._sendDrawBroadcast(P2_ID);
+        await W(STEP);
+
+        // P2 layoff ♥3(203) 补到 SELF meld → SELF 被 ban，挑战按钮禁用
+        this._sendLayOffBroadcast(P2_ID, SELF_ID, 1, 203);
+        await W(STEP);
+
+        this._sendDiscardBroadcast(P2_ID, 202);
+        await W(STEP);
+
+        // ── Round 4: P3 ──────────────────────────────────────────
+        console.log('[Round 4] P3 action（SELF 仍处于 ban 状态）');
+        this._actionIdx = TURN_ORDER.indexOf(P3_ID);
+        this._sendActionChange();
+        await W(STEP);
+
+        this._sendDrawBroadcast(P3_ID);
+        await W(STEP);
+
+        this._sendDiscardBroadcast(P3_ID, 308);
+        await W(STEP);
+
+        // ── Round 5: SELF ────────────────────────────────────────
+        console.log('[Round 5] SELF action（ban 在此回合开始时清除，挑战按钮恢复）');
+        this._actionIdx = TURN_ORDER.indexOf(SELF_ID);
+        this._sendActionChange();
+        await W(STEP);
+
+        this._send(MessageType.TONGITS_DRAW_RES, this._mockDraw(null));
+        await W(STEP);
+
+        this._send(MessageType.TONGITS_DISCARD_RES, this._mockDiscard({ card: 303 }));
+        console.log('[Round 5] 完成，ban 已清除，挑战按钮应已恢复');
     }
 
     /**
@@ -721,6 +760,55 @@ export class MockView extends UIPanel {
     /** 模拟 P3 补牌到 P2 的第一个 meld（追加 404） */
     clickLayOffP3(): void {
         this._sendLayOffBroadcast(P3_ID, P2_ID, 1, 404);
+    }
+
+    /** 模拟 P2 补牌到 SELF 的第一个 meld（触发 SELF ban）
+     *  自动根据 meld 类型推断合法补牌；若 SELF 尚无牌组，先发 MELD_RES 创建 [♥4♥5♥6] */
+    clickLayOffToSelf(): void {
+        if (!this._gameData) this.clickInitGame();
+        const self = this._getPlayer(SELF_ID)!;
+
+        const doLayoff = () => {
+            const meld = self.displayedMelds[0];
+            if (!meld) { console.warn('[Mock] SELF 仍没有牌组，无法补牌'); return; }
+            const card = this._pickLayoffCard(meld.cards);
+            if (!card) { console.warn('[Mock] 找不到合法补牌（牌组已满）'); return; }
+            console.log(`[Mock] clickLayOffToSelf: meld=${meld.cards} → layoff card=${card}`);
+            this._sendLayOffBroadcast(P2_ID, SELF_ID, meld.meldId, card);
+        };
+
+        if (self.displayedMelds.length === 0) {
+            this._send(MessageType.TONGITS_MELD_RES, this._mockMeld({ cards: [204, 205, 206] }));
+            setTimeout(doLayoff, 600);
+        } else {
+            doLayoff();
+        }
+    }
+
+    /** 根据现有牌组自动选一张合法补牌（0 = 无可用） */
+    private _pickLayoffCard(cards: number[]): number {
+        if (cards.length === 0) return 0;
+        const ranks = cards.map(c => c % 100);
+        const firstRank = ranks[0];
+        const isSet = ranks.every(r => r === firstRank);
+
+        if (isSet) {
+            // 同点不同花：找一张同点位但花色不在牌组中的牌
+            const usedSuits = new Set(cards.map(c => Math.floor(c / 100)));
+            for (const suit of [1, 2, 3, 4]) {
+                if (!usedSuits.has(suit)) return suit * 100 + firstRank;
+            }
+            return 0; // 4 张已满
+        } else {
+            // 顺子：延伸头部（minRank-1）或尾部（maxRank+1），同花色
+            const sorted = [...cards].sort((a, b) => (a % 100) - (b % 100));
+            const suit    = sorted[0] - (sorted[0] % 100);
+            const minRank = sorted[0] % 100;
+            const maxRank = sorted[sorted.length - 1] % 100;
+            if (minRank > 1)  return suit + (minRank - 1);
+            if (maxRank < 13) return suit + (maxRank + 1);
+            return 0; // K 到 A 全连了
+        }
     }
 
     private _sendLayOffBroadcast(
