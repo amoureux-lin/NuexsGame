@@ -100,6 +100,8 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     private _pendingTakeCards: number[] = [];
     /** Model 最近计算的补牌提示（供选牌后展示 meld 候选用） */
     private _lastLayoffHints: LayoffHints | null = null;
+    /** 本局被补牌的玩家 id 集合（下次轮到该玩家操作时清除） */
+    private _layoffBannedIds: Set<number> = new Set();
 
     protected onLoad() {
         super.onLoad();
@@ -281,6 +283,11 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     }
 
     protected onActionChange(data: ActionChangePayload): void {
+        // 若该玩家本局被补牌，轮到他操作时解除 ban（清遮罩 + 移出集合）
+        if (this._layoffBannedIds.has(data.actionPlayerId)) {
+            this._layoffBannedIds.delete(data.actionPlayerId);
+            this.seatManager?.getSeatByUserId(data.actionPlayerId)?.meldField?.clearAllMasks();
+        }
         this.seatManager?.updateActionPlayer(data.actionPlayerId);
         this.seatManager?.updateCountdown(data.actionPlayerId, data.countdown);
 
@@ -377,6 +384,8 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
 
     protected onLayOff(data: LayOffCardBroadcast): void {
         this._syncPlayerField(data.actionPlayerId, { handCardCount: data.handCardCount });
+        // 目标玩家被补牌，记入 ban 集合
+        this._layoffBannedIds.add(data.targetPlayerId);
         // 找到目标玩家的 meldField，飞入补牌动画（追加到末尾）
         const actionSeat = this.seatManager?.getSeatByUserId(data.actionPlayerId);
         const targetSeat = this.seatManager?.getSeatByUserId(data.targetPlayerId);
@@ -521,6 +530,8 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     
     protected onLayOffRes(data: LayOffResPayload): void {
         this._syncPlayerField(this._perspectiveId, { handCardCount: data.handCardCount });
+        // 目标玩家被补牌，记入 ban 集合（含自己补自己的情形）
+        this._layoffBannedIds.add(data.targetPlayerId);
         // removeCard 之前拿到那张牌的实际世界坐标作为飞行起点
         const handWorldPos = data.cardAdded
             ? (this.handCardPanel?.getCardWorldPos(data.cardAdded) ?? this.handCardPanel?.node.worldPosition.clone())
@@ -597,6 +608,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         this._isGameStarted = false;
         this._actionPlayerId = 0;
         this._handButtons = null;
+        this._layoffBannedIds.clear();
         this.seatManager?.setContext(this._isLocalOwner, false);
         this.seatManager?.updateActionPlayer(0);
         for (let i = 0; i < 3; i++) {
@@ -785,10 +797,11 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
 
     /** 用当前缓存状态刷新 ActionPanel 的可交互状态 */
     private _refreshActionPanel(): void {
-        // 只允许“轮到自己”时由选牌状态驱动按钮开启
+        // 只允许”轮到自己”时由选牌状态驱动按钮开启
         if (this._actionPlayerId !== this._perspectiveId) return;
-        const self = this._players.find(p => p.playerInfo?.userId === this._perspectiveId) ?? null;
-        this.actionPanel?.refresh(self, this._gameInfo, this._handButtons ?? undefined);
+        const self     = this._players.find(p => p.playerInfo?.userId === this._perspectiveId) ?? null;
+        const isBanned = this._layoffBannedIds.has(this._perspectiveId);
+        this.actionPanel?.refresh(self, this._gameInfo, this._handButtons ?? undefined, isBanned);
     }
 
     // ── 私有工具 ─────────────────────────────────────────

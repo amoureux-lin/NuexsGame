@@ -1,4 +1,4 @@
-import { _decorator, Button, Component } from 'cc';
+import { _decorator, Button, Component, Node } from 'cc';
 import { Nexus } from 'db://nexus-framework/index';
 import { TongitsEvents } from '../../config/TongitsEvents';
 import type { TongitsPlayerInfo, GameInfo } from '../../proto/tongits';
@@ -54,6 +54,9 @@ export class ActionPanel extends Component {
     @property({ type: Button, tooltip: '补牌按钮（Sapaw）默认隐藏' })
     sapawBtn: Button = null!;
 
+    @property({ type: Node, tooltip: '挑战按钮上的禁止标记节点（被补牌 ban 时显示）' })
+    fightBanNode: Node | null = null;;
+
 
     // ── 公开方法（由 TongitsView 驱动） ──────────────────
 
@@ -69,6 +72,7 @@ export class ActionPanel extends Component {
         self: TongitsPlayerInfo | null,
         gameInfo: GameInfo | null,
         handButtons?: ButtonStates,
+        isBanned = false,
     ): void {
         const status       = self?.status ?? PLAYER_STATUS.INIT;
         const isFight      = self?.isFight ?? false;
@@ -99,8 +103,10 @@ export class ActionPanel extends Component {
         this._setActive(this.groupBtn, !canUngroup);
         this._setInteractable(this.groupBtn, canGroup);
 
-        // ── fight：isFight 或挑战进行中可点 ──────────────────────────────
-        this._setInteractable(this.fightBtn, isFight || (changeStatus >= 2 && changeStatus <= 4));
+        // ── fight：isBanned 时强制禁用并显示禁止标记，否则按正常逻辑 ──────
+        const canFight = !isBanned && (isFight || (changeStatus >= 2 && changeStatus <= 4));
+        this._setInteractable(this.fightBtn, canFight);
+        if (this.fightBanNode) this.fightBanNode.active = isBanned;
     }
 
     /**
@@ -123,6 +129,7 @@ export class ActionPanel extends Component {
      * 后续是否开启由 TongitsView 在"轮到自己 + 选牌变化/手牌满足条件"时再次 refresh 决定。
      */
     resetForTurn(): void {
+        if (this.fightBanNode) this.fightBanNode.active = false;
         for (const btn of [this.dropBtn, this.dumpBtn, this.fightBtn]) {
             this._setActive(btn, true);
             this._setInteractable(btn, false);

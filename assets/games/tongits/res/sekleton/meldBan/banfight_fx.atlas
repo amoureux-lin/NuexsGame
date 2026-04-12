@@ -1,0 +1,41 @@
+
+banfight_fx.png
+size: 388,317
+format: RGBA8888
+filter: Linear,Linear
+repeat: none
+Glow
+  rotate: false
+  xy: 2, 199
+  size: 116, 116
+  orig: 130, 130
+  offset: 7, 7
+  index: -1
+fx_cycle_a
+  rotate: false
+  xy: 120, 183
+  size: 132, 132
+  orig: 132, 132
+  offset: 0, 0
+  index: -1
+fx_cycle_a_blur
+  rotate: false
+  xy: 2, 41
+  size: 140, 140
+  orig: 142, 142
+  offset: 1, 1
+  index: -1
+fx_cycle_innerglow
+  rotate: false
+  xy: 254, 183
+  size: 132, 132
+  orig: 132, 132
+  offset: 0, 0
+  index: -1
+hand_blck
+  rotate: true
+  xy: 144, 2
+  size: 179, 196
+  orig: 187, 210
+  offset: 4, 10
+  index: -1

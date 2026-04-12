@@ -64,6 +64,9 @@ export class PlayerMeldField extends Component {
     @property({ type: Prefab, tooltip: '补牌提示预制体（放置在可补牌的牌组块上）' })
     meldTipPrefab: Prefab | null = null;
 
+    @property({ type: Prefab, tooltip: '补牌禁用特效 skeleton 预制体（补牌落位后在牌组中心播放一次）' })
+    layoffBanPrefab: Prefab | null = null;
+
     meldTipOffsetY: number = 30;
 
     /** 补牌提示节点被点击时的回调（meldId → 手动选定该牌组） */
@@ -233,6 +236,16 @@ export class PlayerMeldField extends Component {
         }
     }
 
+    /** 清除所有牌组中所有牌的遮罩（补牌 ban 解除时调用） */
+    clearAllMasks(): void {
+        for (const blockNode of this._blocks.values()) {
+            if (!blockNode.isValid) continue;
+            for (const child of blockNode.children) {
+                child.getComponent(CardNode)?.setMasked(false);
+            }
+        }
+    }
+
     /** 清除所有 meld 块上的补牌提示节点，同时重置点击回调 */
     clearLayoffTips(): void {
         for (const [, tipNode] of this._meldTipNodes) {
@@ -262,7 +275,8 @@ export class PlayerMeldField extends Component {
         // 用 _meldData 作为权威牌数，避免 blockNode.children 中残留的 tip/meldLight
         // 节点（destroy() 在 CC 中延迟生效）导致 cardCount 多算
         const cardCount  = this._meldData.get(meldId)?.length ?? 0;
-        const clampedIdx = Math.max(0, Math.min(insertIndex, cardCount));
+        // 服务端不下发插入位置，根据牌值自动计算排序后的插入点
+        const clampedIdx = this._computeLayoffInsertIndex(meldId, newCard);
 
         // 同步 meldData 记录
         const existingCards = this._meldData.get(meldId) ?? [];
@@ -273,13 +287,18 @@ export class PlayerMeldField extends Component {
         const CARD_STAGGER = 0.04;
         const REFLOW_DUR   = 0.22;
 
-        // ── 1. 目标块内：index >= clampedIdx 的牌逐个右移 ─────────
+        // ── 1. 目标块内：index >= clampedIdx 的牌逐个右移，同时显示遮罩 ──
         for (let i = clampedIdx; i < cardCount; i++) {
             const card = blockNode.children[i];
+            card.getComponent(CardNode)?.setMasked(true);
             tween(card)
                 .delay((i - clampedIdx) * CARD_STAGGER)
                 .to(CARD_DUR, { position: new Vec3(cw / 2 + (i + 1) * step, 0, 0) }, { easing: 'quadOut' })
                 .start();
+        }
+        // clampedIdx 之前的既有牌也要显示遮罩
+        for (let i = 0; i < clampedIdx; i++) {
+            blockNode.children[i].getComponent(CardNode)?.setMasked(true);
         }
 
         // ── 2. 创建新牌节点，插入到正确 siblingIndex ─────────────
@@ -308,7 +327,7 @@ export class PlayerMeldField extends Component {
                 if (!n.isValid) return;
                 FlyUtil.fly(n, n.worldPosition.clone(), toPos, {
                     duration:   FLY_DUR,
-                    arcHeight:  350,
+                    arcHeight:  150,
                     rotate:     1,
                     easing:     'quadOut',
                     onComplete: () => {
@@ -317,6 +336,9 @@ export class PlayerMeldField extends Component {
                             n.setPosition(finalX, 0, 0);
                             n.setScale(CARD_SCALE, CARD_SCALE, 1);
                             n.angle = 0;
+                            cn.setMasked(true);
+                            const newCount = this._meldData.get(meldId)?.length ?? 0;
+                            this._playLayoffBan(blockNode, newCount);
                         }
                     },
                 });
@@ -333,6 +355,9 @@ export class PlayerMeldField extends Component {
             }
         } else {
             n.setPosition(finalX, 0, 0);
+            cn.setMasked(true);
+            const newCount = this._meldData.get(meldId)?.length ?? 0;
+            this._playLayoffBan(blockNode, newCount);
         }
 
         // ── 3. 同行后续块平移 + 行溢出换行 ───────────────────────
@@ -444,6 +469,31 @@ export class PlayerMeldField extends Component {
             if (bn === blockNode) return this._meldData.get(meldId)?.length ?? 0;
         }
         return 0;
+    }
+
+    /**
+     * 根据牌值自动计算补牌的插入位置。
+     * - 顺子组（同花色连续点数）：按点数升序找插入点
+     * - 刻子组（同点数不同花色）：追加到末尾
+     *
+     * 编码规则：suit*100 + rank，rank = card % 100，suit = Math.floor(card/100)
+     */
+    private _computeLayoffInsertIndex(meldId: number, newCard: number): number {
+        const cards = this._meldData.get(meldId) ?? [];
+        if (cards.length === 0) return 0;
+
+        const newRank   = newCard % 100;
+        const firstRank = cards[0] % 100;
+
+        // 刻子判断：所有牌点数相同
+        const isSet = cards.every(c => c % 100 === firstRank);
+        if (isSet) return cards.length;
+
+        // 顺子：按点数升序找插入位置
+        for (let i = 0; i < cards.length; i++) {
+            if (newRank < cards[i] % 100) return i;
+        }
+        return cards.length;
     }
 
     // ── 私有：布局 ────────────────────────────────────────
@@ -585,5 +635,34 @@ export class PlayerMeldField extends Component {
                 .to(0.05, { scale: normal }, { easing: 'quadIn'  })
                 .start();
         }
+    }
+
+    /**
+     * 补牌禁用特效：在目标 meld 块中心播放一次 skeleton 动画。
+     * 挂到 rowNode 避免污染 blockNode.children。
+     *
+     * @param blockNode    目标 meld 块节点
+     * @param newCardCount 补牌后该组的总牌数
+     */
+    private _playLayoffBan(blockNode: Node, newCardCount: number): void {
+        if (!this.layoffBanPrefab || !blockNode.isValid) return;
+
+        const effect = instantiate(this.layoffBanPrefab);
+        // 与 meldTipPrefab 相同：挂到 blockNode，坐标为牌组内视觉中心
+        effect.setPosition(this._blockW(newCardCount) / 2, 0, 0);
+        effect.setScale(1.5,1.5);
+        blockNode.addChild(effect);
+        console.log("blockNode:",blockNode.children)
+
+        const skeleton = effect.getComponent(sp.Skeleton);
+        if (!skeleton) {
+            console.warn('[PlayerMeldField] layoffBanPrefab 上找不到 sp.Skeleton 组件');
+            effect.destroy();
+            return;
+        }
+        skeleton.setAnimation(0, 'ban_fight', false);
+        skeleton.setCompleteListener(() => {
+            if (effect.isValid) effect.destroy();
+        });
     }
 }
