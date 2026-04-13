@@ -198,6 +198,9 @@ export class TableAreaView extends Component {
 
     // ── 公开 API：弃牌堆 ──────────────────────────────────
 
+    /** 当前弃牌堆（从底到顶） */
+    get discardPile(): number[] { return [...this._discardPile]; }
+
     /**
      * 同步弃牌堆展示（收到 DiscardCardBroadcast 时调用）。
      * @param cards        从底到顶的完整弃牌堆

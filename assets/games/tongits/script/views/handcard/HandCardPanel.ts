@@ -369,6 +369,8 @@ export class HandCardPanel extends Component {
 
         const doFinalize = async () => {
             this._pendingUngroupCount--;
+            // 摸牌进入 ACTION 阶段，清除 SELECT 阶段遗留的选中状态
+            this._state.clearSelection();
             if (this._state.autoGroupEnabled) {
                 // flyNode 加入 _ungroupRoot 一起参与合并动画，_animateMergeExpand 统一清理
                 if (flyNode?.isValid) {
@@ -503,6 +505,7 @@ export class HandCardPanel extends Component {
             if (cn) { const wp = cn.node.getWorldPosition(); sumX += wp.x; sumY += wp.y; count++; }
         }
         if (count > 0) this._sapawGroupWorldPos = new Vec3(sumX / count, sumY / count, 0);
+        // createGroup 内部已调用 _clearSelSilent，选中随之清除
         this._state.createGroup();
     }
 
@@ -514,6 +517,7 @@ export class HandCardPanel extends Component {
             const gv = this._groupViews.get(gId);
             if (gv) this._sapawUngroupWorldPos = gv.node.getWorldPosition().clone();
         }
+        // dissolveGroup 内部已调用 _clearSelSilent，选中随之清除
         this._state.dissolveGroup();
     }
 
@@ -521,6 +525,7 @@ export class HandCardPanel extends Component {
      * Drop 按钮：返回被 Drop 的 GroupData（供 TongitsView 发送服务端请求）
      */
     onDropBtn(): GroupData | null {
+        // dropGroup 内部已调用 _clearSelSilent + _notify，选中随之清除
         return this._state.dropGroup();
     }
 
@@ -530,6 +535,7 @@ export class HandCardPanel extends Component {
     onDumpBtn(): number | null {
         const card = this._state.snapshot().buttonStates.selectedSingleCard;
         if (card == null) return null;
+        // removeCard 内部已调用 _clearSelSilent，选中（含其余牌）随之全部清除
         this._state.removeCard(card);
         return card;
     }
@@ -546,6 +552,8 @@ export class HandCardPanel extends Component {
      */
     enterTakeMode(candidates: number[][]): void {
         if (candidates.length === 0) return;
+        // 进入吃牌模式前清除普通选中，避免与吃牌高亮叠加
+        this._state.clearSelection();
         this._inTakeMode           = true;
         this._takeCandidates       = candidates;
         this._selectedCandidateIdx = 0;
@@ -566,6 +574,8 @@ export class HandCardPanel extends Component {
             gv.onGroupClick = (id) => this._state.toggleGroup(id);
         }
         this._clearTakeHighlight();
+        // _clearTakeHighlight 只清视觉，_state 层的选中也一并清除
+        this._state.clearSelection();
     }
 
     /** 返回当前选中候选组的手牌值列表（供 TongitsView 发请求时使用） */
@@ -977,6 +987,15 @@ export class HandCardPanel extends Component {
         for (const root of [this._groupRoot, this._ungroupRoot, this._dragLayer, this._markerOverlayRoot]) {
             Tween.stopAllByTarget(root);
         }
+        // 停止 gv.node / 组内牌 / 散牌节点上的残留 tween（如 clearSelection 触发的 _doLayout）
+        // 否则这些 tween 会与 merge tween 竞争同一节点的 position，导致牌组不合并
+        for (const gv of this._groupViews.values()) {
+            Tween.stopAllByTarget(gv.node);
+            for (const cn of gv.cardNodes) Tween.stopAllByTarget(cn.node);
+        }
+        for (const [, cn] of this._ungroupNodes) {
+            Tween.stopAllByTarget(cn.node);
+        }
         for (const root of [this._groupRoot, this._ungroupRoot]) {
             if (root.position.x !== 0 || root.position.y !== 0) {
                 const worldPositions = [...root.children].map(c => c.getWorldPosition().clone());
@@ -1012,7 +1031,7 @@ export class HandCardPanel extends Component {
         }
 
         // 合并完成后短暂停顿，再展开
-        await delay(60);
+        await delay(80);
         // 合并完成，展开前通知外部（ActionPanel 在此时机显示按钮）
         this.onDealMergeComplete?.();
 
@@ -1042,6 +1061,16 @@ export class HandCardPanel extends Component {
         // 发牌合并展开固定用 BY_RANK，不受玩家当前排序设置影响
         this._dealReorderDur = DEAL_REORDER_DUR;
         this._state.setCards(newCards, SortMode.BY_RANK);
+
+        // setCards 触发 _syncGroupViews 会立即挂回 groupMarker，需在展开动画结束后才显示
+        for (const gv of this._groupViews.values()) {
+            if (gv.groupMarker?.node) gv.groupMarker.node.active = false;
+        }
+        await delay(DEAL_REORDER_DUR * 1000);
+        for (const gv of this._groupViews.values()) {
+            gv.syncMarkerLayout();
+            if (gv.groupMarker?.node) gv.groupMarker.node.active = true;
+        }
     }
 
     private _worldToLocal(worldPos: Vec3): Vec3 {

@@ -30,7 +30,7 @@ export class ButtonEx extends Component {
     disabledSprite: SpriteFrame = null!;
 
     @property({ tooltip: '防抖冷却时间（秒），0 表示不防抖' })
-    cooldown: number = 0.5;
+    cooldown: number = 0.3;
 
     private _button: Button = null!;
     private _interactable: boolean = true;

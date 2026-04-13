@@ -184,6 +184,63 @@ export class PlayerMeldField extends Component {
         }
     }
 
+    /**
+     * 预测下一个 Meld 块将要出现的世界坐标中心（用于飞牌落点）。
+     * 不修改任何状态，纯计算。
+     *
+     * @param cardCount 即将添加的牌组张数
+     */
+    calcNextMeldWorldPos(cardCount: number): Vec3 {
+        const bw = this._blockW(cardCount);
+
+        // ── 1. 确定目标行及其已用宽度（同 _fitBlock 逻辑）──────
+        let targetRowIdx  = this._rows.length; // 默认新行
+        let rowUsedWidth  = 0;
+
+        if (this.singleRow) {
+            targetRowIdx = 0;
+            rowUsedWidth = this._rows[0]?.usedWidth ?? 0;
+        } else {
+            for (let i = 0; i < this._rows.length; i++) {
+                const row   = this._rows[i];
+                const extra = row.usedWidth > 0 ? this.blockSpacing : 0;
+                if (row.usedWidth + extra + bw <= this._innerW) {
+                    targetRowIdx = i;
+                    rowUsedWidth = row.usedWidth;
+                    break;
+                }
+            }
+        }
+
+        // ── 2. 计算 block 在 rowNode 内的 x（同 _placeInRow 逻辑）
+        const extra   = rowUsedWidth > 0 ? this.blockSpacing : 0;
+        const offset  = rowUsedWidth + extra;
+        let blockX: number;
+        if (this.singleRow) {
+            blockX = -(this._innerW / 2) + offset;
+        } else if (this.rtl) {
+            blockX = -(this.padding + offset + bw);
+        } else {
+            blockX = this.padding + offset;
+        }
+
+        // ── 3. 计算 rowNode 在 contentNode 内的 y（同 _newRow 逻辑）
+        const rowY = targetRowIdx < this._rows.length
+            ? this._rows[targetRowIdx].node.position.y
+            : this.singleRow
+                ? 0
+                : -(this.padding + this._ch / 2) - targetRowIdx * (this._ch + this.rowSpacing);
+
+        // ── 4. block 中心在 contentNode 局部坐标（rowNode.x=0，blockNode.y=0）
+        const localCenterX = blockX + bw / 2;
+        const localCenterY = rowY;
+
+        // ── 5. 转换为世界坐标 ─────────────────────────────────────
+        const world = new Vec3();
+        Vec3.transformMat4(world, new Vec3(localCenterX, localCenterY, 0), this.contentNode.worldMatrix);
+        return world;
+    }
+
     /** 全量重建（重连 / 游戏恢复时调用） */
     setMelds(melds: Meld[]): void {
         this.clear();
@@ -285,7 +342,6 @@ export class PlayerMeldField extends Component {
 
         const CARD_DUR     = 0.18;
         const CARD_STAGGER = 0.04;
-        const REFLOW_DUR   = 0.22;
 
         // ── 1. 目标块内：index >= clampedIdx 的牌逐个右移，同时显示遮罩 ──
         for (let i = clampedIdx; i < cardCount; i++) {
@@ -311,10 +367,7 @@ export class PlayerMeldField extends Component {
         blockNode.addChild(n);
         n.setSiblingIndex(clampedIdx);
 
-        const finalX   = cw / 2 + clampedIdx * step;
-        const shiftEnd = cardCount > clampedIdx
-            ? (cardCount - clampedIdx - 1) * CARD_STAGGER + CARD_DUR
-            : 0;
+        const finalX = cw / 2 + clampedIdx * step;
 
         if (fromWorldPos) {
             // 先放到目标本地坐标，读取世界坐标作为飞行终点，再移到起始位置
@@ -332,13 +385,15 @@ export class PlayerMeldField extends Component {
                     easing:     'quadOut',
                     onComplete: () => {
                         if (n.isValid) {
-                            // FlyUtil 使用世界坐标，动画结束后回正本地坐标并重置旋转
-                            n.setPosition(finalX, 0, 0);
+                            // 用 _meldData 当前索引动态计算落点，防止连续补牌时闭包 finalX 过期
+                            const cards   = this._meldData.get(meldId) ?? [];
+                            const curIdx  = cards.indexOf(newCard);
+                            const correctX = cw / 2 + (curIdx >= 0 ? curIdx : clampedIdx) * step;
+                            n.setPosition(correctX, 0, 0);
                             n.setScale(CARD_SCALE, CARD_SCALE, 1);
                             n.angle = 0;
                             cn.setMasked(true);
-                            const newCount = this._meldData.get(meldId)?.length ?? 0;
-                            this._playLayoffBan(blockNode, newCount);
+                            this._playLayoffBan(blockNode, cards.length);
                         }
                     },
                 });
@@ -348,11 +403,7 @@ export class PlayerMeldField extends Component {
                     .start();
             };
 
-            if (shiftEnd > 0) {
-                tween(n).delay(shiftEnd).call(startFly).start();
-            } else {
-                startFly();
-            }
+            startFly();
         } else {
             n.setPosition(finalX, 0, 0);
             cn.setMasked(true);

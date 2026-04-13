@@ -1,4 +1,4 @@
-import { _decorator, Vec3, tween } from 'cc';
+import { _decorator, Vec3, tween, Node } from 'cc';
 import { BaseGameView } from 'db://assets/script/base/BaseGameView';
 import type { LayoffHints, ActionChangePayload, DrawResPayload, MeldResPayload, TakeResPayload, LayOffResPayload } from './TongitsModel';
 import { Nexus } from 'db://nexus-framework/index';
@@ -34,6 +34,7 @@ import type {
 } from '../proto/tongits';
 import {GameStartEffect} from "db://assets/games/tongits/script/views/effect/GameStartEffect";
 import { FlyUtil } from '../utils/FlyUtil';
+import { CardNode, DEFAULT_CARD_W, CARD_SPACING } from '../views/handcard/CardNode';
 import { TableAreaView } from '../views/panel/TableAreaView';
 
 const { ccclass, property } = _decorator;
@@ -421,7 +422,11 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
             return;
         }
 
-        const flyCard = this.tableAreaView.makeDeckCard();
+        const flyCard   = this.tableAreaView.makeDeckCard();
+        const flyCardCn = flyCard.getComponent(CardNode);
+        const discardedCard = data.discardPile[data.discardPile.length - 1];
+        if (flyCardCn) { flyCardCn.setCard(discardedCard); flyCardCn.setFaceDown(false); }
+
         const parent  = this.tableAreaView.node.parent!;
         parent.addChild(flyCard);
         const fromPos = cardCountNode.getWorldPosition();
@@ -448,10 +453,99 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
 
     protected onTake(data: TakeCardBroadcast): void {
         this._syncPlayerField(data.playerId, { handCardCount: data.handCardCount });
-        if (data.newMeld) {
-            const seat = this.seatManager?.getSeatByUserId(data.playerId);
+        if (!data.newMeld) return;
+
+        const seat          = this.seatManager?.getSeatByUserId(data.playerId);
+        const discardPos    = this.tableAreaView?.discardNode?.getWorldPosition().clone();
+        const handPos       = seat?.cardCountNode?.getWorldPosition().clone();
+        // 提前算出新 block 实际落点（世界坐标中心），作为飞牌精确终点
+        const meldTargetPos = seat?.meldField?.calcNextMeldWorldPos(data.newMeld.cards.length)
+                           ?? seat?.meldField?.contentNode?.getWorldPosition().clone()
+                           ?? discardPos;
+
+        // 手牌中参与吃牌的张数（牌组总数 - 1 张弃牌）
+        const handCardCount = (data.newMeld.cards.length - 1);
+
+        if (!discardPos || !this.tableAreaView) {
+            // 降级：直接更新 UI
+            if (this.tableAreaView) {
+                this.tableAreaView.syncDiscard(
+                    this.tableAreaView.discardPile.filter(c => c !== data.discard));
+            }
             seat?.meldField?.addMeld(data.newMeld);
+            return;
         }
+
+        const FLY_DUR    = 0.35;
+        const MELD_SCALE = 0.4;                       // 与 PlayerMeldField.CARD_SCALE 保持一致
+        const CW         = DEFAULT_CARD_W * MELD_SCALE; // 单张牌缩放后宽度 = 32
+        const STEP       = CARD_SPACING   * MELD_SCALE; // 牌间距缩放后 = 25.6
+        const EXPAND_DUR     = 0.14;
+        const EXPAND_STAGGER = 0.03;
+        const parent = this.tableAreaView.node.parent!;
+
+        // 手牌中参与吃牌的牌值（牌组全部牌 - 弃牌那张）
+        const handCardIds = [...data.newMeld.cards];
+        const discardIdx  = handCardIds.indexOf(data.discard);
+        if (discardIdx !== -1) handCardIds.splice(discardIdx, 1);
+
+        // 牌起飞时立即更新弃牌堆 UI
+        const updated = this.tableAreaView.discardPile.filter(c => c !== data.discard);
+        this.tableAreaView.syncDiscard(updated);
+
+        // ── 两路飞牌都落地后展示新牌组 ───────────────────────────
+        let doneCount = 0;
+        const onOneDone = () => {
+            doneCount++;
+            if (doneCount < 2) return;
+            seat?.meldField?.addMeld(data.newMeld!);
+        };
+
+        const fromPos = handPos ?? discardPos;
+
+        // ── 1. 手牌 block 从 handPos 飞出（叠放起步，飞行中展开）──
+        const handBlock = new Node('HandFlyBlock');
+        parent.addChild(handBlock);
+        handBlock.setWorldPosition(fromPos);
+        handBlock.setScale(0.5, 0.5, 1);
+        for (let i = 0; i < handCardIds.length; i++) {
+            const n  = this.tableAreaView.makeDeckCard();
+            const cn = n.getComponent(CardNode);
+            if (cn) { cn.setCard(handCardIds[i]); cn.setFaceDown(false); }
+            n.setScale(MELD_SCALE, MELD_SCALE, 1);
+            n.setPosition(CW / 2, 0, 0); // 叠放：所有牌叠在同一位置
+            handBlock.addChild(n);
+        }
+        // block 整体飞行
+        FlyUtil.fly(handBlock, fromPos, meldTargetPos!, {
+            duration:   FLY_DUR,
+            arcHeight:  120,
+            easing:     'quadOut',
+            onComplete: () => { if (handBlock.isValid) handBlock.destroy(); onOneDone(); },
+        });
+        // block 飞行中放大至正常（0.5 → 1）
+        tween(handBlock).to(FLY_DUR, { scale: new Vec3(1, 1, 1) }, { easing: 'quadOut' }).start();
+        // 各张牌在 block 内从叠放位置展开
+        for (let i = 0; i < handCardIds.length; i++) {
+            tween(handBlock.children[i])
+                .delay(i * EXPAND_STAGGER)
+                .to(EXPAND_DUR, { position: new Vec3(CW / 2 + i * STEP, 0, 0) }, { easing: 'quadOut' })
+                .start();
+        }
+
+        // ── 2. 弃牌区顶牌单独飞向牌组（正面显示）────────────────
+        const discardFly = this.tableAreaView.makeDeckCard();
+        const discardCn  = discardFly.getComponent(CardNode);
+        if (discardCn) { discardCn.setCard(data.discard); discardCn.setFaceDown(false); }
+        parent.addChild(discardFly);
+        discardFly.setScale(1, 1, 1);
+        FlyUtil.fly(discardFly, discardPos, meldTargetPos!, {
+            duration:   FLY_DUR,
+            arcHeight:  80,
+            easing:     'quadOut',
+            onComplete: () => { if (discardFly.isValid) discardFly.destroy(); onOneDone(); },
+        });
+        tween(discardFly).to(FLY_DUR, { scale: new Vec3(MELD_SCALE, MELD_SCALE, 1) }, { easing: 'quadOut' }).start();
     }
 
     protected onChallenge(data: ChallengeBroadcast): void {

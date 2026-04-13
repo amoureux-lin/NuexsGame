@@ -17,7 +17,7 @@ import {
     TongitsPlayerInfo, GameInfo, PotInfo, Meld, PlayerResult,
     JoinRoomRes, GameStartBroadcast, ActionChangeBroadcast,
     DrawCardBroadcast, MeldCardBroadcast, LayOffCardBroadcast,
-    DiscardCardBroadcast, ChallengeBroadcast,
+    DiscardCardBroadcast, TakeCardBroadcast, ChallengeBroadcast,
     PKBroadcast, BeforeResultBroadcast, GameResultBroadcast,
     RoomResetBroadcast, RoomInfo,
     DrawCardRes, MeldCardRes, DiscardCardRes, TakeCardRes, LayOffCardRes, ChallengeRes,
@@ -168,6 +168,9 @@ export class MockView extends UIPanel {
         deck:     number[];
     } | null = null;
 
+    /** roundMsg 等待自己弃牌时设置；_mockDiscard 调用后触发 */
+    private _selfDiscardResolver: (() => void) | null = null;
+
     /** 当前操作玩家在 TURN_ORDER 中的索引 */
     private _actionIdx: number = 0;
 
@@ -288,6 +291,12 @@ export class MockView extends UIPanel {
             this._gameData.gameInfo.discardCard = req.card;
         }
         console.log(`[Mock←RES] DISCARD  card=${req.card}`);
+        // 若 roundMsg 正在等待自己弃牌，通知它继续
+        if (this._selfDiscardResolver) {
+            const resolve = this._selfDiscardResolver;
+            this._selfDiscardResolver = null;
+            resolve();
+        }
         return {
             discardedCard:  req.card,
             unlockMelds:    [],
@@ -423,85 +432,95 @@ export class MockView extends UIPanel {
      * Round 4 · P3  : 摸牌 → 弃308（SELF 仍处于 ban）
      * Round 5 · SELF: 回合开始(ban清除!) → 摸牌 → 弃303
      */
+    /** 等待自己弃牌（由 _mockDiscard 触发） */
+    private _waitForSelfDiscard(): Promise<void> {
+        return new Promise<void>(resolve => {
+            this._selfDiscardResolver = resolve;
+        });
+    }
+
     async roundMsg(): Promise<void> {
-        const W = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
-        const STEP = 1500;
+        const W     = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+        const STEP  = 1200;  // AI 操作间隔（ms）
+        const LOOPS = 5;     // 最多循环圈数
 
-        await W(5000);
+        // AI 玩家弃牌轮换池
+        const AI_DISCARDS: Record<number, number[]> = {
+            [P3_ID]: [301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 313],
+            [P2_ID]: [401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411, 412, 413],
+        };
+        const discardCursor: Record<number, number> = { [P3_ID]: 0, [P2_ID]: 0 };
+        const nextDiscard = (pid: number) =>
+            AI_DISCARDS[pid][discardCursor[pid]++ % AI_DISCARDS[pid].length];
 
-        // ── Round 1: P3 ─────────────────────────────────────────
-        console.log('[Round 1] P3 action');
-        this._actionIdx = TURN_ORDER.indexOf(P3_ID);
-        this._sendActionChange();
-        await W(STEP);
+        // P3 吃 P2 弃牌：每隔一圈吃一次（loop 为奇数时吃）
+        // P2 弃 4XX → P3 吃 [1XX, 2XX, 4XX]（同点数三张，模拟合法 set）
+        const p3TakesP2Discard = (loop: number, discardCard: number): boolean =>
+            loop % 2 === 1 && discardCard > 400 && discardCard <= 413;
 
-        this._sendDrawBroadcast(P3_ID);
-        await W(STEP);
+        await W(3000);
 
-        // P3 meld ♠7♠8♠9（meldId=1）
-        this._sendMeldBroadcast(P3_ID, [107, 108, 109]);
-        await W(STEP);
+        const startIdx = TURN_ORDER.indexOf(P3_ID); // P3 为庄先手
 
-        this._sendDiscardBroadcast(P3_ID, TAKE_BAIT_CARD);
-        await W(STEP);
+        for (let loop = 0; loop < LOOPS; loop++) {
+            for (let t = 0; t < TURN_ORDER.length; t++) {
+                const tIdx = (startIdx + t) % TURN_ORDER.length;
+                const pid  = TURN_ORDER[tIdx];
 
-        // ── Round 2: SELF ────────────────────────────────────────
-        console.log('[Round 2] SELF action');
-        this._actionIdx = TURN_ORDER.indexOf(SELF_ID);
-        this._sendActionChange();
-        await W(STEP);
+                if ((this._gameData?.deck.length ?? 0) === 0) {
+                    console.log('[roundMsg] 牌堆耗尽，停止模拟');
+                    return;
+                }
 
-        this._send(MessageType.TONGITS_DRAW_RES, this._mockDraw(null));
-        await W(STEP);
+                console.log(`[Loop ${loop + 1} | ${t + 1}/3] Player ${pid}`);
+                this._actionIdx = tIdx;
+                this._sendActionChange();
+                await W(STEP);
 
-        // SELF meld ♥4♥5♥6（meldId=1）
-        this._send(MessageType.TONGITS_MELD_RES, this._mockMeld({ cards: [204, 205, 206] }));
-        await W(STEP);
+                if (pid === SELF_ID) {
+                    // ── 自己回合：发 DrawRes，等待真实弃牌 ──────────
+                    this._send(MessageType.TONGITS_DRAW_RES, this._mockDraw(null));
+                    console.log('[roundMsg] 等待自己弃牌...');
+                    await this._waitForSelfDiscard();
+                    await W(500);
 
-        // SELF 弃 302（2♣）
-        this._send(MessageType.TONGITS_DISCARD_RES, this._mockDiscard({ card: 302 }));
-        await W(STEP);
+                } else if (pid === P3_ID) {
+                    // ── P3 回合 ───────────────────────────────────────
+                    const topDiscard = this._gameData?.gameInfo.discardCard ?? 0;
 
-        // ── Round 3: P2 ──────────────────────────────────────────
-        // P2 直接补到 SELF 的 meld[♥4♥5♥6] 头部 → [♥3♥4♥5♥6]，触发 SELF ban
-        console.log('[Round 3] P2 action → layoff to SELF → BAN!');
-        this._actionIdx = TURN_ORDER.indexOf(P2_ID);
-        this._sendActionChange();
-        await W(STEP);
+                    if (loop === 0 && t === 0) {
+                        // 第一圈首回合：meld + 弃出吃牌诱饵供 SELF 测试吃牌
+                        this._sendDrawBroadcast(P3_ID);
+                        await W(STEP);
+                        this._sendMeldBroadcast(P3_ID, [107, 108, 109]);
+                        await W(STEP);
+                        this._sendDiscardBroadcast(P3_ID, TAKE_BAIT_CARD);
+                    } else if (p3TakesP2Discard(loop, topDiscard)) {
+                        // P3 吃 P2 刚弃的牌，形成同点数三张 meld
+                        const rank     = topDiscard % 100;
+                        const takeMeld = [100 + rank, 200 + rank, topDiscard];
+                        this._sendTakeBroadcast(P3_ID, topDiscard, takeMeld);
+                        await W(STEP);
+                        // 吃牌后状态变 ACTION，仍需弃牌
+                        this._sendDiscardBroadcast(P3_ID, nextDiscard(P3_ID));
+                    } else {
+                        // 普通摸牌 → 弃牌
+                        this._sendDrawBroadcast(P3_ID);
+                        await W(STEP);
+                        this._sendDiscardBroadcast(P3_ID, nextDiscard(P3_ID));
+                    }
+                    await W(STEP);
 
-        this._sendDrawBroadcast(P2_ID);
-        await W(STEP);
-
-        // P2 layoff ♥3(203) 补到 SELF meld → SELF 被 ban，挑战按钮禁用
-        this._sendLayOffBroadcast(P2_ID, SELF_ID, 1, 203);
-        await W(STEP);
-
-        this._sendDiscardBroadcast(P2_ID, 202);
-        await W(STEP);
-
-        // ── Round 4: P3 ──────────────────────────────────────────
-        console.log('[Round 4] P3 action（SELF 仍处于 ban 状态）');
-        this._actionIdx = TURN_ORDER.indexOf(P3_ID);
-        this._sendActionChange();
-        await W(STEP);
-
-        this._sendDrawBroadcast(P3_ID);
-        await W(STEP);
-
-        this._sendDiscardBroadcast(P3_ID, 308);
-        await W(STEP);
-
-        // ── Round 5: SELF ────────────────────────────────────────
-        console.log('[Round 5] SELF action（ban 在此回合开始时清除，挑战按钮恢复）');
-        this._actionIdx = TURN_ORDER.indexOf(SELF_ID);
-        this._sendActionChange();
-        await W(STEP);
-
-        this._send(MessageType.TONGITS_DRAW_RES, this._mockDraw(null));
-        await W(STEP);
-
-        this._send(MessageType.TONGITS_DISCARD_RES, this._mockDiscard({ card: 303 }));
-        console.log('[Round 5] 完成，ban 已清除，挑战按钮应已恢复');
+                } else {
+                    // ── P2 回合：普通摸牌 → 弃牌 ─────────────────────
+                    this._sendDrawBroadcast(P2_ID);
+                    await W(STEP);
+                    this._sendDiscardBroadcast(P2_ID, nextDiscard(P2_ID));
+                    await W(STEP);
+                }
+            }
+        }
+        console.log('[roundMsg] 模拟完成');
     }
 
     /**
@@ -842,6 +861,48 @@ export class MockView extends UIPanel {
         this._send(MessageType.TONGITS_LAYOFF_BROADCAST, data);
     }
 
+    /**
+     * 模拟某玩家吃弃牌区顶牌。
+     * @param pid         吃牌玩家
+     * @param discardCard 被吃的弃牌（必须是当前弃牌区顶牌）
+     * @param meldCards   吃牌后形成的完整牌组（含 discardCard）
+     */
+    private _sendTakeBroadcast(pid: number, discardCard: number, meldCards: number[]): void {
+        const p = this._getPlayer(pid);
+        if (!p) return;
+
+        // 手牌数减少（meldCards 中除弃牌外，其余来自手牌）
+        const fromHand = meldCards.filter(c => c !== discardCard).length;
+        p.handCardCount = Math.max(0, p.handCardCount - fromHand);
+        p.status        = PLAYER_STATUS.ACTION;
+
+        const newMeld: Meld = {
+            meldId:         p.displayedMelds.length + 1,
+            cards:          meldCards,
+            ownerId:        pid,
+            highlightCards: discardCard,
+            locked:         false,
+        };
+        p.displayedMelds = [...p.displayedMelds, newMeld];
+
+        // 从弃牌堆移除该牌
+        if (this._gameData) {
+            this._gameData.gameInfo.discardPile =
+                this._gameData.gameInfo.discardPile.filter(c => c !== discardCard);
+            this._gameData.gameInfo.discardCard = 0;
+        }
+
+        const data: TakeCardBroadcast = {
+            playerId:      pid,
+            newMeld:       { ...newMeld, cards: [...newMeld.cards] },
+            handCardCount: p.handCardCount,
+            discard:       discardCard,
+            userId:        SELF_ID,
+        };
+        console.log(`[Mock→TAKE] player=${pid} discard=${discardCard} meld=${meldCards}`);
+        this._send(MessageType.TONGITS_TAKE_BROADCAST, data);
+    }
+
     // ── 按钮：挑战（Fight） ───────────────────────────────────
 
     /** 模拟自己发起 Fight */
@@ -968,7 +1029,7 @@ export class MockView extends UIPanel {
 
         const data: ActionChangeBroadcast = {
             actionPlayerId: pid,
-            countdown:      25,
+            countdown:      Date.now() + 25 * 1000,
             isFight:        p.isFight,
             status:         p.status,
             userId:         SELF_ID,

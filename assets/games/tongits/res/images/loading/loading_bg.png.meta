@@ -41,14 +41,14 @@
       "userData": {
         "trimThreshold": 1,
         "rotated": false,
-        "offsetX": 0.5,
-        "offsetY": 0.5,
-        "trimX": 1,
+        "offsetX": 0,
+        "offsetY": 0,
+        "trimX": 0,
         "trimY": 0,
         "width": 1625,
         "height": 750,
-        "rawWidth": 1626,
-        "rawHeight": 751,
+        "rawWidth": 1625,
+        "rawHeight": 750,
         "borderTop": 0,
         "borderBottom": 0,
         "borderLeft": 0,
@@ -82,21 +82,21 @@
             3
           ],
           "uv": [
-            1,
-            751,
-            1626,
-            751,
-            1,
-            1,
-            1626,
-            1
+            0,
+            750,
+            1625,
+            750,
+            0,
+            0,
+            1625,
+            0
           ],
           "nuv": [
-            0.0006150061500615006,
-            0.0013315579227696406,
+            0,
+            0,
             1,
-            0.0013315579227696406,
-            0.0006150061500615006,
+            0,
+            0,
             1,
             1,
             1
@@ -127,7 +127,7 @@
   },
   "userData": {
     "type": "sprite-frame",
-    "hasAlpha": true,
+    "hasAlpha": false,
     "fixAlphaTransparencyArtifacts": false,
     "redirect": "9a066ea7-1fc6-4a3c-90d4-b5f2e4562895@6c48a"
   }

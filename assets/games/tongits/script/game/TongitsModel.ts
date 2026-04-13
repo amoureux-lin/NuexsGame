@@ -542,7 +542,7 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
             this.updatePlayerById(pid, {
                 handCards: newHandCards,
                 handCardCount: res.handCardCount,
-                status: PLAYER_STATUS.SELECT,
+                status: PLAYER_STATUS.ACTION,
             } as Partial<TongitsPlayerInfo>);
         }
         // 更新完 displayedMelds 和手牌后再计算（反映最新牌组状态）
