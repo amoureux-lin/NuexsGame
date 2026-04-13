@@ -166,6 +166,8 @@ export class MockView extends UIPanel {
         players:  TongitsPlayerInfo[];
         gameInfo: GameInfo;
         deck:     number[];
+        /** AI 玩家真实手牌（P2 / P3），用于防止牌重复 */
+        aiHands:  Map<number, number[]>;
     } | null = null;
 
     /** roundMsg 等待自己弃牌时设置；_mockDiscard 调用后触发 */
@@ -173,6 +175,9 @@ export class MockView extends UIPanel {
 
     /** 当前操作玩家在 TURN_ORDER 中的索引 */
     private _actionIdx: number = 0;
+
+    /** 防止多次点击 roundMsg 造成并发 */
+    private _roundRunning: boolean = false;
 
     // ── 内部工具 ──────────────────────────────────────────────
 
@@ -184,6 +189,47 @@ export class MockView extends UIPanel {
 
     private _getPlayer(userId: number): TongitsPlayerInfo | undefined {
         return this._gameData?.players.find(p => p.playerInfo?.userId === userId);
+    }
+
+    /** 获取 AI 玩家真实手牌（只读引用） */
+    private _aiHand(pid: number): number[] {
+        return this._gameData?.aiHands.get(pid) ?? [];
+    }
+
+    /** 从 AI 手牌中移除指定牌（原地修改） */
+    private _aiRemove(pid: number, ...cards: number[]): void {
+        const hand = this._gameData?.aiHands.get(pid);
+        if (!hand) return;
+        for (const c of cards) {
+            const idx = hand.indexOf(c);
+            if (idx >= 0) hand.splice(idx, 1);
+        }
+    }
+
+    /**
+     * 从 AI 手牌中挑选一张可弃的牌并移除返回。
+     * 优先弃散牌（不在任何 meld 中的牌），否则返回第一张。
+     */
+    private _aiPickAndRemoveDiscard(pid: number): number {
+        const hand = this._aiHand(pid);
+        if (!hand.length) return 0;
+        const p = this._getPlayer(pid);
+        const meldCards = new Set((p?.displayedMelds ?? []).flatMap(m => m.cards));
+        const loose = hand.find(c => !meldCards.has(c)) ?? hand[0];
+        this._aiRemove(pid, loose);
+        return loose;
+    }
+
+    /**
+     * 查找 AI 手牌中是否能吃 discardCard（同点数），
+     * 返回完整吃牌牌组（含 discardCard），找不到则返回 null。
+     */
+    private _aiPickTakeMeld(pid: number, discardCard: number): number[] | null {
+        const rank     = discardCard % 100;
+        const sameRank = this._aiHand(pid).filter(c => c % 100 === rank);
+        if (sameRank.length < 2) return null;
+        // 取前 2 张（最多 3 张一组）
+        return [...sameRank.slice(0, 2), discardCard];
     }
 
     /**
@@ -239,6 +285,7 @@ export class MockView extends UIPanel {
         p.status        = PLAYER_STATUS.ACTION;
         if (this._gameData) this._gameData.gameInfo.deckCardCount = this._gameData.deck.length;
         console.log(`[Mock←RES] DRAW  card=${card}`);
+        console.log("this._gameData?.deck.length:",this._gameData?.deck.length);
         return { drawnCard: card, hasTongits: false, handCardCount: p.handCardCount };
     }
 
@@ -383,7 +430,7 @@ export class MockView extends UIPanel {
 
     /**
      * 初始化牌局数据（洗牌发牌）
-     * 庄家(P3) 13 张，Self 12 张，P2 12 张，牌堆 ~14 张
+     * 庄家(P3) 13 张，Self 12 张，P2 12 张，牌堆 15 张（共 52 张）
      *
      * 吃牌测试场景：
      *   SELF 手牌固定含 101(A♠)、201(A♥)，
@@ -392,14 +439,14 @@ export class MockView extends UIPanel {
     clickInitGame(): void {
         const selfHand = [...SELF_FIXED_HAND];
 
-        // 从剩余牌库中去掉 SELF 手牌和 P3 要弃的牌，剩下的洗牌后分给 P2/P3 并留作牌堆
+        // 从剩余牌库中去掉 SELF 手牌和 P3 要弃的牌（TAKE_BAIT_CARD 概念上算作 P3 的第 13 张）
         const baseDeck = shuffle(FULL_DECK.filter(c => !selfHand.includes(c) && c !== TAKE_BAIT_CARD));
 
-        // P2 消耗 12 张，P3 消耗 13 张（客户端不存明文手牌）
-        baseDeck.splice(0, 12); // P2
-        baseDeck.splice(0, 13); // P3
+        // P2 / P3 各取 12 张（P3 另有 TAKE_BAIT_CARD = 13 张）
+        const p2Hand = baseDeck.splice(0, 12);
+        const p3Hand = [TAKE_BAIT_CARD, ...baseDeck.splice(0, 12)];
 
-        // 剩余作为牌堆（TAKE_BAIT_CARD 概念上在 P3 手中，游戏开始后 P3 会弃出）
+        // 剩余 15 张作为牌堆（52 - 12自己 - 1诱饵 - 12P2 - 12P3 = 15）
         const remaining = [...baseDeck];
 
         this._actionIdx = TURN_ORDER.indexOf(P3_ID); // 庄家先手
@@ -412,11 +459,16 @@ export class MockView extends UIPanel {
             ],
             gameInfo: buildGameInfo(P3_ID, remaining.length),
             deck:     remaining,
+            aiHands:  new Map<number, number[]>([
+                [P2_ID, p2Hand],
+                [P3_ID, p3Hand],
+            ]),
         };
 
         console.log('[Mock] 牌局已初始化', {
             selfHand,
-            takeBaitCard: TAKE_BAIT_CARD,
+            p2Hand,
+            p3Hand,
             deckCount: remaining.length,
         });
     }
@@ -440,23 +492,15 @@ export class MockView extends UIPanel {
     }
 
     async roundMsg(): Promise<void> {
+        if (this._roundRunning) {
+            console.warn('[roundMsg] 已在运行中，忽略重复调用');
+            return;
+        }
+        this._roundRunning = true;
+
         const W     = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
         const STEP  = 1200;  // AI 操作间隔（ms）
         const LOOPS = 5;     // 最多循环圈数
-
-        // AI 玩家弃牌轮换池
-        const AI_DISCARDS: Record<number, number[]> = {
-            [P3_ID]: [301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 313],
-            [P2_ID]: [401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411, 412, 413],
-        };
-        const discardCursor: Record<number, number> = { [P3_ID]: 0, [P2_ID]: 0 };
-        const nextDiscard = (pid: number) =>
-            AI_DISCARDS[pid][discardCursor[pid]++ % AI_DISCARDS[pid].length];
-
-        // P3 吃 P2 弃牌：每隔一圈吃一次（loop 为奇数时吃）
-        // P2 弃 4XX → P3 吃 [1XX, 2XX, 4XX]（同点数三张，模拟合法 set）
-        const p3TakesP2Discard = (loop: number, discardCard: number): boolean =>
-            loop % 2 === 1 && discardCard > 400 && discardCard <= 413;
 
         await W(3000);
 
@@ -466,9 +510,11 @@ export class MockView extends UIPanel {
             for (let t = 0; t < TURN_ORDER.length; t++) {
                 const tIdx = (startIdx + t) % TURN_ORDER.length;
                 const pid  = TURN_ORDER[tIdx];
-
+                console.log("this._gameData?.deck.length:",this._gameData?.deck.length)
                 if ((this._gameData?.deck.length ?? 0) === 0) {
-                    console.log('[roundMsg] 牌堆耗尽，停止模拟');
+                    console.log('[roundMsg] 牌堆耗尽，触发结算');
+                    this._roundRunning = false;
+                    this.clickBeforeResult();
                     return;
                 }
 
@@ -478,36 +524,39 @@ export class MockView extends UIPanel {
                 await W(STEP);
 
                 if (pid === SELF_ID) {
-                    // ── 自己回合：发 DrawRes，等待真实弃牌 ──────────
-                    this._send(MessageType.TONGITS_DRAW_RES, this._mockDraw(null));
-                    console.log('[roundMsg] 等待自己弃牌...');
+                    // ── 自己回合：由玩家真实操作 DRAW_REQ → mock handler → DRAW_RES ──────────
+                    // 不在此处预摸牌，避免与玩家点击摸牌重复消耗牌堆
+                    console.log('[roundMsg] 等待自己摸牌并弃牌...');
                     await this._waitForSelfDiscard();
                     await W(500);
 
                 } else if (pid === P3_ID) {
                     // ── P3 回合 ───────────────────────────────────────
                     const topDiscard = this._gameData?.gameInfo.discardCard ?? 0;
+                    const takeMeld   = loop % 2 === 1 ? this._aiPickTakeMeld(P3_ID, topDiscard) : null;
 
                     if (loop === 0 && t === 0) {
-                        // 第一圈首回合：meld + 弃出吃牌诱饵供 SELF 测试吃牌
+                        // 第一圈首回合：meld 3 张实际手牌 + 弃出吃牌诱饵
                         this._sendDrawBroadcast(P3_ID);
                         await W(STEP);
-                        this._sendMeldBroadcast(P3_ID, [107, 108, 109]);
-                        await W(STEP);
+                        // 从 P3 手牌中取 3 张非 TAKE_BAIT_CARD 的牌组成 meld
+                        const meld3 = this._aiHand(P3_ID).filter(c => c !== TAKE_BAIT_CARD).slice(0, 3);
+                        if (meld3.length === 3) {
+                            this._sendMeldBroadcast(P3_ID, meld3);
+                            await W(STEP);
+                        }
                         this._sendDiscardBroadcast(P3_ID, TAKE_BAIT_CARD);
-                    } else if (p3TakesP2Discard(loop, topDiscard)) {
-                        // P3 吃 P2 刚弃的牌，形成同点数三张 meld
-                        const rank     = topDiscard % 100;
-                        const takeMeld = [100 + rank, 200 + rank, topDiscard];
+                    } else if (takeMeld) {
+                        // P3 吃 P2 刚弃的牌（手牌中有同点数牌）
                         this._sendTakeBroadcast(P3_ID, topDiscard, takeMeld);
                         await W(STEP);
                         // 吃牌后状态变 ACTION，仍需弃牌
-                        this._sendDiscardBroadcast(P3_ID, nextDiscard(P3_ID));
+                        this._sendDiscardBroadcast(P3_ID);
                     } else {
                         // 普通摸牌 → 弃牌
                         this._sendDrawBroadcast(P3_ID);
                         await W(STEP);
-                        this._sendDiscardBroadcast(P3_ID, nextDiscard(P3_ID));
+                        this._sendDiscardBroadcast(P3_ID);
                     }
                     await W(STEP);
 
@@ -515,11 +564,12 @@ export class MockView extends UIPanel {
                     // ── P2 回合：普通摸牌 → 弃牌 ─────────────────────
                     this._sendDrawBroadcast(P2_ID);
                     await W(STEP);
-                    this._sendDiscardBroadcast(P2_ID, nextDiscard(P2_ID));
+                    this._sendDiscardBroadcast(P2_ID);
                     await W(STEP);
                 }
             }
         }
+        this._roundRunning = false;
         console.log('[roundMsg] 模拟完成');
     }
 
@@ -615,7 +665,9 @@ export class MockView extends UIPanel {
     private _sendDrawBroadcast(pid: number): void {
         const p = this._getPlayer(pid);
         if (!p) return;
-        this._gameData!.deck.pop();
+        const card = this._gameData!.deck.pop() ?? 0;
+        // 将摸到的牌加入 AI 真实手牌，防止后续重复使用
+        if (card) this._gameData!.aiHands.get(pid)?.push(card);
         p.handCardCount = (p.handCardCount ?? 0) + 1;
         p.status        = PLAYER_STATUS.ACTION;
         this._gameData!.gameInfo.deckCardCount = this._gameData!.deck.length;
@@ -626,7 +678,7 @@ export class MockView extends UIPanel {
             drawnCard:     0,
             handCardCount: p.handCardCount,
         };
-        console.log(`[Mock→DRAW] player=${pid} handCardCount=${p.handCardCount}`);
+        console.log(`[Mock→DRAW] player=${pid} card=${card} handCardCount=${p.handCardCount}`);
         this._send(MessageType.TONGITS_DRAW_BROADCAST, data);
     }
 
@@ -664,23 +716,28 @@ export class MockView extends UIPanel {
     clickDiscardP2(): void { this._sendDiscardBroadcast(P2_ID); }
     clickDiscardP3(): void { this._sendDiscardBroadcast(P3_ID); }
 
-    private _sendDiscardBroadcast(pid: number, card = 201): void {
+    private _sendDiscardBroadcast(pid: number, card?: number): void {
         const p = this._getPlayer(pid);
         if (!p) return;
+        // 若未指定牌，从 AI 真实手牌中挑一张；若指定了则从手牌中移除
+        const discardCard = card !== undefined
+            ? (this._aiRemove(pid, card), card)
+            : this._aiPickAndRemoveDiscard(pid);
+        if (!discardCard) return;
         p.handCardCount = Math.max(0, p.handCardCount - 1);
         p.status        = PLAYER_STATUS.INIT;
-        this._gameData!.gameInfo.discardPile.push(card);
-        this._gameData!.gameInfo.discardCard = card;
+        this._gameData!.gameInfo.discardPile.push(discardCard);
+        this._gameData!.gameInfo.discardCard = discardCard;
         this._nextTurn();
         const data: DiscardCardBroadcast = {
             playerId:      pid,
-            discardedCard: card,
+            discardedCard: discardCard,
             unlockMelds:   [],
             handCardCount: p.handCardCount,
             discardPile:   [...this._gameData!.gameInfo.discardPile],
             userId:        SELF_ID,
         };
-        console.log(`[Mock→DISCARD] player=${pid} handCardCount=${p.handCardCount}`);
+        console.log(`[Mock→DISCARD] player=${pid} card=${discardCard} handCardCount=${p.handCardCount}`);
         this._send(MessageType.TONGITS_DISCARD_BROADCAST, data);
     }
 
@@ -722,6 +779,7 @@ export class MockView extends UIPanel {
 
     private _sendMeldBroadcast(pid: number, meldCards: number[]): void {
         const p = this._getPlayer(pid)!;
+        this._aiRemove(pid, ...meldCards);
         p.handCardCount = Math.max(0, p.handCardCount - meldCards.length);
         p.status        = PLAYER_STATUS.ACTION;
         const newMeld: Meld = {
@@ -872,8 +930,9 @@ export class MockView extends UIPanel {
         if (!p) return;
 
         // 手牌数减少（meldCards 中除弃牌外，其余来自手牌）
-        const fromHand = meldCards.filter(c => c !== discardCard).length;
-        p.handCardCount = Math.max(0, p.handCardCount - fromHand);
+        const fromHandCards = meldCards.filter(c => c !== discardCard);
+        this._aiRemove(pid, ...fromHandCards);
+        p.handCardCount = Math.max(0, p.handCardCount - fromHandCards.length);
         p.status        = PLAYER_STATUS.ACTION;
 
         const newMeld: Meld = {
@@ -1005,8 +1064,10 @@ export class MockView extends UIPanel {
             buildPlayer(P2_ID,   [], false, 0, 2),
             buildPlayer(P3_ID,   [], false, 0, 3),
         ];
-        this._gameData  = null;
-        this._actionIdx = 0;
+        this._gameData      = null;
+        this._actionIdx     = 0;
+        this._roundRunning  = false;
+        this._selfDiscardResolver = null;
 
         const data: RoomResetBroadcast = {
             players:  resetPlayers,

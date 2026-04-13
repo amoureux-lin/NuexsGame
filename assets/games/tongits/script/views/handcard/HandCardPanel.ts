@@ -1011,19 +1011,29 @@ export class HandCardPanel extends Component {
             if (gv.groupMarker?.node) gv.groupMarker.node.active = false;
         }
 
-        // 收集：_ungroupRoot 的直接子节点 + 所有 GroupView 根节点
-        const allNodes: Node[] = [
-            ...[...this._ungroupRoot.children],
-            ...[...this._groupViews.values()].map(gv => gv.node),
-        ];
+        // ── 收集所有叶子牌节点，统一 re-parent 到 _ungroupRoot ──────────────
+        // 所有牌（散牌 + 组内牌）挂到同一父节点（_ungroupRoot 已归零），
+        // 在完全相同的坐标系下 tween 到 (0,0,0)，无 easing 耦合，收敛点完全一致。
+        // 空容器 gv.node 立即隐藏，避免无牌骨架残留在动画中。
+        const allCardNodes: Node[] = [...this._ungroupRoot.children]; // 散牌（含 flyNode）
+        const containerNodes: Node[] = [];
 
-        if (allNodes.length > 0) {
-            await Promise.all(allNodes.map(n =>
+        for (const gv of this._groupViews.values()) {
+            for (const cn of gv.cardNodes) {
+                const wp = cn.node.getWorldPosition().clone();
+                this._ungroupRoot.addChild(cn.node);
+                cn.node.setWorldPosition(wp);
+                allCardNodes.push(cn.node);
+            }
+            gv.node.active = false; // 空容器立即隐藏
+            containerNodes.push(gv.node);
+        }
+
+        if (allCardNodes.length > 0) {
+            await Promise.all(allCardNodes.map(n =>
                 new Promise<void>(resolve =>
                     tween(n)
-                        .to(MERGE_DUR,
-                            { position: new Vec3(0, 0, 0) },
-                            { easing: 'quadIn' })
+                        .to(MERGE_DUR, { position: new Vec3(0, 0, 0) }, { easing: 'quadIn' })
                         .call(() => resolve())
                         .start()
                 )
@@ -1043,8 +1053,9 @@ export class HandCardPanel extends Component {
         this._ungroupNodes.clear();
         this._groupViews.clear();
 
-        // 销毁动画节点
-        for (const n of allNodes) { if (n.isValid) n.destroy(); }
+        // 销毁所有牌节点和空容器
+        for (const n of allCardNodes)   { if (n.isValid) n.destroy(); }
+        for (const n of containerNodes) { if (n.isValid) n.destroy(); }
         // 保险：清除容器残余
         this._ungroupRoot.removeAllChildren();
         this._groupRoot.removeAllChildren();
@@ -1066,10 +1077,18 @@ export class HandCardPanel extends Component {
         for (const gv of this._groupViews.values()) {
             if (gv.groupMarker?.node) gv.groupMarker.node.active = false;
         }
-        await delay(DEAL_REORDER_DUR * 1000);
+        // 用游戏时间等待展开 tween 完成（避免 setTimeout 真实时钟与游戏 dt 不同步导致 marker 位置偏移）
+        // dummy tween 与布局 tween 同 duration，且布局 tween 先注册，CC3 同帧内按序回调，
+        // resolve() 触发时 gv.node 已到达最终位置。
+        await new Promise<void>(resolve =>
+            tween({ t: 0 })
+                .to(DEAL_REORDER_DUR, { t: 1 })
+                .call(() => resolve())
+                .start()
+        );
         for (const gv of this._groupViews.values()) {
-            gv.syncMarkerLayout();
             if (gv.groupMarker?.node) gv.groupMarker.node.active = true;
+            gv.syncMarkerLayout();
         }
     }
 

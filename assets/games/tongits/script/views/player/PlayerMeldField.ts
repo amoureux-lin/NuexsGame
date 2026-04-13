@@ -30,6 +30,8 @@ const FLY_DUR = 0.3;
 const EXPAND_DUR = 0.14;
 /** 每张牌展开的错开时间（秒） */
 const EXPAND_STAGGER = 0.03;
+/** 补牌后重排动画时长（秒） */
+const REFLOW_DUR = 0.2;
 
 @ccclass('PlayerMeldField')
 export class PlayerMeldField extends Component {
