@@ -214,7 +214,7 @@ export class MockView extends UIPanel {
         const hand = this._aiHand(pid);
         if (!hand.length) return 0;
         const p = this._getPlayer(pid);
-        const meldCards = new Set((p?.displayedMelds ?? []).flatMap(m => m.cards));
+        const meldCards = new Set((p?.displayedMelds ?? []).reduce<number[]>((acc, m) => acc.concat(m.cards), []));
         const loose = hand.find(c => !meldCards.has(c)) ?? hand[0];
         this._aiRemove(pid, loose);
         return loose;

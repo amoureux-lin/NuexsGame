@@ -60,6 +60,12 @@ export class WaitingPanel extends Component {
                 this._stopCountdown();
             }
         }
+
+        this._setActive(this.startGameBtn,   false);
+        this._setActive(this.costBtn,        true);
+        this._setActive(this.readyBtn,       false);
+        this._setActive(this.cancelReadyBtn, false);
+        this._stopCountdown();
     }
 
     // ── 生命周期 ─────────────────────────────────────────
