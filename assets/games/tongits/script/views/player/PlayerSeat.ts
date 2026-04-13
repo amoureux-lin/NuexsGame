@@ -113,10 +113,10 @@ export class PlayerSeat extends Component {
     /** 游戏是否已开始，由 PlayerSeatManager 注入 */
     private _isGameStarted: boolean = false;
 
-    /** 倒计时总秒数 */
+    /** 倒计时结束的 Unix 时间戳（ms） */
+    private _countdownEndTime: number = 0;
+    /** 倒计时总时长（秒），首次设置时记录，用于 fillRange 比例计算 */
     private _countdownTotal: number = 0;
-    /** 倒计时剩余秒数（浮点，每帧递减） */
-    private _countdownRemaining: number = 0;
     /** 倒计时是否运行中 */
     private _countdownRunning: boolean = false;
 
@@ -193,20 +193,20 @@ export class PlayerSeat extends Component {
 
     /**
      * 启动倒计时（收到 ActionChange 时调用）
-     * @param totalSeconds 倒计时总秒数
+     * @param endTimestamp 倒计时结束的 Unix 时间戳（ms）
      */
-    setCountdown(totalSeconds: number): void {
-        this._countdownTotal     = totalSeconds;
-        this._countdownRemaining = totalSeconds;
-        this._countdownRunning   = true;
+    setCountdown(endTimestamp: number): void {
+        const remainingMs = endTimestamp - Date.now();
+        this._countdownEndTime = endTimestamp;
+        this._countdownTotal   = Math.max(0, remainingMs) / 1000;
+        this._countdownRunning = remainingMs > 0;
         this._refreshCountdownUI();
     }
 
-    protected update(dt: number): void {
+    protected update(_dt: number): void {
         if (!this._countdownRunning) return;
-        this._countdownRemaining = Math.max(0, this._countdownRemaining - dt);
+        if (Date.now() >= this._countdownEndTime) this._stopCountdown();
         this._refreshCountdownUI();
-        if (this._countdownRemaining <= 0) this._stopCountdown();
     }
 
     private _stopCountdown(): void {
@@ -214,11 +214,12 @@ export class PlayerSeat extends Component {
     }
 
     private _refreshCountdownUI(): void {
+        const remainingSec = Math.max(0, (this._countdownEndTime - Date.now()) / 1000);
         if (this.countdownLabel) {
-            this.countdownLabel.string = String(Math.ceil(this._countdownRemaining));
+            this.countdownLabel.string = String(Math.ceil(remainingSec));
         }
         if (this.countdownNode && this._countdownTotal > 0) {
-            this.countdownNode.fillRange = this._countdownRemaining / this._countdownTotal;
+            this.countdownNode.fillRange = remainingSec / this._countdownTotal;
         }
     }
 

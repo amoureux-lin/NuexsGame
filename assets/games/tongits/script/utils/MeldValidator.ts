@@ -67,11 +67,12 @@ export class MeldValidator {
             });
         }
 
-        // 按手牌总分值降序（优先展示点数高的组合，利于玩家减分）
-        candidates.sort((a, b) =>
-            b.reduce((s, c) => s + getPoint(c), 0) -
-            a.reduce((s, c) => s + getPoint(c), 0),
-        );
+        // 优先牌数多的组合（4 张 meld > 3 张 meld），同牌数再按点数降序，散牌最后
+        candidates.sort((a, b) => {
+            if (b.length !== a.length) return b.length - a.length;
+            return b.reduce((s, c) => s + getPoint(c), 0)
+                 - a.reduce((s, c) => s + getPoint(c), 0);
+        });
 
         return candidates;
     }

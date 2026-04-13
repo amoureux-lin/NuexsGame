@@ -97,7 +97,7 @@ export class PlayerSeatManager extends Component {
      * 更新某玩家的倒计时显示。
      *
      * @param playerId 玩家 userId
-     * @param countdown 剩余秒数
+     * @param countdown 倒计时结束的 Unix 时间戳（ms）
      */
     updateCountdown(playerId: number, countdown: number): void {
         this._findSeatByUserId(playerId)?.setCountdown(countdown);

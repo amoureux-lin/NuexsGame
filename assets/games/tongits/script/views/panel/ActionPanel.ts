@@ -1,4 +1,5 @@
 import { _decorator, Button, Component, Node } from 'cc';
+import { ButtonEx } from 'db://assets/script/components/ButtonEx';
 import { Nexus } from 'db://nexus-framework/index';
 import { TongitsEvents } from '../../config/TongitsEvents';
 import type { TongitsPlayerInfo, GameInfo } from '../../proto/tongits';
@@ -195,7 +196,10 @@ export class ActionPanel extends Component {
     }
 
     private _setInteractable(btn: Button | null, interactable: boolean): void {
-        if (btn) btn.interactable = interactable;
+        if (!btn) return;
+        const ex = btn.getComponent(ButtonEx);
+        if (ex) ex.setInteractable(interactable);
+        else btn.interactable = interactable;
     }
 
     // ── 私有：按钮回调 ────────────────────────────────────

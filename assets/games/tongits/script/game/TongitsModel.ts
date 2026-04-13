@@ -242,7 +242,7 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
         this.notify(TongitsEvents.GAME_START, data);
     }
 
-    private _onActionChange(msg: unknown): void {
+    private _onActionChange(msg: ActionChangeBroadcast): void {
         const data = msg as ActionChangeBroadcast;
         const gi = this.gameInfo as GameInfo | null;
         if (gi) gi.actionPlayerId = data.actionPlayerId;
