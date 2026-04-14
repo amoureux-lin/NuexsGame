@@ -1024,8 +1024,10 @@ export class MockView extends UIPanel {
         this._send(MessageType.TONGITS_PK_BROADCAST, data);
     }
 
-    /** 模拟 P2 发起挑战（自己与 P3 需要响应） */
-    clickChallengeP2(): void {
+    /**
+     * 场景1：P2 发起挑战 → 2s 后 P3 接受 → 等待自己选择
+     */
+    async clickChallengeP2(): Promise<void> {
         if (!this._gameData) this.clickInitGame();
         const p  = this._getPlayer(SELF_ID)!;
         const p2 = this._getPlayer(P2_ID)!;
@@ -1034,7 +1036,7 @@ export class MockView extends UIPanel {
         p.changeStatus  = 1;
         p3.changeStatus = 1;
 
-        const data: ChallengeBroadcast = {
+        this._send(MessageType.TONGITS_CHALLENGE_BROADCAST, {
             playerId:    P2_ID,
             basePlayers: [
                 { playerId: SELF_ID, changeStatus: p.changeStatus,  countdown: Date.now() + 10000 },
@@ -1042,12 +1044,19 @@ export class MockView extends UIPanel {
                 { playerId: P3_ID,   changeStatus: p3.changeStatus, countdown: Date.now() + 10000 },
             ],
             userId: SELF_ID,
-        };
-        this._send(MessageType.TONGITS_CHALLENGE_BROADCAST, data);
+        } as ChallengeBroadcast);
+
+        await new Promise<void>(r => setTimeout(r, 2000));
+        p3.changeStatus = 3;
+        this._send(MessageType.TONGITS_PK_BROADCAST, {
+            playerId: P3_ID, changeStatus: 3, userId: SELF_ID,
+        } as PKBroadcast);
     }
 
-    /** 模拟 P3 发起挑战（自己与 P2 需要响应） */
-    clickChallengeP3(): void {
+    /**
+     * 场景2：P3 发起挑战 → 2s 后 P2 接受 → 等待自己选择
+     */
+    async clickChallengeP3(): Promise<void> {
         if (!this._gameData) this.clickInitGame();
         const p  = this._getPlayer(SELF_ID)!;
         const p2 = this._getPlayer(P2_ID)!;
@@ -1056,7 +1065,7 @@ export class MockView extends UIPanel {
         p.changeStatus  = 1;
         p2.changeStatus = 1;
 
-        const data: ChallengeBroadcast = {
+        this._send(MessageType.TONGITS_CHALLENGE_BROADCAST, {
             playerId:    P3_ID,
             basePlayers: [
                 { playerId: SELF_ID, changeStatus: p.changeStatus,  countdown: Date.now() + 10000 },
@@ -1064,35 +1073,77 @@ export class MockView extends UIPanel {
                 { playerId: P3_ID,   changeStatus: p3.changeStatus, countdown: 0                  },
             ],
             userId: SELF_ID,
-        };
-        this._send(MessageType.TONGITS_CHALLENGE_BROADCAST, data);
+        } as ChallengeBroadcast);
+
+        await new Promise<void>(r => setTimeout(r, 2000));
+        p2.changeStatus = 3;
+        this._send(MessageType.TONGITS_PK_BROADCAST, {
+            playerId: P2_ID, changeStatus: 3, userId: SELF_ID,
+        } as PKBroadcast);
     }
 
-    /** 模拟自己被烧死（changeStatus=5） */
-    clickBurnSelf(): void {
+    /**
+     * 场景3：P2 发起挑战 → 2s 后 P3 直接烧死 → 等待自己选择
+     */
+    async clickBurnP3(): Promise<void> {
         if (!this._gameData) this.clickInitGame();
-        const p = this._getPlayer(SELF_ID)!;
-        p.changeStatus = 5;
-        const data: PKBroadcast = { playerId: SELF_ID, changeStatus: 5, userId: SELF_ID };
-        this._send(MessageType.TONGITS_PK_BROADCAST, data);
-    }
-
-    /** 模拟 P2 被烧死 */
-    clickBurnP2(): void {
-        if (!this._gameData) this.clickInitGame();
+        const p  = this._getPlayer(SELF_ID)!;
         const p2 = this._getPlayer(P2_ID)!;
-        p2.changeStatus = 5;
-        const data: PKBroadcast = { playerId: P2_ID, changeStatus: 5, userId: SELF_ID };
-        this._send(MessageType.TONGITS_PK_BROADCAST, data);
+        const p3 = this._getPlayer(P3_ID)!;
+        p2.changeStatus = 2;
+        p.changeStatus  = 1;
+        p3.changeStatus = 1;
+
+        this._send(MessageType.TONGITS_CHALLENGE_BROADCAST, {
+            playerId:    P2_ID,
+            basePlayers: [
+                { playerId: SELF_ID, changeStatus: p.changeStatus,  countdown: Date.now() + 10000 },
+                { playerId: P2_ID,   changeStatus: p2.changeStatus, countdown: 0                  },
+                { playerId: P3_ID,   changeStatus: p3.changeStatus, countdown: Date.now() + 10000 },
+            ],
+            userId: SELF_ID,
+        } as ChallengeBroadcast);
+
+        await new Promise<void>(r => setTimeout(r, 2000));
+        p3.changeStatus = 5;
+        this._send(MessageType.TONGITS_PK_BROADCAST, {
+            playerId: P3_ID, changeStatus: 5, userId: SELF_ID,
+        } as PKBroadcast);
     }
 
-    /** 模拟 P3 被烧死 */
-    clickBurnP3(): void {
+    /**
+     * 场景4：自己(P1)发起挑战 → 2s 后 P2 接受 → 再 2s 后 P3 烧死
+     */
+    async clickBurnSelf(): Promise<void> {
         if (!this._gameData) this.clickInitGame();
+        const p  = this._getPlayer(SELF_ID)!;
+        const p2 = this._getPlayer(P2_ID)!;
         const p3 = this._getPlayer(P3_ID)!;
+        p.changeStatus  = 2;
+        p2.changeStatus = 1;
+        p3.changeStatus = 1;
+
+        this._send(MessageType.TONGITS_CHALLENGE_BROADCAST, {
+            playerId:    SELF_ID,
+            basePlayers: [
+                { playerId: SELF_ID, changeStatus: p.changeStatus,  countdown: 0                  },
+                { playerId: P2_ID,   changeStatus: p2.changeStatus, countdown: Date.now() + 10000 },
+                { playerId: P3_ID,   changeStatus: p3.changeStatus, countdown: Date.now() + 10000 },
+            ],
+            userId: SELF_ID,
+        } as ChallengeBroadcast);
+
+        await new Promise<void>(r => setTimeout(r, 2000));
+        p2.changeStatus = 3;
+        this._send(MessageType.TONGITS_PK_BROADCAST, {
+            playerId: P2_ID, changeStatus: 3, userId: SELF_ID,
+        } as PKBroadcast);
+
+        await new Promise<void>(r => setTimeout(r, 2000));
         p3.changeStatus = 5;
-        const data: PKBroadcast = { playerId: P3_ID, changeStatus: 5, userId: SELF_ID };
-        this._send(MessageType.TONGITS_PK_BROADCAST, data);
+        this._send(MessageType.TONGITS_PK_BROADCAST, {
+            playerId: P3_ID, changeStatus: 5, userId: SELF_ID,
+        } as PKBroadcast);
     }
 
     // ── 按钮：结算前 ──────────────────────────────────────────
