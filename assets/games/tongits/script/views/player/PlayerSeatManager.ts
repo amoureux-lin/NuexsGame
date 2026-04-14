@@ -2,6 +2,7 @@ import { _decorator, Component ,Vec3} from 'cc';
 import { Nexus } from 'db://nexus-framework/index';
 import { GameEvents } from 'db://assets/script/config/GameEvents';
 import { PlayerSeat } from './PlayerSeat';
+import { FightZone } from '../panel/FightZone';
 import type { TongitsPlayerInfo } from '../../proto/tongits';
 
 const { ccclass, property } = _decorator;
@@ -41,6 +42,18 @@ export class PlayerSeatManager extends Component {
     @property(PlayerSeat)
     seatRight: PlayerSeat = null!;
 
+    /** 下方挑战区域（与 seatBottom 位置对应） */
+    @property(FightZone)
+    fightZoneBottom: FightZone | null = null;
+
+    /** 左侧挑战区域（与 seatLeft 位置对应） */
+    @property(FightZone)
+    fightZoneLeft: FightZone | null = null;
+
+    /** 右侧挑战区域（与 seatRight 位置对应） */
+    @property(FightZone)
+    fightZoneRight: FightZone | null = null;
+
     // ── 私有上下文 ────────────────────────────────────────
     private _isLocalOwner: boolean = false;
     private _isGameStarted: boolean = false;
@@ -69,7 +82,7 @@ export class PlayerSeatManager extends Component {
     refreshFromPlayers(players: TongitsPlayerInfo[], selfUserId: number): void {
         console.log('refreshFromPlayers', players);
         const positions = this._buildPositions(players, selfUserId);
-        const seats = [this.seatBottom, this.seatLeft, this.seatRight];
+        const seats = [this.seatBottom, this.seatRight, this.seatLeft];
         for (let i = 0; i < seats.length; i++) {
             if (!seats[i]) continue;
             seats[i].setSeatIndex(i);
@@ -116,6 +129,18 @@ export class PlayerSeatManager extends Component {
      */
     getSeatByIndex(index: number): PlayerSeat | null {
         return [this.seatBottom, this.seatLeft, this.seatRight][index] ?? null;
+    }
+
+    /**
+     * 通过 userId 获取对应的 FightZone。
+     * 位置与 seat 一一对应：bottom / left / right。
+     * 找不到时返回 null。
+     */
+    getFightZoneByUserId(userId: number): FightZone | null {
+        if (this.seatBottom?.getUserId() === userId) return this.fightZoneBottom;
+        if (this.seatLeft?.getUserId()   === userId) return this.fightZoneLeft;
+        if (this.seatRight?.getUserId()  === userId) return this.fightZoneRight;
+        return null;
     }
 
     // ── 私有：视角排列计算 ────────────────────────────────

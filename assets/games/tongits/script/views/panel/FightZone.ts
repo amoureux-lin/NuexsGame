@@ -79,13 +79,21 @@ export class FightZone extends Component {
 
     /** 接受挑战：bg → fight skin，out 退出；fx 播接受动画 */
     playAccept(): void {
-        this._bgOutro(SKIN_FIGHT, BG_OUT);
+        if (this.bgSkeleton?.node.active) {
+            this._bgOutro(SKIN_FIGHT, BG_OUT);
+        } else {
+            this._bgIntroDirect(SKIN_FIGHT, BG_OUT);
+        }
         this._playFx(FX_ACCEPT);
     }
 
     /** 折牌：bg → surrender skin，bg_out2 退出；fx 播折牌动画 */
     playFold(): void {
-        this._bgOutro(SKIN_SURRENDER, BG_OUT2);
+        if (this.bgSkeleton?.node.active) {
+            this._bgOutro(SKIN_SURRENDER, BG_OUT2);
+        } else {
+            this._bgIntroDirect(SKIN_SURRENDER, BG_OUT2);
+        }
         this._playFx(FX_FOLD);
     }
 
@@ -154,20 +162,32 @@ export class FightZone extends Component {
         });
     }
 
-    /** setSkin → bg_in（单次）→ outroAnim（单次）→ 隐藏（不经过 loop） */
+    /**
+     * setSkin → bg_in（单次）→ bg_loop（循环，等 1 圈）→ outroAnim（单次）→ 隐藏
+     * 用于结果已知、无需外部打断的场景（accept / fold / burn）。
+     */
     private _bgIntroDirect(skin: string, outroAnim: string): void {
         const sk = this.bgSkeleton;
         if (!sk) return;
         sk.node.active = true;
         sk.setSkin(skin);
         sk.setCompleteListener(null);
-        sk.setAnimation(0, BG_IN,     false);
-        sk.addAnimation(0, outroAnim, false, 0);
+        sk.setAnimation(0, BG_IN,   false);
+        sk.addAnimation(0, BG_LOOP, true,  0);
+        // bg_in 播完后切换监听，等 bg_loop 跑完一圈再出场
         sk.setCompleteListener(() => {
-            if (sk.isValid) {
-                sk.node.active = false;
+            if (!sk.isValid) return;
+            sk.setCompleteListener(() => {
+                if (!sk.isValid) return;
                 sk.setCompleteListener(null);
-            }
+                sk.setAnimation(0, outroAnim, false);
+                sk.setCompleteListener(() => {
+                    if (sk.isValid) {
+                        sk.node.active = false;
+                        sk.setCompleteListener(null);
+                    }
+                });
+            });
         });
     }
 

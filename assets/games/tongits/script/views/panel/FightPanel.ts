@@ -4,10 +4,8 @@
  * 统一管理三个方向的 FightZone 与 ChallengeResponsePanel，
  * 对外提供语义化接口，由 TongitsView 驱动。
  *
- * screenIndex 约定（与 PlayerSeat.setSeatIndex 一致）：
- *   0 = bottom（自己 / p1）
- *   1 = left   （p3）
- *   2 = right  （p2）
+ * userId → FightZone 的映射由外部注入的 zoneResolver 提供，
+ * 实际实现由 PlayerSeatManager.getFightZoneByUserId 承担。
  *
  * 节点结构（编辑器中搭建）：
  *   FightPanel（默认 active=false）
@@ -17,30 +15,27 @@
  *   └── responsePanel       ← ChallengeResponsePanel（默认 active=false）
  *
  * TongitsView 接入示例：
- *   // 赋值回调
- *   this.fightPanel.onChallengeResponse = (accepted) => {
- *       this._sendFightResponse(accepted);
- *   };
- *   // 服务端事件驱动
- *   this.fightPanel.onPlayerChallenge(screenIndex);
+ *   this.fightPanel.zoneResolver = (uid) => this.seatManager.getFightZoneByUserId(uid);
+ *   this.fightPanel.onChallengeResponse = (accepted) => { ... };
+ *   this.fightPanel.onPlayerChallenge(userId);
  *   this.fightPanel.showResponsePanel(myPoints, endTimestamp);
- *   this.fightPanel.onPlayerFold(screenIndex);
- *   this.fightPanel.showShowdown([{ screenIndex, cards, points, groups? }, ...]);
+ *   this.fightPanel.onPlayerFold(userId);
+ *   this.fightPanel.showShowdown([{ userId, cards, points, groups? }, ...]);
  *   this.fightPanel.reset();
  */
 
 import { _decorator, Component } from 'cc';
-import { FightZone }               from './FightZone';
-import { ChallengeResponsePanel }  from './ChallengeResponsePanel';
-import type { GroupData }          from '../../utils/GroupAlgorithm';
+import { FightZone }              from './FightZone';
+import { ChallengeResponsePanel } from './ChallengeResponsePanel';
+import type { GroupData }         from '../../utils/GroupAlgorithm';
 
 const { ccclass, property } = _decorator;
 
 // ── Showdown 数据结构 ─────────────────────────────────────
 
 export interface ShowdownInfo {
-    /** 屏幕位置索引：0=bottom / 1=left / 2=right */
-    screenIndex: number;
+    /** 玩家 userId */
+    userId: number;
     /** 该玩家手牌值列表 */
     cards: number[];
     /** 该玩家点数 */
@@ -56,19 +51,25 @@ export class FightPanel extends Component {
 
     // ── Inspector 绑定 ────────────────────────────────────
 
-    @property({ type: FightZone, tooltip: 'bottom 方向区域（自己 / p1）' })
+    @property({ type: FightZone, tooltip: 'bottom 方向区域（index 0 / 自己）' })
     bottomZone: FightZone | null = null;
 
-    @property({ type: FightZone, tooltip: 'left 方向区域（p3）' })
+    @property({ type: FightZone, tooltip: 'left 方向区域（index 1）' })
     leftZone: FightZone | null = null;
 
-    @property({ type: FightZone, tooltip: 'right 方向区域（p2）' })
+    @property({ type: FightZone, tooltip: 'right 方向区域（index 2）' })
     rightZone: FightZone | null = null;
 
     @property({ type: ChallengeResponsePanel, tooltip: '挑战响应面板（本地玩家专用）' })
     responsePanel: ChallengeResponsePanel | null = null;
 
-    // ── 对外回调 ──────────────────────────────────────────
+    // ── 对外注入 ──────────────────────────────────────────
+
+    /**
+     * userId → FightZone 的查询函数，由 TongitsView 在 init 时注入。
+     * 实际委托给 PlayerSeatManager.getFightZoneByUserId。
+     */
+    zoneResolver: ((userId: number) => FightZone | null) | null = null;
 
     /**
      * 本地玩家点击 Challenge（true）或 Fold（false）后触发。
@@ -79,10 +80,8 @@ export class FightPanel extends Component {
     // ── 生命周期 ──────────────────────────────────────────
 
     protected onLoad(): void {
-        // 整个面板默认隐藏，只在挑战阶段激活
         this.node.active = false;
 
-        // 将响应面板的按钮回调代理到外部 onChallengeResponse
         if (this.responsePanel) {
             this.responsePanel.onChallenge = () => {
                 this.responsePanel?.hide();
@@ -95,16 +94,12 @@ export class FightPanel extends Component {
         }
     }
 
-    // ── 公开 API（由 TongitsView 调用） ──────────────────────
+    // ── 公开 API（由 TongitsView 调用，均以 userId 为参数） ──
 
-    /**
-     * 某玩家发起了挑战。
-     * 激活整个 FightPanel，在对应方向播放挑战动画。
-     * @param screenIndex 发起方的屏幕位置索引
-     */
-    onPlayerChallenge(screenIndex: number): void {
+    /** 某玩家发起了挑战：激活面板，在对应方向播放挑战动画 */
+    onPlayerChallenge(userId: number): void {
         this.node.active = true;
-        this._getZone(screenIndex)?.playChallenge();
+        this._getZone(userId)?.playChallenge();
     }
 
     /**
@@ -116,56 +111,38 @@ export class FightPanel extends Component {
         this.responsePanel?.show(points, endTimestamp);
     }
 
-    /**
-     * 某玩家接受了挑战，播放接受动画。
-     * @param screenIndex 接受方的屏幕位置索引
-     */
-    onPlayerAccept(screenIndex: number): void {
-        this._getZone(screenIndex)?.playAccept();
+    /** 某玩家接受了挑战，播放接受动画 */
+    onPlayerAccept(userId: number): void {
+        this._getZone(userId)?.playAccept();
+    }
+
+    /** 某玩家折牌，播放折牌动画 */
+    onPlayerFold(userId: number): void {
+        this._getZone(userId)?.playFold();
+    }
+
+    /** 某玩家被烧死，播放烧死动画 */
+    onPlayerBurn(userId: number): void {
+        this._getZone(userId)?.playBurn();
+    }
+
+    /** 某玩家赢得比牌，播放赢牌动画 */
+    onPlayerWin(userId: number): void {
+        this._getZone(userId)?.playWin();
     }
 
     /**
-     * 某玩家折牌，播放折牌动画。
-     * @param screenIndex 折牌方的屏幕位置索引
-     */
-    onPlayerFold(screenIndex: number): void {
-        this._getZone(screenIndex)?.playFold();
-    }
-
-    /**
-     * 某玩家被烧死，播放烧死动画。
-     * @param screenIndex 被烧方的屏幕位置索引
-     */
-    onPlayerBurn(screenIndex: number): void {
-        this._getZone(screenIndex)?.playBurn();
-    }
-
-    /**
-     * 某玩家赢得比牌，播放赢牌动画。
-     * @param screenIndex 获胜方的屏幕位置索引
-     */
-    onPlayerWin(screenIndex: number): void {
-        this._getZone(screenIndex)?.playWin();
-    }
-
-    /**
-     * 进入 Showdown 比牌阶段：隐藏响应面板，
-     * 在各方向区域展示手牌与点数。
-     * @param infos 各玩家 Showdown 数据（可只传参与比牌的玩家）
+     * 进入 Showdown 比牌阶段：隐藏响应面板，在各方向区域展示手牌与点数。
+     * @param infos 各玩家 Showdown 数据
      */
     showShowdown(infos: ShowdownInfo[]): void {
         this.responsePanel?.hide();
         for (const info of infos) {
-            this._getZone(info.screenIndex)?.showShowdown(
-                info.cards, info.points, info.groups,
-            );
+            this._getZone(info.userId)?.showShowdown(info.cards, info.points, info.groups);
         }
     }
 
-    /**
-     * 重置所有状态（游戏结束 / 下一局开始前调用）。
-     * 停止所有动画、清空手牌展示、隐藏整个面板。
-     */
+    /** 重置所有状态（游戏结束 / 下一局开始前调用） */
     reset(): void {
         this.bottomZone?.reset();
         this.leftZone?.reset();
@@ -176,11 +153,9 @@ export class FightPanel extends Component {
 
     // ── 私有 ──────────────────────────────────────────────
 
-    /** screenIndex → FightZone */
-    private _getZone(screenIndex: number): FightZone | null {
-        if (screenIndex === 0) return this.bottomZone;
-        if (screenIndex === 1) return this.leftZone;
-        if (screenIndex === 2) return this.rightZone;
-        return null;
+    private _getZone(userId: number): FightZone | null {
+        const zone = this.zoneResolver?.(userId) ?? null;
+        console.log(`[FightPanel] _getZone(${userId}) →`, zone?.node.name ?? 'null (resolver 未设置或未找到)');
+        return zone;
     }
 }

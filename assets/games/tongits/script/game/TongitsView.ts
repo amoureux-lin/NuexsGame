@@ -117,6 +117,9 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         if (this.tableAreaView) this.tableAreaView.node.active = false;
         if (this.actionPanel) this.actionPanel.node.active = false;
         this.actionPanel?.hideAll();
+        if (this.fightPanel) {
+            this.fightPanel.zoneResolver = (uid) => this.seatManager.getFightZoneByUserId(uid);
+        }
     }
 
     // ── 事件注册 ─────────────────────────────────────────
@@ -553,6 +556,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     }
 
     protected onChallenge(data: ChallengeBroadcast): void {
+        console.log("data", data);
         if (data.basePlayers) {
             for (const bp of data.basePlayers) {
                 this._syncPlayerField(bp.playerId, {
@@ -568,17 +572,17 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
 
         // ── FightPanel：发起方播挑战动画 ──────────────────────
         if (this.fightPanel) {
-            const screenIdx = this._getScreenIndex(data.playerId);
-            this.fightPanel.onPlayerChallenge(screenIdx);
+            console.log("发起方播挑战动画",data.playerId)
+            this.fightPanel.onPlayerChallenge(data.playerId);
 
             // 自己不是发起方 → 弹出 Challenge/Fold 响应面板
-            if (data.playerId !== this._perspectiveId) {
-                const selfBp    = data.basePlayers?.find(bp => bp.playerId === this._selfUserId);
-                const countdown = selfBp?.countdown ?? Date.now() + 10000;
-                const selfInfo  = this._players.find(p => p.playerInfo?.userId === this._perspectiveId);
-                const points    = selfInfo?.cardPoint ?? 0;
-                this.fightPanel.showResponsePanel(points, countdown);
-            }
+            // if (data.playerId !== this._perspectiveId) {
+            //     const selfBp    = data.basePlayers?.find(bp => bp.playerId === this._selfUserId);
+            //     const countdown = selfBp?.countdown ?? Date.now() + 10000;
+            //     const selfInfo  = this._players.find(p => p.playerInfo?.userId === this._perspectiveId);
+            //     const points    = selfInfo?.cardPoint ?? 0;
+            //     this.fightPanel.showResponsePanel(points, countdown);
+            // }
         }
     }
 
@@ -702,11 +706,10 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
 
         // ── FightPanel：按 changeStatus 播对应动画 ─────────────
         if (this.fightPanel) {
-            const screenIdx = this._getScreenIndex(data.playerId);
             switch (data.changeStatus) {
-                case 3: this.fightPanel.onPlayerAccept(screenIdx); break; // 接受
-                case 4: this.fightPanel.onPlayerFold(screenIdx);   break; // 折牌
-                case 5: this.fightPanel.onPlayerBurn(screenIdx);   break; // 烧死
+                case 3: this.fightPanel.onPlayerAccept(data.playerId); break; // 接受
+                case 4: this.fightPanel.onPlayerFold(data.playerId);   break; // 折牌
+                case 5: this.fightPanel.onPlayerBurn(data.playerId);   break; // 烧死
             }
         }
     }
@@ -956,14 +959,4 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         );
     }
 
-    /**
-     * 通过 userId 找到对应的屏幕位置索引（0=bottom / 1=left / 2=right）。
-     * 找不到时返回 0（兜底）。
-     */
-    private _getScreenIndex(userId: number): number {
-        for (let i = 0; i <= 2; i++) {
-            if (this.seatManager?.getSeatByIndex(i)?.getUserId() === userId) return i;
-        }
-        return 0;
-    }
 }
