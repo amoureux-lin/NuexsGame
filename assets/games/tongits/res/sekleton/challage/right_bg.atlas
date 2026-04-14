@@ -1,0 +1,125 @@
+
+right_bg.png
+size: 1731,1287
+format: RGBA8888
+filter: Linear,Linear
+repeat: none
+Fold_l
+  rotate: false
+  xy: 2, 855
+  size: 812, 430
+  orig: 812, 430
+  offset: 0, 0
+  index: -1
+PNG/fx_electric_01
+  rotate: true
+  xy: 1605, 25
+  size: 55, 33
+  orig: 300, 141
+  offset: 16, 47
+  index: -1
+PNG/fx_electric_02
+  rotate: true
+  xy: 1605, 82
+  size: 101, 35
+  orig: 300, 141
+  offset: 16, 44
+  index: -1
+PNG/fx_electric_03
+  rotate: true
+  xy: 1609, 500
+  size: 251, 89
+  orig: 300, 141
+  offset: 16, 17
+  index: -1
+PNG/fx_electric_05
+  rotate: true
+  xy: 1609, 1020
+  size: 265, 83
+  orig: 300, 141
+  offset: 17, 24
+  index: -1
+PNG/fx_electric_06
+  rotate: true
+  xy: 1609, 753
+  size: 265, 79
+  orig: 300, 141
+  offset: 18, 29
+  index: -1
+PNG/fx_electric_07
+  rotate: true
+  xy: 1605, 185
+  size: 258, 58
+  orig: 300, 141
+  offset: 22, 35
+  index: -1
+PNG/fx_electric_09
+  rotate: true
+  xy: 1665, 257
+  size: 241, 53
+  orig: 300, 141
+  offset: 46, 38
+  index: -1
+PNG/fx_electric_10
+  rotate: true
+  xy: 1665, 17
+  size: 238, 54
+  orig: 300, 141
+  offset: 51, 39
+  index: -1
+PNG/fx_electric_12
+  rotate: true
+  xy: 1694, 1072
+  size: 213, 35
+  orig: 300, 141
+  offset: 74, 58
+  index: -1
+PNG/fx_electric_13
+  rotate: true
+  xy: 1690, 835
+  size: 183, 28
+  orig: 300, 141
+  offset: 95, 61
+  index: -1
+PNG/fx_electric_14
+  rotate: true
+  xy: 1690, 756
+  size: 77, 22
+  orig: 300, 141
+  offset: 199, 64
+  index: -1
+bg_f
+  rotate: false
+  xy: 816, 26
+  size: 787, 417
+  orig: 793, 417
+  offset: 3, 0
+  index: -1
+bg_f2
+  rotate: false
+  xy: 816, 866
+  size: 791, 419
+  orig: 791, 441
+  offset: 0, 11
+  index: -1
+bg_f3
+  rotate: false
+  xy: 2, 2
+  size: 791, 419
+  orig: 791, 441
+  offset: 0, 11
+  index: -1
+bg_f4
+  rotate: false
+  xy: 816, 445
+  size: 791, 419
+  orig: 791, 441
+  offset: 0, 11
+  index: -1
+lose1
+  rotate: false
+  xy: 2, 423
+  size: 812, 430
+  orig: 812, 430
+  offset: 0, 0
+  index: -1

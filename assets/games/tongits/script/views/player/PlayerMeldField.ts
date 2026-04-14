@@ -16,6 +16,7 @@
 
 import { _decorator, Component, Node, Prefab, instantiate, Vec3, tween, Tween, UITransform, UIOpacity, sp } from 'cc';
 import { CardNode, DEFAULT_CARD_W, DEFAULT_CARD_H, CARD_SPACING } from '../handcard/CardNode';
+import { HandDisplayPanel }                                        from '../handcard/HandDisplayPanel';
 import { FlyUtil } from '../../utils/FlyUtil';
 import type { Meld } from '../../proto/tongits';
 
@@ -48,15 +49,6 @@ export class PlayerMeldField extends Component {
     @property({ type: Prefab, tooltip: '落牌光效 skeleton 预制体（飞入结束后播放一次）' })
     meldLightPrefab: Prefab | null = null;
 
-    @property({ tooltip: '四周内边距（px）' })
-    padding: number = 8;
-
-    @property({ tooltip: '同行牌组块之间的间距（px）' })
-    blockSpacing: number = 10;
-
-    @property({ tooltip: '行与行之间的垂直间距（px）' })
-    rowSpacing: number = 8;
-
     @property({ tooltip: '从右向左排列（right玩家设为 true，content Anchor (1,1)）' })
     rtl: boolean = false;
 
@@ -68,6 +60,22 @@ export class PlayerMeldField extends Component {
 
     @property({ type: Prefab, tooltip: '补牌禁用特效 skeleton 预制体（补牌落位后在牌组中心播放一次）' })
     layoffBanPrefab: Prefab | null = null;
+
+    @property({ type: Node, tooltip: '手牌节点（HandDisplayPanel 挂在此节点上）' })
+    handCardsNode: Node = null!;
+
+    @property({ type: HandDisplayPanel, tooltip: '只读手牌展示组件，结算时调用 show() 显示其他玩家手牌' })
+    handDisplay: HandDisplayPanel | null = null;
+
+    @property({ tooltip: '四周内边距（px）' })
+    padding: number = 8;
+
+    @property({ tooltip: '同行牌组块之间的间距（px）' })
+    blockSpacing: number = 10;
+
+    @property({ tooltip: '行与行之间的垂直间距（px）' })
+    rowSpacing: number = 8;
+
 
     meldTipOffsetY: number = 30;
 

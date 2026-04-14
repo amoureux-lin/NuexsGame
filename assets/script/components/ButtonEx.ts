@@ -44,6 +44,12 @@ export class ButtonEx extends Component {
         }
     }
 
+    protected onEnable(): void {
+        if (EDITOR) return;
+        // 节点从 active=false 恢复时重新应用当前状态，确保 disabled 外观正确
+        this._apply();
+    }
+
     protected onDestroy(): void {
         if (EDITOR) return;
         this.node.off(Button.EventType.CLICK, this._onClickDebounce, this);

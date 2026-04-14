@@ -68,6 +68,7 @@ export class ActionPanel extends Component {
      * @param self        本地玩家数据（含 status / isFight / changeStatus）
      * @param gameInfo    游戏状态
      * @param handButtons 手牌状态机的按钮状态（可选，默认全 false）
+     * @param isBanned
      */
     refresh(
         self: TongitsPlayerInfo | null,
@@ -88,25 +89,20 @@ export class ActionPanel extends Component {
         const canSapaw    = handButtons?.canSapaw    ?? false;
 
         // ── drop：已抽牌(ACTION)且手牌满足条件才可点 ────────────────────────
-        this._setInteractable(this.dropBtn, canPlayCards && canDrop);
+        this._setBtn(this.dropBtn, true, canPlayCards && canDrop);
 
         // ── sapaw / dump 互斥：选中牌能补时只显示 sapaw，否则只显示 dump ──
         const showSapaw = canPlayCards && canSapaw;
-        this._setActive(this.sapawBtn, showSapaw);
-        this._setInteractable(this.sapawBtn, showSapaw);
-        this._setActive(this.dumpBtn, !showSapaw);
-        this._setInteractable(this.dumpBtn, !showSapaw && canPlayCards && canDump);
+        this._setBtn(this.sapawBtn, showSapaw, showSapaw);
+        this._setBtn(this.dumpBtn, !showSapaw, !showSapaw && canPlayCards && canDump);
 
         // ── group / ungroup：本地操作，不受回合限制，由选牌条件驱动 ──────
-        this._setActive(this.ungroupBtn, canUngroup);
-        this._setInteractable(this.ungroupBtn, canUngroup);
-
-        this._setActive(this.groupBtn, !canUngroup);
-        this._setInteractable(this.groupBtn, canGroup);
+        this._setBtn(this.ungroupBtn, canUngroup, canUngroup);
+        this._setBtn(this.groupBtn, !canUngroup, canGroup);
 
         // ── fight：isBanned 时强制禁用并显示禁止标记，否则按正常逻辑 ──────
         const canFight = !isBanned && (isFight || (changeStatus >= 2 && changeStatus <= 4));
-        this._setInteractable(this.fightBtn, canFight);
+        this._setBtn(this.fightBtn, true, canFight);
         if (this.fightBanNode) this.fightBanNode.active = isBanned;
     }
 
@@ -118,11 +114,8 @@ export class ActionPanel extends Component {
         const canGroup   = handButtons?.canGroup   ?? false;
         const canUngroup = handButtons?.canUngroup ?? false;
 
-        this._setActive(this.ungroupBtn, canUngroup);
-        this._setInteractable(this.ungroupBtn, canUngroup);
-
-        this._setActive(this.groupBtn, !canUngroup);
-        this._setInteractable(this.groupBtn, canGroup);
+        this._setBtn(this.ungroupBtn, canUngroup, canUngroup);
+        this._setBtn(this.groupBtn, !canUngroup, canGroup);
     }
 
     /**
@@ -132,17 +125,11 @@ export class ActionPanel extends Component {
     resetForTurn(): void {
         if (this.fightBanNode) this.fightBanNode.active = false;
         for (const btn of [this.dropBtn, this.dumpBtn, this.fightBtn]) {
-            this._setActive(btn, true);
-            this._setInteractable(btn, false);
+            this._setBtn(btn, true, false);
         }
-        // sapawBtn 回合重置时始终隐藏，由 refresh 按条件显示
-        this._setActive(this.sapawBtn, false);
-        this._setInteractable(this.sapawBtn, false);
-        // group/ungroup reset 到初始状态（选牌清空后全 false，等待 refreshGroupButtons 驱动）
-        this._setActive(this.ungroupBtn, false);
-        this._setInteractable(this.ungroupBtn, false);
-        this._setActive(this.groupBtn, true);
-        this._setInteractable(this.groupBtn, false);
+        this._setBtn(this.sapawBtn, false, false);
+        this._setBtn(this.ungroupBtn, false, false);
+        this._setBtn(this.groupBtn, true, false);
     }
 
     /**
@@ -150,17 +137,11 @@ export class ActionPanel extends Component {
      */
     showAll(): void {
         for (const btn of [this.dropBtn, this.dumpBtn, this.fightBtn]) {
-            this._setActive(btn, true);
-            this._setInteractable(btn, false);
+            this._setBtn(btn, true, false);
         }
-        // sapawBtn 初始隐藏，由 refresh 按条件显示
-        this._setActive(this.sapawBtn, false);
-        this._setInteractable(this.sapawBtn, false);
-        // ungroupBtn 初始隐藏，groupBtn 显示但禁用，等待 refreshGroupButtons 驱动
-        this._setActive(this.ungroupBtn, false);
-        this._setInteractable(this.ungroupBtn, false);
-        this._setActive(this.groupBtn, true);
-        this._setInteractable(this.groupBtn, false);
+        this._setBtn(this.sapawBtn, false, false);
+        this._setBtn(this.ungroupBtn, false, false);
+        this._setBtn(this.groupBtn, true, false);
     }
 
     /** 隐藏所有操作按钮（游戏结束 / 重置时调用） */
@@ -200,6 +181,22 @@ export class ActionPanel extends Component {
         const ex = btn.getComponent(ButtonEx);
         if (ex) ex.setInteractable(interactable);
         else btn.interactable = interactable;
+    }
+
+    /**
+     * 同时设置按钮 active 与 interactable。
+     * CC3.x Button.onEnable() 不调用 _updateState()，节点激活后需强制触发 setter
+     * （toggle 一次）才能让 Sprite Transition 显示正确的 disabled/normal 图。
+     */
+    private _setBtn(btn: Button | null, active: boolean, interactable: boolean): void {
+        if (!btn) return;
+        this._setInteractable(btn, interactable);
+        btn.node.active = active;
+        if (active) {
+            // 激活后 Button 不会自动刷新视觉状态，toggle 强制触发 _updateState()
+            this._setInteractable(btn, !interactable);
+            this._setInteractable(btn, interactable);
+        }
     }
 
     // ── 私有：按钮回调 ────────────────────────────────────

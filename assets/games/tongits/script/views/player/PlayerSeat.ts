@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, Label, Sprite, SpriteFrame, EventTouch,Button} from 'cc';
+import { _decorator, Component, Node, Label, Sprite, SpriteFrame, EventTouch, Button, Vec3 } from 'cc';
 import { Nexus } from 'db://nexus-framework/index';
 import type { TongitsPlayerInfo } from '../../proto/tongits';
 import { PlayerMeldField } from './PlayerMeldField';
@@ -98,6 +98,10 @@ export class PlayerSeat extends Component {
     @property({ type: Label, tooltip: '倒计时剩余秒数文本' })
     countdownLabel: Label = null!;
 
+    /** 跟随圆弧终点的节点（如小圆点指示器） */
+    @property({ type: Node, tooltip: '跟随倒计时圆弧终点移动的节点，编辑器中摆放到圆弧外圈位置，运行时自动以该距离为半径' })
+    countdownFollower: Node | null = null;
+
     // ── 私有状态 ─────────────────────────────────────────
 
     private _data: TongitsPlayerInfo | null = null;
@@ -119,6 +123,8 @@ export class PlayerSeat extends Component {
     private _countdownTotal: number = 0;
     /** 倒计时是否运行中 */
     private _countdownRunning: boolean = false;
+    /** follower 距圆心的半径，由 onLoad 时初始位置自动计算 */
+    private _followerRadius: number = 0;
 
     /** 点击空座位回调（坐下），由 PlayerSeatManager 注入 */
     public onEmptySeatClick: ((seat: PlayerSeat) => void) | null = null;
@@ -134,6 +140,11 @@ export class PlayerSeat extends Component {
         this.occupiedNode?.on(Node.EventType.TOUCH_END, this._onOccupiedClick, this);
         this.kickBtn?.node.on(Node.EventType.TOUCH_END, this._onKickBtnClick, this);
         if (this.countdownNode) this.countdownNode.node.active = false;
+        // 以 follower 编辑器摆放位置到 (0,0) 的距离作为圆弧半径
+        if (this.countdownFollower) {
+            const p = this.countdownFollower.position;
+            this._followerRadius = Math.sqrt(p.x * p.x + p.y * p.y);
+        }
     }
 
     protected onDestroy(): void {
@@ -188,6 +199,7 @@ export class PlayerSeat extends Component {
     setActionActive(active: boolean): void {
         if (this.actionNode) this.actionNode.active = active;
         if (this.countdownNode) this.countdownNode.node.active = active;
+        if (this.countdownFollower) this.countdownFollower.active = active;
         if (!active) this._stopCountdown();
     }
 
@@ -220,7 +232,20 @@ export class PlayerSeat extends Component {
         }
         if (this.countdownNode && this._countdownTotal > 0) {
             this.countdownNode.fillRange = remainingSec / this._countdownTotal;
+            this._refreshFollower();
         }
+    }
+
+    private _refreshFollower(): void {
+        if (!this.countdownFollower || !this.countdownNode || this._followerRadius === 0) return;
+        // 与参考实现对齐：(1 - fillRange) 表示已消耗比例，对应顺时针旋转角度
+        // progress=1(满) → angle=0 → 12 点钟 (0, r)
+        // progress 递减 → angle 增大 → 顺时针移动
+        const angle  = (1 - this.countdownNode.fillRange) * Math.PI * 2;
+        const lx     = this._followerRadius * Math.sin(angle);
+        const ly     = this._followerRadius * Math.cos(angle);
+        const center = this.countdownNode.node.getWorldPosition();
+        this.countdownFollower.setWorldPosition(center.x + lx, center.y + ly, center.z);
     }
 
     /** 获取当前玩家的 userId，空座位返回 0 */

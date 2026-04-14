@@ -233,6 +233,19 @@ export class MockView extends UIPanel {
     }
 
     /**
+     * 计算手牌点数：手牌中未出现在任何 meld 的牌的点值之和。
+     * 点值规则：A=1，2-10=面值，J/Q/K=10。
+     */
+    private _calcCardPoint(handCards: number[], melds: { cards: number[] }[]): number {
+        const meldCards: number[] = [];
+        for (const m of melds) meldCards.push(...m.cards);
+        const meldSet = new Set(meldCards);
+        return handCards
+            .filter(c => !meldSet.has(c))
+            .reduce((sum, c) => sum + Math.min(c % 100, 10), 0);
+    }
+
+    /**
      * 构建广播用的玩家快照：
      * - 只有 SELF_ID 保留明文 handCards（服务端只对自己下发手牌）
      * - displayedMelds 深拷贝避免引用污染
@@ -1011,6 +1024,77 @@ export class MockView extends UIPanel {
         this._send(MessageType.TONGITS_PK_BROADCAST, data);
     }
 
+    /** 模拟 P2 发起挑战（自己与 P3 需要响应） */
+    clickChallengeP2(): void {
+        if (!this._gameData) this.clickInitGame();
+        const p  = this._getPlayer(SELF_ID)!;
+        const p2 = this._getPlayer(P2_ID)!;
+        const p3 = this._getPlayer(P3_ID)!;
+        p2.changeStatus = 2;
+        p.changeStatus  = 1;
+        p3.changeStatus = 1;
+
+        const data: ChallengeBroadcast = {
+            playerId:    P2_ID,
+            basePlayers: [
+                { playerId: SELF_ID, changeStatus: p.changeStatus,  countdown: Date.now() + 10000 },
+                { playerId: P2_ID,   changeStatus: p2.changeStatus, countdown: 0                  },
+                { playerId: P3_ID,   changeStatus: p3.changeStatus, countdown: Date.now() + 10000 },
+            ],
+            userId: SELF_ID,
+        };
+        this._send(MessageType.TONGITS_CHALLENGE_BROADCAST, data);
+    }
+
+    /** 模拟 P3 发起挑战（自己与 P2 需要响应） */
+    clickChallengeP3(): void {
+        if (!this._gameData) this.clickInitGame();
+        const p  = this._getPlayer(SELF_ID)!;
+        const p2 = this._getPlayer(P2_ID)!;
+        const p3 = this._getPlayer(P3_ID)!;
+        p3.changeStatus = 2;
+        p.changeStatus  = 1;
+        p2.changeStatus = 1;
+
+        const data: ChallengeBroadcast = {
+            playerId:    P3_ID,
+            basePlayers: [
+                { playerId: SELF_ID, changeStatus: p.changeStatus,  countdown: Date.now() + 10000 },
+                { playerId: P2_ID,   changeStatus: p2.changeStatus, countdown: Date.now() + 10000 },
+                { playerId: P3_ID,   changeStatus: p3.changeStatus, countdown: 0                  },
+            ],
+            userId: SELF_ID,
+        };
+        this._send(MessageType.TONGITS_CHALLENGE_BROADCAST, data);
+    }
+
+    /** 模拟自己被烧死（changeStatus=5） */
+    clickBurnSelf(): void {
+        if (!this._gameData) this.clickInitGame();
+        const p = this._getPlayer(SELF_ID)!;
+        p.changeStatus = 5;
+        const data: PKBroadcast = { playerId: SELF_ID, changeStatus: 5, userId: SELF_ID };
+        this._send(MessageType.TONGITS_PK_BROADCAST, data);
+    }
+
+    /** 模拟 P2 被烧死 */
+    clickBurnP2(): void {
+        if (!this._gameData) this.clickInitGame();
+        const p2 = this._getPlayer(P2_ID)!;
+        p2.changeStatus = 5;
+        const data: PKBroadcast = { playerId: P2_ID, changeStatus: 5, userId: SELF_ID };
+        this._send(MessageType.TONGITS_PK_BROADCAST, data);
+    }
+
+    /** 模拟 P3 被烧死 */
+    clickBurnP3(): void {
+        if (!this._gameData) this.clickInitGame();
+        const p3 = this._getPlayer(P3_ID)!;
+        p3.changeStatus = 5;
+        const data: PKBroadcast = { playerId: P3_ID, changeStatus: 5, userId: SELF_ID };
+        this._send(MessageType.TONGITS_PK_BROADCAST, data);
+    }
+
     // ── 按钮：结算前 ──────────────────────────────────────────
 
     /** 模拟结算前比牌广播（自己获胜） */
@@ -1025,6 +1109,38 @@ export class MockView extends UIPanel {
             players:   this._snapPlayers(),
             countdown: 5,
             pot:       { ...this._gameData!.gameInfo.pot! },
+            userId:    SELF_ID,
+        };
+        this._send(MessageType.TONGITS_GAME_WIN_BROADCAST, data);
+    }
+
+    /**
+     * 模拟结算前比牌广播（含所有玩家真实手牌 + 点数，用于测试 Showdown 展示）。
+     * 与 clickBeforeResult 的区别：players 里包含 P2/P3 的 handCards 和计算后的 cardPoint。
+     * @param winnerId 获胜方 userId（默认 SELF_ID）
+     */
+    clickShowdownFull(winnerId: number = SELF_ID): void {
+        if (!this._gameData) return;
+        this._gameData.gameInfo.status = 4;
+
+        const players = this._gameData.players.map(p => {
+            const uid = p.playerInfo!.userId;
+            // 自己用 _gameData 里的手牌，AI 用 aiHands 里的真实手牌
+            const hand = uid === SELF_ID ? [...p.handCards] : [...this._aiHand(uid)];
+            return {
+                ...p,
+                handCards:      hand,
+                cardPoint:      this._calcCardPoint(hand, p.displayedMelds),
+                displayedMelds: p.displayedMelds.map(m => ({ ...m, cards: [...m.cards] })),
+            };
+        });
+
+        const data: BeforeResultBroadcast = {
+            winnerId,
+            winType:   2,   // 2 = 挑战获胜
+            players,
+            countdown: 5,
+            pot:       { ...this._gameData.gameInfo.pot! },
             userId:    SELF_ID,
         };
         this._send(MessageType.TONGITS_GAME_WIN_BROADCAST, data);

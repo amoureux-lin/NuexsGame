@@ -36,6 +36,7 @@ import {GameStartEffect} from "db://assets/games/tongits/script/views/effect/Gam
 import { FlyUtil } from '../utils/FlyUtil';
 import { CardNode, DEFAULT_CARD_W, CARD_SPACING } from '../views/handcard/CardNode';
 import { TableAreaView } from '../views/panel/TableAreaView';
+import { FightPanel }    from '../views/panel/FightPanel';
 
 const { ccclass, property } = _decorator;
 
@@ -74,6 +75,9 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
 
     @property({ type: TableAreaView, tooltip: '牌桌中央区（牌堆数量 + 弃牌展示 + 历史按钮），挂在 tableArea 节点上' })
     tableAreaView: TableAreaView = null!;
+
+    @property({ type: FightPanel, tooltip: '挑战/比牌/烧死动画容器' })
+    fightPanel: FightPanel | null = null;
 
     // ── 缓存本地状态 ─────────────────────────────────────
 
@@ -561,6 +565,21 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
             this._refreshActionPanel();
         }
         this._refreshAllSeats();
+
+        // ── FightPanel：发起方播挑战动画 ──────────────────────
+        if (this.fightPanel) {
+            const screenIdx = this._getScreenIndex(data.playerId);
+            this.fightPanel.onPlayerChallenge(screenIdx);
+
+            // 自己不是发起方 → 弹出 Challenge/Fold 响应面板
+            if (data.playerId !== this._perspectiveId) {
+                const selfBp    = data.basePlayers?.find(bp => bp.playerId === this._selfUserId);
+                const countdown = selfBp?.countdown ?? Date.now() + 10000;
+                const selfInfo  = this._players.find(p => p.playerInfo?.userId === this._perspectiveId);
+                const points    = selfInfo?.cardPoint ?? 0;
+                this.fightPanel.showResponsePanel(points, countdown);
+            }
+        }
     }
 
     // ── 自己操作的 RES 响应 ────────────────────────────────
@@ -680,6 +699,16 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
             this._refreshActionPanel();
         }
         this._refreshAllSeats();
+
+        // ── FightPanel：按 changeStatus 播对应动画 ─────────────
+        if (this.fightPanel) {
+            const screenIdx = this._getScreenIndex(data.playerId);
+            switch (data.changeStatus) {
+                case 3: this.fightPanel.onPlayerAccept(screenIdx); break; // 接受
+                case 4: this.fightPanel.onPlayerFold(screenIdx);   break; // 折牌
+                case 5: this.fightPanel.onPlayerBurn(screenIdx);   break; // 烧死
+            }
+        }
     }
 
     protected onBeforeResult(data: BeforeResultBroadcast): void {
@@ -925,5 +954,16 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
             this._players[idx],
             this._players[idx].playerInfo?.userId === this._perspectiveId,
         );
+    }
+
+    /**
+     * 通过 userId 找到对应的屏幕位置索引（0=bottom / 1=left / 2=right）。
+     * 找不到时返回 0（兜底）。
+     */
+    private _getScreenIndex(userId: number): number {
+        for (let i = 0; i <= 2; i++) {
+            if (this.seatManager?.getSeatByIndex(i)?.getUserId() === userId) return i;
+        }
+        return 0;
     }
 }

@@ -1,0 +1,125 @@
+
+middle_bg.png
+size: 2033,1585
+format: RGBA8888
+filter: Linear,Linear
+repeat: none
+PNG/fx_electric_01
+  rotate: true
+  xy: 1997, 56
+  size: 55, 33
+  orig: 300, 141
+  offset: 16, 47
+  index: -1
+PNG/fx_electric_02
+  rotate: true
+  xy: 1581, 625
+  size: 101, 35
+  orig: 300, 141
+  offset: 16, 44
+  index: -1
+PNG/fx_electric_03
+  rotate: true
+  xy: 1942, 1332
+  size: 251, 89
+  orig: 300, 141
+  offset: 16, 17
+  index: -1
+PNG/fx_electric_05
+  rotate: true
+  xy: 1942, 1065
+  size: 265, 83
+  orig: 300, 141
+  offset: 17, 24
+  index: -1
+PNG/fx_electric_06
+  rotate: true
+  xy: 1942, 798
+  size: 265, 79
+  orig: 300, 141
+  offset: 18, 29
+  index: -1
+PNG/fx_electric_07
+  rotate: true
+  xy: 1942, 538
+  size: 258, 58
+  orig: 300, 141
+  offset: 22, 35
+  index: -1
+PNG/fx_electric_09
+  rotate: true
+  xy: 1942, 55
+  size: 241, 53
+  orig: 300, 141
+  offset: 46, 38
+  index: -1
+PNG/fx_electric_10
+  rotate: true
+  xy: 1942, 298
+  size: 238, 54
+  orig: 300, 141
+  offset: 51, 39
+  index: -1
+PNG/fx_electric_12
+  rotate: true
+  xy: 1581, 728
+  size: 213, 35
+  orig: 300, 141
+  offset: 74, 58
+  index: -1
+PNG/fx_electric_13
+  rotate: true
+  xy: 1997, 113
+  size: 183, 28
+  orig: 300, 141
+  offset: 95, 61
+  index: -1
+PNG/fx_electric_14
+  rotate: false
+  xy: 1942, 31
+  size: 77, 22
+  orig: 300, 141
+  offset: 199, 64
+  index: -1
+bg_c
+  rotate: true
+  xy: 1630, 6
+  size: 1577, 310
+  orig: 1577, 372
+  offset: 0, 33
+  index: -1
+bg_c2
+  rotate: false
+  xy: 2, 631
+  size: 1577, 310
+  orig: 1577, 372
+  offset: 0, 33
+  index: -1
+bg_c3
+  rotate: false
+  xy: 2, 2
+  size: 1575, 309
+  orig: 1575, 370
+  offset: 0, 32
+  index: -1
+bg_c4
+  rotate: false
+  xy: 2, 313
+  size: 1577, 310
+  orig: 1577, 372
+  offset: 0, 33
+  index: -1
+lose_m
+  rotate: false
+  xy: 2, 1264
+  size: 1626, 319
+  orig: 1626, 359
+  offset: 0, 22
+  index: -1
+sure
+  rotate: false
+  xy: 2, 943
+  size: 1626, 319
+  orig: 1626, 359
+  offset: 0, 22
+  index: -1
