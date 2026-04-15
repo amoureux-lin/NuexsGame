@@ -176,6 +176,12 @@ export class MockView extends UIPanel {
     /** 当前操作玩家在 TURN_ORDER 中的索引 */
     private _actionIdx: number = 0;
 
+    /**
+     * 标记当前处于挑战场景（场景1/2/3），
+     * 自己选择 Challenge/Fold 后自动发送 BeforeResult（winType=2）。
+     */
+    private _awaitingBeforeResult: boolean = false;
+
     /** 防止多次点击 roundMsg 造成并发 */
     private _roundRunning: boolean = false;
 
@@ -392,6 +398,13 @@ export class MockView extends UIPanel {
         const p   = this._getPlayer(SELF_ID)!;
         p.changeStatus = req.changeStatus;
         console.log(`[Mock←RES] CHALLENGE  changeStatus=${req.changeStatus}`);
+
+        // 场景1/2/3：自己做出选择后，2s 后自动推送 BeforeResult（winType=2）
+        if (this._awaitingBeforeResult && (req.changeStatus === 3 || req.changeStatus === 4)) {
+            this._awaitingBeforeResult = false;
+            setTimeout(() => this.clickShowdownFull(), 2000);
+        }
+
         return {
             basePlayers: (this._gameData?.players ?? []).map(pl => ({
                 playerId:     pl.playerInfo!.userId,
@@ -407,8 +420,8 @@ export class MockView extends UIPanel {
     clickJoinRoom(): void {
         const players = [
             buildPlayer(SELF_ID, [], false, 1, 1),
-            buildPlayer(P2_ID,   [], false, 0, 3),
-            buildPlayer(P3_ID,   [], false, 0, 2),
+            buildPlayer(P2_ID,   [], false, 0, 2),
+            buildPlayer(P3_ID,   [], false, 0, 3),
         ];
         const data: JoinRoomRes = {
             roomInfo:     this._buildRoomInfo(),
@@ -467,8 +480,8 @@ export class MockView extends UIPanel {
         this._gameData = {
             players: [
                 buildPlayer(SELF_ID, selfHand, false, 1, 1),
-                { ...buildPlayer(P2_ID, [], false, 0, 3), handCardCount: 12 },
-                { ...buildPlayer(P3_ID, [], true, 0, 2), handCardCount: 13 },
+                { ...buildPlayer(P2_ID, [], false, 0, 2), handCardCount: 12 },
+                { ...buildPlayer(P3_ID, [], true, 0, 3), handCardCount: 13 },
             ],
             gameInfo: buildGameInfo(P3_ID, remaining.length),
             deck:     remaining,
@@ -1025,10 +1038,11 @@ export class MockView extends UIPanel {
     }
 
     /**
-     * 场景1：P2 发起挑战 → 2s 后 P3 接受 → 等待自己选择
+     * 场景1：P2 发起挑战 → 2s 后 P3 接受 → 等待自己选择 → 自己选择后 2s 发 BeforeResult
      */
     clickChallengeP2(): void {
         if (!this._gameData) this.clickInitGame();
+        this._awaitingBeforeResult = true;
         const p  = this._getPlayer(SELF_ID)!;
         const p2 = this._getPlayer(P2_ID)!;
         const p3 = this._getPlayer(P3_ID)!;
@@ -1055,10 +1069,11 @@ export class MockView extends UIPanel {
     }
 
     /**
-     * 场景2：P3 发起挑战 → 2s 后 P2 接受 → 等待自己选择
+     * 场景2：P3 发起挑战 → 2s 后 P2 接受 → 等待自己选择 → 自己选择后 2s 发 BeforeResult
      */
     clickChallengeP3(): void {
         if (!this._gameData) this.clickInitGame();
+        this._awaitingBeforeResult = true;
         const p  = this._getPlayer(SELF_ID)!;
         const p2 = this._getPlayer(P2_ID)!;
         const p3 = this._getPlayer(P3_ID)!;
@@ -1085,10 +1100,11 @@ export class MockView extends UIPanel {
     }
 
     /**
-     * 场景3：P2 发起挑战 → 2s 后 P3 直接烧死 → 等待自己选择
+     * 场景3：P2 发起挑战 → 2s 后 P3 直接烧死 → 等待自己选择 → 自己选择后 2s 发 BeforeResult
      */
     clickBurnP3(): void {
         if (!this._gameData) this.clickInitGame();
+        this._awaitingBeforeResult = true;
         const p  = this._getPlayer(SELF_ID)!;
         const p2 = this._getPlayer(P2_ID)!;
         const p3 = this._getPlayer(P3_ID)!;
@@ -1149,6 +1165,9 @@ export class MockView extends UIPanel {
                 playerId: P3_ID, changeStatus: 5, userId: SELF_ID,
             } as PKBroadcast);
         }, 4000);
+
+        // 场景4：所有人状态已确定，6s 后自动发 BeforeResult（winType=2）
+        setTimeout(() => this.clickShowdownFull(), 6000);
     }
 
     // ── 按钮：结算前 ──────────────────────────────────────────
@@ -1233,8 +1252,8 @@ export class MockView extends UIPanel {
     clickRoomReset(): void {
         const resetPlayers = [
             buildPlayer(SELF_ID, [], false, 1, 1),
-            buildPlayer(P2_ID,   [], false, 0, 3),
-            buildPlayer(P3_ID,   [], false, 0, 2),
+            buildPlayer(P2_ID,   [], false, 0, 2),
+            buildPlayer(P3_ID,   [], false, 0, 3),
         ];
         this._gameData      = null;
         this._actionIdx     = 0;

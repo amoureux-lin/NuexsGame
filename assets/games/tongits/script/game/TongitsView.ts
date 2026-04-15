@@ -574,13 +574,14 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         }
         this._refreshAllSeats();
 
-        // ── FightPanel：发起方播挑战动画 ──────────────────────
+        // ── FightPanel：先重置再播发起方挑战动画（同一时刻只允许一人发起）──
         if (this.fightPanel) {
-            console.log("发起方播挑战动画",data.playerId)
+            this.fightPanel.reset();
             this.fightPanel.onPlayerChallenge(data.playerId);
 
             // 自己不是发起方 → 弹出 Challenge/Fold 响应面板
             if (data.playerId !== this._perspectiveId) {
+                console.log("弹出 Challenge/Fold 响应面板")
                 const selfBp    = data.basePlayers?.find(bp => bp.playerId === this._selfUserId);
                 const countdown = selfBp?.countdown ?? Date.now() + 10000;
                 const selfInfo  = this._players.find(p => p.playerInfo?.userId === this._perspectiveId);
@@ -737,6 +738,30 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
             this._players = data.players;
             this._refreshAllSeats();
         }
+        /** 胜利类型  1 tongits 2 挑战 3 时间结束比大小: */
+        // winType=2（挑战结算）：fx 隐藏 + bg 切 bg_loop + 展示各玩家手牌
+        if(data.winType === 1){ //tongits
+
+        }else if (data.winType === 2 && this.fightPanel) { //挑战
+            this.fightPanel.onBeforeResult();
+            const infos = (data.players ?? [])
+                .filter(p => (p.handCards?.length ?? 0) > 0)
+                .map(p => ({
+                    userId: p.playerInfo!.userId,
+                    cards:  p.handCards,
+                    points: p.cardPoint ?? 0,
+                    isWin:  p.playerInfo!.userId === data.winnerId,
+                }));
+            if (infos.length > 0) {
+                this.fightPanel.showShowdown(infos);
+            }
+        } else if (data.winType === 3) { //摸完牌
+            const winner = (data.players ?? []).find(p => p.isWin);
+            if (winner) {
+                const bonus = winner.playerInfo?.coinChanged ?? 0;
+                this.seatManager?.showWin(winner.playerInfo!.userId, bonus);
+            }
+        }
     }
 
     protected onGameResult(_data: GameResultBroadcast): void {
@@ -760,6 +785,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         this._isGameStarted = false;
         this._actionPlayerId = 0;
         this._handButtons = null;
+        this.seatManager?.resetZoneMap();
         this._layoffBannedIds.clear();
         this.seatManager?.setContext(this._isLocalOwner, false);
         this.seatManager?.updateActionPlayer(0);

@@ -61,8 +61,6 @@ export class ChallengeResponsePanel extends Component {
     protected onLoad(): void {
         this.challengeBtn?.node.on(Button.EventType.CLICK, this._onChallengeClick, this);
         this.foldBtn?.node.on(Button.EventType.CLICK,      this._onFoldClick,      this);
-        // 面板默认隐藏
-        this.node.active = false;
     }
 
     protected onDestroy(): void {

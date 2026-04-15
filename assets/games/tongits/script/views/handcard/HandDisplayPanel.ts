@@ -16,8 +16,8 @@
  *   带错开延迟展开到最终布局位置。
  */
 
-import { _decorator, Component, Enum, Node, Prefab, instantiate, Vec3, tween, Tween } from 'cc';
-import { CardNode, DEFAULT_CARD_W, CARD_SPACING }                    from './CardNode';
+import { _decorator, Component, Enum, Node, Prefab, instantiate, Vec3, tween, Tween, UITransform } from 'cc';
+import { CardNode, DEFAULT_CARD_W, DEFAULT_CARD_H, CARD_SPACING } from './CardNode';
 import { CardGroupView }                                              from './CardGroupView';
 import { autoGroup, GroupData }                                       from '../../utils/GroupAlgorithm';
 import { SortMode }                                                   from '../../utils/CardDef';
@@ -32,10 +32,8 @@ export enum HandDisplayAlignment {
     CENTER = 2,   // 居中（自己 / 结算）：内容以节点中心为对称轴
 }
 
-// ── 布局常量（与 HandCardPanel 保持一致） ──────────────────
+// ── 布局常量 ──────────────────────────────────────────────
 
-/** 组与组之间的间距（px）——与 HandCardPanel.GROUP_GAP 相同 */
-const GROUP_GAP      = 36;
 /** 展开动画时长（秒） */
 const EXPAND_DUR     = 0.30;
 /** 每组 / 每张牌的错开延迟（秒） */
@@ -54,6 +52,8 @@ export class HandDisplayPanel extends Component {
 
     @property({ type: Enum(HandDisplayAlignment), tooltip: '对齐方式：LEFT=左对齐 / RIGHT=右对齐 / CENTER=居中' })
     alignment: HandDisplayAlignment = HandDisplayAlignment.LEFT;
+
+    groupGap: number = 20;
 
     // ── 私有状态 ──────────────────────────────────────────
 
@@ -82,8 +82,9 @@ export class HandDisplayPanel extends Component {
      *
      * @param cards  手牌值列表（全量）
      * @param groups 外部传入的分组信息；不传则由 autoGroup 自动计算
+     * @param animate
      */
-    show(cards: number[], groups?: GroupData[]): void {
+    show(cards: number[], groups?: GroupData[], animate: boolean = false): void {
         this.clear();
         if (cards.length === 0) return;
 
@@ -103,44 +104,7 @@ export class HandDisplayPanel extends Component {
             ungroupList  = result.ungroup;
         }
 
-        // ── 2. 预算所有目标位置（在 [0, totalW] 局部空间中）──
-        const cardW        = DEFAULT_CARD_W;
-        const groupWidths  = groupList.map(g => cardW + (g.cards.length - 1) * CARD_SPACING);
-        const groupTargets: number[] = [];
-
-        let curX = 0;
-        for (let i = 0; i < groupList.length; i++) {
-            groupTargets.push(curX + groupWidths[i] / 2);  // 组中心 X
-            curX += groupWidths[i] + GROUP_GAP;
-        }
-        if (groupList.length > 0) curX -= GROUP_GAP;       // 去掉最后一组尾部间距
-
-        const ungroupTargets: number[] = [];
-        if (ungroupList.length > 0) {
-            if (groupList.length > 0) curX += GROUP_GAP;   // 组区与散牌之间的间距
-            const ungroupStartX = curX + cardW / 2;         // 首张散牌中心
-            for (let i = 0; i < ungroupList.length; i++) {
-                ungroupTargets.push(ungroupStartX + i * CARD_SPACING);
-            }
-            curX += (ungroupList.length - 1) * CARD_SPACING + cardW;
-        }
-        const totalW = Math.max(curX, 0);
-
-        // ── 3. 根节点偏移（对齐方式决定） ────────────────────
-        const rootX = this.alignment === HandDisplayAlignment.CENTER ? -totalW / 2
-                    : this.alignment === HandDisplayAlignment.RIGHT   ? -totalW
-                    : 0;  // LEFT
-        this._root.setPosition(rootX, 0, 0);
-
-        // ── 4. 展开动画起始点（根局部坐标系）────────────────
-        //   LEFT  → 从左边缘 (0) 向右展开
-        //   RIGHT → 从右边缘 (totalW) 向左展开
-        //   CENTER→ 从中心  (totalW/2) 向两侧展开
-        const startX = this.alignment === HandDisplayAlignment.CENTER ? totalW / 2
-                     : this.alignment === HandDisplayAlignment.RIGHT   ? totalW
-                     : 0;
-
-        // ── 5. 牌面工厂（无交互） ─────────────────────────
+        // ── 2. 牌面工厂（无交互） ─────────────────────────────
         const factory = (v: number): Node => {
             const n  = this.cardPrefab ? instantiate(this.cardPrefab) : new Node('Card');
             const cn = n.getComponent(CardNode) ?? n.addComponent(CardNode);
@@ -150,7 +114,57 @@ export class HandDisplayPanel extends Component {
             return n;
         };
 
-        // ── 6. 创建牌组节点并动画 ────────────────────────────
+        // ── 3. 量出实际牌尺寸（造一张探针牌挂到场景再量） ──────
+        const probeNode = factory(cards[0]);
+        this._root.addChild(probeNode);
+        const probeTf = probeNode.getComponent(UITransform);
+        const cardW   = probeTf && probeTf.contentSize.width  > 0 ? probeTf.contentSize.width  : DEFAULT_CARD_W;
+        const cardH   = probeTf && probeTf.contentSize.height > 0 ? probeTf.contentSize.height : DEFAULT_CARD_H;
+        // 探针牌稍后放入散牌列表复用（不销毁）
+
+        // ── 4. 预算所有目标位置（在 [0, totalW] 局部空间中）──
+        const groupWidths  = groupList.map(g => cardW + (g.cards.length - 1) * CARD_SPACING);
+        const groupTargets: number[] = [];
+
+        let curX = 0;
+        for (let i = 0; i < groupList.length; i++) {
+            groupTargets.push(curX + groupWidths[i] / 2);  // 组中心 X
+            curX += groupWidths[i] + this.groupGap;
+        }
+        if (groupList.length > 0) curX -= this.groupGap;   // 去掉最后一组尾部间距
+
+        const ungroupTargets: number[] = [];
+        if (ungroupList.length > 0) {
+            if (groupList.length > 0) curX += this.groupGap;
+            const ungroupStartX = curX + cardW / 2;        // 首张散牌中心
+            for (let i = 0; i < ungroupList.length; i++) {
+                ungroupTargets.push(ungroupStartX + i * CARD_SPACING);
+            }
+            curX += (ungroupList.length - 1) * CARD_SPACING + cardW;
+        }
+        const totalW = Math.max(curX, 0);
+
+        // 同步 this.node 的 UITransform，供父级布局感知
+        this.node.getComponent(UITransform)?.setContentSize(totalW+10, cardH+10);
+
+        // ── 5. 根节点偏移（对齐方式决定） ────────────────────
+        const rootX = this.alignment === HandDisplayAlignment.CENTER ? -totalW / 2
+                    : this.alignment === HandDisplayAlignment.RIGHT   ? -totalW
+                    : 0;  // LEFT
+        this._root.setPosition(rootX, 0, 0);
+
+        // ── 6. 展开动画起始点（根局部坐标系）────────────────
+        //   LEFT  → 从左边缘 (0) 向右展开
+        //   RIGHT → 从右边缘 (totalW) 向左展开
+        //   CENTER→ 从中心  (totalW/2) 向两侧展开
+        const startX = this.alignment === HandDisplayAlignment.CENTER ? totalW / 2
+                     : this.alignment === HandDisplayAlignment.RIGHT   ? totalW
+                     : 0;
+
+        // 探针牌若没有被分组消费，在此销毁（只用于量尺寸）
+        if (probeNode.isValid) probeNode.destroy();
+
+        // ── 7. 创建牌组节点并动画 ────────────────────────────
         for (let i = 0; i < groupList.length; i++) {
             const g     = groupList[i];
             const gNode = this.cardGroupPrefab
@@ -163,28 +177,37 @@ export class HandDisplayPanel extends Component {
             this._groupViews.push(gv);
 
             // 从锚点出发展开到目标
-            gNode.setPosition(startX, 0, 0);
             const targetX = groupTargets[i];
-            tween(gNode)
-                .delay(i * EXPAND_STAGGER)
-                .to(EXPAND_DUR, { position: new Vec3(targetX, 0, 0) }, { easing: 'quadOut' })
-                .call(() => { if (gNode.isValid) gv.syncMarkerLayout(); })
-                .start();
+            if (animate) {
+                gNode.setPosition(startX, 0, 0);
+                tween(gNode)
+                    .delay(i * EXPAND_STAGGER)
+                    .to(EXPAND_DUR, { position: new Vec3(targetX, 0, 0) }, { easing: 'quadOut' })
+                    .call(() => { if (gNode.isValid) gv.syncMarkerLayout(); })
+                    .start();
+            } else {
+                gNode.setPosition(targetX, 0, 0);
+                gv.syncMarkerLayout();
+            }
         }
 
-        // ── 7. 创建散牌节点并动画 ────────────────────────────
+        // ── 8. 创建散牌节点并动画 ────────────────────────────
         for (let i = 0; i < ungroupList.length; i++) {
             const n  = factory(ungroupList[i]);
             this._root.addChild(n);
             const cn = n.getComponent(CardNode)!;
             this._ungroupNodes.push(cn);
 
-            n.setPosition(startX, 0, 0);
             const targetX = ungroupTargets[i];
-            tween(n)
-                .delay((groupList.length + i) * EXPAND_STAGGER)
-                .to(EXPAND_DUR, { position: new Vec3(targetX, 0, 0) }, { easing: 'quadOut' })
-                .start();
+            if (animate) {
+                n.setPosition(startX, 0, 0);
+                tween(n)
+                    .delay((groupList.length + i) * EXPAND_STAGGER)
+                    .to(EXPAND_DUR, { position: new Vec3(targetX, 0, 0) }, { easing: 'quadOut' })
+                    .start();
+            } else {
+                n.setPosition(targetX, 0, 0);
+            }
         }
     }
 

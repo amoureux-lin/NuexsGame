@@ -62,6 +62,10 @@ export class PlayerSeatManager extends Component {
     // ── 私有上下文 ────────────────────────────────────────
     private _isLocalOwner: boolean = false;
     private _isGameStarted: boolean = false;
+    /** 缓存上一次成功确定的自己座位号，用于 data.players 不含自己时保持相对布局 */
+    private _selfSeat: number = 0;
+    /** userId → FightZone 直接映射，refreshFromPlayers 时写入，不依赖运行时 getUserId() */
+    private _userZoneMap: Map<number, FightZone> = new Map();
 
     // ── 公开方法 ─────────────────────────────────────────
 
@@ -85,9 +89,9 @@ export class PlayerSeatManager extends Component {
      * @param selfUserId 本地玩家 userId（旁观者传 perspectiveId 或首个玩家 id）
      */
     refreshFromPlayers(players: TongitsPlayerInfo[], selfUserId: number): void {
-        console.log('refreshFromPlayers', players);
         const positions = this._buildPositions(players, selfUserId);
         const seats = [this.seatBottom, this.seatRight, this.seatLeft];
+        const zones = [this.fightZoneBottom, this.fightZoneRight, this.fightZoneLeft];
         for (let i = 0; i < seats.length; i++) {
             if (!seats[i]) continue;
             seats[i].setSeatIndex(i);
@@ -95,7 +99,19 @@ export class PlayerSeatManager extends Component {
             const pos = positions[i];
             seats[i].setData(pos?.player ?? null, pos?.isSelf ?? false, pos?.seat ?? 0);
             this._bindSeatCallbacks(seats[i]);
+
+            // 绑定 userId → FightZone（只写入有玩家数据的槽位，保留其余已有绑定）
+            const uid = pos?.player?.playerInfo?.userId;
+            if (uid && zones[i]) {
+                this._userZoneMap.set(uid, zones[i]);
+            }
         }
+    }
+
+    /** 重置 userId→FightZone 映射（换局/重置房间时调用） */
+    resetZoneMap(): void {
+        this._userZoneMap.clear();
+        this._selfSeat = 0;
     }
 
     /**
@@ -143,10 +159,16 @@ export class PlayerSeatManager extends Component {
      * 找不到时返回 null。
      */
     getFightZoneByUserId(userId: number): FightZone | null {
-        if (this.seatBottom?.getUserId() === userId) return this.fightZoneBottom;
-        if (this.seatRight?.getUserId()  === userId) return this.fightZoneRight;
-        if (this.seatLeft?.getUserId()   === userId) return this.fightZoneLeft;
-        return null;
+        return this._userZoneMap.get(userId) ?? null;
+    }
+
+    /**
+     * 显示嬴的钱
+     * @param userId
+     * @param bonusAmount
+     */
+    showWin(userId:number,bonusAmount:number): void {
+        this.getSeatByUserId(userId)?.showWin(bonusAmount);
     }
 
     // ── 私有：视角排列计算 ────────────────────────────────
@@ -178,11 +200,17 @@ export class PlayerSeatManager extends Component {
         const selfSeat = selfPlayer?.playerInfo?.seat ?? 0;
 
         if (selfSeat > 0) {
-            // 有座位：以自己为 index 0，逆时针排列
+            this._selfSeat = selfSeat;   // 缓存，供后续局部数据更新时使用
             return this._buildBySeat(selfSeat, MAX_SEATS, seatMap, selfUserId);
         }
 
-        // 旁观者：空座 → 有人座
+        // self 不在本次数据中（如 onBeforeResult 只含部分玩家）：
+        // 用缓存的 seat 保持相对布局，不回退到绝对顺序
+        if (this._selfSeat > 0) {
+            return this._buildBySeat(this._selfSeat, MAX_SEATS, seatMap, selfUserId);
+        }
+
+        // 纯旁观者（游戏外）：空座优先
         return this._buildSpectator(MAX_SEATS, seatMap, selfUserId);
     }
 

@@ -19,11 +19,18 @@
  *       └── pointsLabel    ← Label，显示该玩家点数
  */
 
-import { _decorator, Component, Node, Label, sp } from 'cc';
-import { HandDisplayPanel }                        from '../handcard/HandDisplayPanel';
-import type { GroupData }                          from '../../utils/GroupAlgorithm';
+import { _decorator, Component, Enum, Node, Label, sp, tween, Vec3, Tween, SpriteFrame, Sprite } from 'cc';
+import { HandDisplayPanel }                                                   from '../handcard/HandDisplayPanel';
+import type { GroupData }                                                      from '../../utils/GroupAlgorithm';
 
 const { ccclass, property } = _decorator;
+
+// ── showdownNode 飞入方向 ─────────────────────────────────
+export enum FightZoneAlignment {
+    BOTTOM = 0,  // 底部（自己）：从下方飞入
+    LEFT   = 1,  // 左侧（p3）：从左侧飞入
+    RIGHT  = 2,  // 右侧（p2）：从右侧飞入
+}
 
 // ── bgSkeleton Skin 名 ────────────────────────────────────
 const SKIN_CHALLENGE = 'challenge';
@@ -35,6 +42,7 @@ const SKIN_BURNED    = 'burned';
 const BG_IN   = 'bg_in';    // 入场（单次）
 const BG_LOOP = 'bg_loop';  // 循环等待
 const BG_WIN  = 'bg_win';   // 赢牌退出（单次）→ 隐藏
+const BG_OUT2 = 'bg_out2';  // 输牌退出（单次）→ 隐藏
 
 // ── fxSkeleton 动画名 ────────────────────────────────────
 const FX_FIGHT_IN       = 'idle_fight_in';
@@ -51,7 +59,6 @@ const FX_WIN            = '';   // 赢牌 fx（后续补充）
 export class FightZone extends Component {
 
     // ── Inspector：节点绑定 ────────────────────────────────
-
     @property({ type: sp.Skeleton, tooltip: '背景动效层 Skeleton（默认 active=false）' })
     bgSkeleton: sp.Skeleton | null = null;
 
@@ -67,12 +74,59 @@ export class FightZone extends Component {
     @property({ type: Label, tooltip: 'Showdown 玩家点数标签' })
     pointsLabel: Label | null = null;
 
+    @property({ type: Enum(FightZoneAlignment), tooltip: 'showdownNode 飞入方向' })
+    alignment: FightZoneAlignment = FightZoneAlignment.BOTTOM;
+
+    @property({ type: SpriteFrame, tooltip: '赢背景图' })
+    winBg: SpriteFrame | null = null;
+
+    @property({ type: SpriteFrame, tooltip: '输背景图' })
+    loseBg: SpriteFrame | null = null;
+
+    @property({ type: Sprite, tooltip: '结果Sprite' })
+    resType: Sprite | null = null;
+
+    @property({ type: SpriteFrame, tooltip: '赢SpriteFrame' })
+    winFrame: SpriteFrame | null = null;
+    @property({ type: SpriteFrame, tooltip: '输SpriteFrame' })
+    loseFrame: SpriteFrame | null = null;
+    @property({ type: SpriteFrame, tooltip: '拒绝SpriteFrame' })
+    foldFrame: SpriteFrame | null = null;
+    @property({ type: SpriteFrame, tooltip: '烧SpriteFrame' })
+    burnedFrame: SpriteFrame | null = null;
+
+    /** Showdown 结果动画播完后的回调，由 FightPanel 注入 */
+    onShowdownComplete: (() => void) | null = null;
+
+    private originPos = new Vec3();
+    private startPos = new Vec3();
+    /** 记录挑战过程中的特殊状态，用于 playShowdownResult 决定 title */
+    private _zoneStatus: 'none' | 'fold' | 'burned' = 'none';
+
     // ── 生命周期 ───────────────────────────────────────────
 
     protected onLoad(): void {
         if (this.bgSkeleton) this.bgSkeleton.node.active = false;
         if (this.fxSkeleton) this.fxSkeleton.node.active = false;
-        if (this.showdownNode) this.showdownNode.active   = false;
+        this.originPos = this.showdownNode.position.clone();
+        this.initPos()
+    }
+
+    initPos(){
+        let pos = this.originPos.clone();
+        switch (this.alignment) {
+            case FightZoneAlignment.BOTTOM:
+                pos = new Vec3(pos.x, pos.y-1000, pos.z);
+                break;
+            case FightZoneAlignment.LEFT:
+                pos = new Vec3(pos.x-1000, pos.y, pos.z);
+                break;
+            case FightZoneAlignment.RIGHT:
+                pos = new Vec3(pos.x+1000, pos.y, pos.z);
+                break;
+        }
+        this.startPos = pos;
+        this.showdownNode.setPosition(this.startPos);
     }
 
     // ── 公开 API ───────────────────────────────────────────
@@ -91,12 +145,14 @@ export class FightZone extends Component {
 
     /** 拒绝挑战：bg skin=surrender / fx idle_surrender_in → idle_surrender_loop */
     playFold(): void {
+        this._zoneStatus = 'fold';
         this._bgIntroLoop(SKIN_SURRENDER);
         this._playFxIntroLoop(FX_SURRENDER_IN, FX_SURRENDER_LOOP);
     }
 
     /** 烧死：bg skin=burned / fx idle_burned_in → idle_burned_loop */
     playBurn(): void {
+        this._zoneStatus = 'burned';
         this._bgIntroLoop(SKIN_BURNED);
         this._playFxIntroLoop(FX_BURNED_IN, FX_BURNED_LOOP);
     }
@@ -108,23 +164,97 @@ export class FightZone extends Component {
     }
 
     /**
+     * Showdown 结果动画（winType=2 展示手牌后调用）：
+     *   赢：skin=challenge → bg_win（单次）→ 隐藏
+     *   输：skin=burned   → bg_out2（单次）→ 隐藏
+     */
+    playShowdownResult(isWin: boolean): void {
+        // 更新 showdownNode 背景图
+        if (this.showdownNode.getComponent(Sprite)) {
+            this.showdownNode.getComponent(Sprite).spriteFrame = isWin ? this.winBg : this.loseBg;
+        }
+
+        // 激活 resType 并更新 title 图片
+        if (this.resType) {
+            this.resType.node.active = true;
+            if (isWin) {
+                this.resType.spriteFrame = this.winFrame;
+            } else if (this._zoneStatus === 'fold') {
+                this.resType.spriteFrame = this.foldFrame;
+            } else if (this._zoneStatus === 'burned') {
+                this.resType.spriteFrame = this.burnedFrame;
+            } else {
+                this.resType.spriteFrame = this.loseFrame;
+            }
+        }
+
+        this._stopFx();
+        const sk = this.bgSkeleton;
+        if (!sk) return;
+        sk.node.active = true;
+        sk.setCompleteListener(null);
+        if (isWin) {
+            sk.setSkin(SKIN_CHALLENGE);
+            sk.setAnimation(0, BG_WIN, false);
+        } else {
+            sk.setSkin(SKIN_BURNED);
+            sk.setAnimation(0, BG_OUT2, false);
+        }
+        sk.setCompleteListener(() => {
+            console.log(`[FightZone] playShowdownResult complete  isWin=${isWin} status=${this._zoneStatus} node=${this.node.name}`);
+            sk.setCompleteListener(null);
+            this.onShowdownComplete?.();
+        });
+    }
+
+    /**
      * 显示 Showdown 手牌与点数。
      * @param cards  该玩家手牌值列表
      * @param points 该玩家点数
      * @param groups 服务端分组数据（不传则自动分组）
      */
-    showShowdown(cards: number[], points: number, groups?: GroupData[]): void {
-        if (this.showdownNode) this.showdownNode.active = true;
+    /**
+     * 显示 Showdown 手牌与点数，并播放飞入动画。
+     * 飞入完成后自动根据 isWin 切换背景动画。
+     */
+    showResult(cards: number[], points: number, groups?: GroupData[], isWin: boolean = false): void {
+        // 1. 先激活节点，确保子组件 onLoad 已执行（_root 不为 null）
+        Tween.stopAllByTarget(this.showdownNode);
+        this.showdownNode.active = true;
+
+        // 2. 初始化手牌内容与点数
         this.handDisplay?.show(cards, groups);
         if (this.pointsLabel) this.pointsLabel.string = String(points);
+
+        tween(this.showdownNode).to(0.3, { position: this.originPos }).delay(0.3).call(()=>{
+            this.playShowdownResult(isWin);
+        }).start();
+    }
+
+    /**
+     * 挑战结算前过渡状态（winType=2 时调用）：
+     *   - fxSkeleton：立即停止并隐藏
+     *   - bgSkeleton：保持当前 skin，切换为 bg_loop 纯循环（已隐藏则跳过）
+     */
+    toShowdownState(): void {
+        this._stopFx();
+        const sk = this.bgSkeleton;
+        if (!sk || !sk.node.active) return;
+        sk.setCompleteListener(null);
+        sk.setAnimation(0, BG_LOOP, true);
     }
 
     /** 重置到初始状态（游戏结束 / 下一局时调用） */
     reset(): void {
+        this._zoneStatus = 'none';
         this._stopBg();
         this._stopFx();
         this.handDisplay?.clear();
-        if (this.showdownNode) this.showdownNode.active = false;
+        if (this.resType) this.resType.node.active = false;
+        if (this.showdownNode) {
+            Tween.stopAllByTarget(this.showdownNode);
+            this.showdownNode.active = false;
+        }
     }
 
     // ── 私有：bgSkeleton ──────────────────────────────────

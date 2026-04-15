@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, Label, Sprite, SpriteFrame, EventTouch, Button, Vec3 } from 'cc';
+import { _decorator, Component, Node, Label, Sprite, SpriteFrame, EventTouch, Button, Vec3, tween, Tween } from 'cc';
 import { Nexus } from 'db://nexus-framework/index';
 import type { TongitsPlayerInfo } from '../../proto/tongits';
 import { PlayerMeldField } from './PlayerMeldField';
@@ -101,6 +101,12 @@ export class PlayerSeat extends Component {
     /** 跟随圆弧终点的节点（如小圆点指示器） */
     @property({ type: Node, tooltip: '跟随倒计时圆弧终点移动的节点，编辑器中摆放到圆弧外圈位置，运行时自动以该距离为半径' })
     countdownFollower: Node | null = null;
+
+    @property({ type: Node, tooltip: "嬴节点"})
+    winNode: Node = null!;
+
+    @property({ type: Label, tooltip: "嬴金额"})
+    winLab: Label = null!;
 
     // ── 私有状态 ─────────────────────────────────────────
 
@@ -246,6 +252,28 @@ export class PlayerSeat extends Component {
         const ly     = this._followerRadius * Math.cos(angle);
         const center = this.countdownNode.node.getWorldPosition();
         this.countdownFollower.setWorldPosition(center.x + lx, center.y + ly, center.z);
+    }
+
+    /**
+     * 显示赢得金额并播放上移动画。
+     * @param amount 赢得金额（正数）
+     */
+    showWin(amount: number): void {
+        if (!this.winNode) return;
+        if (this.winLab) this.winLab.string = `+${amount}`;
+
+        Tween.stopAllByTarget(this.winNode);
+        const origin = this.winNode.position.clone();
+        this.winNode.setPosition(origin);
+        this.winNode.active = true;
+
+        tween(this.winNode)
+            .to(0.8, { position: new Vec3(origin.x, origin.y + 150, origin.z) }, { easing: 'quadOut' })
+            .call(() => {
+                if (this.winNode?.isValid) this.winNode.active = false;
+                this.winNode?.setPosition(origin);
+            })
+            .start();
     }
 
     /** 获取当前玩家的 userId，空座位返回 0 */

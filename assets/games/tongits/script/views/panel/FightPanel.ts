@@ -40,6 +40,8 @@ export interface ShowdownInfo {
     cards: number[];
     /** 该玩家点数 */
     points: number;
+    /** 是否为获胜方 */
+    isWin: boolean;
     /** 分组数据（不传则 HandDisplayPanel 自动分组） */
     groups?: GroupData[];
 }
@@ -140,8 +142,25 @@ export class FightPanel extends Component {
     showShowdown(infos: ShowdownInfo[]): void {
         this.responsePanel?.hide();
         for (const info of infos) {
-            this._getZone(info.userId)?.showShowdown(info.cards, info.points, info.groups);
+            const fightZone = this._getZone(info.userId);
+            if (fightZone) {
+                fightZone.onShowdownComplete = () => { this.reset(); };
+                fightZone.initPos();
+                fightZone.showResult(info.cards, info.points, info.groups, info.isWin);
+            }
         }
+    }
+
+    /**
+     * 挑战结算前过渡（winType=2）：
+     * 隐藏所有 fx 动画，bg 保持当前 skin 切换为 bg_loop 纯循环。
+     * 之后再调用 showShowdown() 展示各玩家手牌。
+     */
+    onBeforeResult(): void {
+        this.responsePanel?.hide();
+        this.bottomZone?.toShowdownState();
+        this.leftZone?.toShowdownState();
+        this.rightZone?.toShowdownState();
     }
 
     /** 重置所有状态（游戏结束 / 下一局开始前调用） */
@@ -157,7 +176,7 @@ export class FightPanel extends Component {
 
     private _getZone(userId: number): FightZone | null {
         const zone = this.zoneResolver?.(userId) ?? null;
-        console.log(`[FightPanel] _getZone(${userId}) →`, zone?.node.name ?? 'null (resolver 未设置或未找到)');
+        console.warn(`[FightPanel] _getZone(${userId}) →`, zone?.node.name ?? 'null (resolver 未设置或未找到)');
         return zone;
     }
 }
