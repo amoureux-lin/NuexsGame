@@ -16,7 +16,7 @@
  *   └── countdownLabel ← Label，倒计时剩余秒数
  */
 
-import { _decorator, Button, Component, Label } from 'cc';
+import { _decorator, Button, Component, Label, Sprite } from 'cc';
 
 const { ccclass, property } = _decorator;
 
@@ -34,6 +34,9 @@ export class ChallengeResponsePanel extends Component {
     @property({ type: Label, tooltip: '自己当前手牌点数文本' })
     pointsLabel: Label | null = null;
 
+    @property({ type: Sprite, tooltip: '倒计时filled图'})
+    countdownSprite: Sprite | null = null;
+
     @property({ type: Label, tooltip: '倒计时剩余秒数文本' })
     countdownLabel: Label | null = null;
 
@@ -48,6 +51,8 @@ export class ChallengeResponsePanel extends Component {
 
     /** 倒计时结束的 Unix 时间戳（ms） */
     private _endTimestamp: number = 0;
+    /** 倒计时总时长（秒），用于计算 fillRange 比例 */
+    private _totalDuration: number = 1;
     /** 倒计时是否运行中 */
     private _countdownRunning: boolean = false;
 
@@ -71,6 +76,9 @@ export class ChallengeResponsePanel extends Component {
         if (this.countdownLabel) {
             this.countdownLabel.string = String(Math.ceil(remaining));
         }
+        if (this.countdownSprite) {
+            this.countdownSprite.fillRange = remaining / this._totalDuration;
+        }
         if (remaining <= 0) {
             this._countdownRunning = false;
         }
@@ -88,11 +96,16 @@ export class ChallengeResponsePanel extends Component {
         if (this.pointsLabel) this.pointsLabel.string = String(points);
 
         this._endTimestamp     = endTimestamp;
+        this._totalDuration    = Math.max(1, (endTimestamp - Date.now()) / 1000);
         this._countdownRunning = endTimestamp > Date.now();
+
         // 立即刷新一次，防止首帧显示上一次残留值
         const remaining = Math.max(0, (endTimestamp - Date.now()) / 1000);
         if (this.countdownLabel) {
             this.countdownLabel.string = String(Math.ceil(remaining));
+        }
+        if (this.countdownSprite) {
+            this.countdownSprite.fillRange = 1;
         }
     }
 
@@ -100,6 +113,9 @@ export class ChallengeResponsePanel extends Component {
     hide(): void {
         this.node.active       = false;
         this._countdownRunning = false;
+        if (this.countdownSprite) {
+            this.countdownSprite.fillRange = 1;
+        }
     }
 
     // ── 私有 ──────────────────────────────────────────────

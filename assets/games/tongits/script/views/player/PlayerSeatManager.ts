@@ -10,19 +10,24 @@ const { ccclass, property } = _decorator;
 /**
  * PlayerSeatManager — 三个座位的布局与数据管理
  *
- * 屏幕布局（Tongits 3人逆时针）：
+ * 屏幕布局（Tongits 3人）：
  *
  *   [seatLeft]          [seatRight]
  *         [seatBottom（自己）]
  *
- * getPlayersWithPosition() 返回的 index 含义：
+ * 屏幕位置索引约定（逆时针方向：bottom → right → left → bottom）：
  *   index 0 → 自己（或视角玩家）→ seatBottom
- *   index 1 → 逆时针第一个对手  → seatLeft
- *   index 2 → 逆时针第二个对手  → seatRight
+ *   index 1 → 逆时针第一个对手  → seatRight（屏幕右侧）
+ *   index 2 → 逆时针第二个对手  → seatLeft （屏幕左侧）
+ *
+ * 服务端 seat 编号与屏幕位置的映射（以自己 seat=n 为基准）：
+ *   seat n   → index 0（bottom）
+ *   seat n+1 → index 1（right）
+ *   seat n+2 → index 2（left）
  *
  * 职责：
  *   - 接收 players 列表 + selfUserId，计算视角排列后分发给3个 PlayerSeat
- *   - 提供通过 userId 查找 PlayerSeat 的接口
+ *   - 提供通过 userId 或屏幕索引查找 PlayerSeat 的接口
  *   - 统一管理操作高亮、倒计时更新
  */
 @ccclass('PlayerSeatManager')
@@ -125,10 +130,11 @@ export class PlayerSeatManager extends Component {
     }
 
     /**
-     * 通过屏幕位置索引获取 PlayerSeat (0=下, 1=左, 2=右)。
+     * 通过屏幕位置索引获取 PlayerSeat。
+     * 索引约定：0=bottom（自己）/ 1=right（逆时针第一）/ 2=left（逆时针第二）
      */
     getSeatByIndex(index: number): PlayerSeat | null {
-        return [this.seatBottom, this.seatLeft, this.seatRight][index] ?? null;
+        return [this.seatBottom, this.seatRight, this.seatLeft][index] ?? null;
     }
 
     /**
@@ -138,8 +144,8 @@ export class PlayerSeatManager extends Component {
      */
     getFightZoneByUserId(userId: number): FightZone | null {
         if (this.seatBottom?.getUserId() === userId) return this.fightZoneBottom;
-        if (this.seatLeft?.getUserId()   === userId) return this.fightZoneLeft;
         if (this.seatRight?.getUserId()  === userId) return this.fightZoneRight;
+        if (this.seatLeft?.getUserId()   === userId) return this.fightZoneLeft;
         return null;
     }
 
@@ -232,7 +238,7 @@ export class PlayerSeatManager extends Component {
     }
 
     private _allSeats(): (PlayerSeat | null)[] {
-        return [this.seatBottom, this.seatLeft, this.seatRight];
+        return [this.seatBottom, this.seatRight, this.seatLeft];
     }
 
     private _findSeatByUserId(userId: number): PlayerSeat | null {

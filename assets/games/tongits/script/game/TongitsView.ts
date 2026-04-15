@@ -119,6 +119,10 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         this.actionPanel?.hideAll();
         if (this.fightPanel) {
             this.fightPanel.zoneResolver = (uid) => this.seatManager.getFightZoneByUserId(uid);
+            // Challenge 按钮(true) → changeStatus 3(接受)；Fold 按钮(false) → changeStatus 4(拒绝)
+            this.fightPanel.onChallengeResponse = (accepted) => {
+                this.challenge(accepted ? 3 : 4);
+            };
         }
     }
 
@@ -576,13 +580,13 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
             this.fightPanel.onPlayerChallenge(data.playerId);
 
             // 自己不是发起方 → 弹出 Challenge/Fold 响应面板
-            // if (data.playerId !== this._perspectiveId) {
-            //     const selfBp    = data.basePlayers?.find(bp => bp.playerId === this._selfUserId);
-            //     const countdown = selfBp?.countdown ?? Date.now() + 10000;
-            //     const selfInfo  = this._players.find(p => p.playerInfo?.userId === this._perspectiveId);
-            //     const points    = selfInfo?.cardPoint ?? 0;
-            //     this.fightPanel.showResponsePanel(points, countdown);
-            // }
+            if (data.playerId !== this._perspectiveId) {
+                const selfBp    = data.basePlayers?.find(bp => bp.playerId === this._selfUserId);
+                const countdown = selfBp?.countdown ?? Date.now() + 10000;
+                const selfInfo  = this._players.find(p => p.playerInfo?.userId === this._perspectiveId);
+                const points    = selfInfo?.cardPoint ?? 0;
+                this.fightPanel.showResponsePanel(points, countdown);
+            }
         }
     }
 
@@ -684,7 +688,19 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
                 } as Partial<TongitsPlayerInfo>);
             }
         }
-        // 选择发起挑战 → 退出吃牌模式，禁用摸牌/吃牌/挑战
+
+        // 自己选择后播放对应动画（3=接受 / 4=拒绝）
+        if (this.fightPanel) {
+            const selfBp = data.basePlayers?.find(bp => bp.playerId === this._perspectiveId);
+            if (selfBp) {
+                switch (selfBp.changeStatus) {
+                    case 3: this.fightPanel.onPlayerAccept(this._perspectiveId); break;
+                    case 4: this.fightPanel.onPlayerFold(this._perspectiveId);   break;
+                }
+            }
+        }
+
+        // 选择后 → 退出吃牌模式，禁用摸牌/吃牌/挑战
         this._exitTakeMode();
         this.tableAreaView?.setDeckDrawEnabled(false);
         if (!this._isDealing && this._actionPlayerId === this._perspectiveId) {
@@ -695,6 +711,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
 
     protected onPK(_data: PKBroadcast): void {
         const data = _data as PKBroadcast;
+        console.log("data:",data)
         // PK 会改变 challenge 的状态字段（用于 fight 按钮交互）
         this._syncPlayerField(data.playerId, {
             changeStatus: data.changeStatus,
@@ -706,6 +723,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
 
         // ── FightPanel：按 changeStatus 播对应动画 ─────────────
         if (this.fightPanel) {
+            // 1:默认待选择 2:发起 3:接受 4:拒绝 5:烧死
             switch (data.changeStatus) {
                 case 3: this.fightPanel.onPlayerAccept(data.playerId); break; // 接受
                 case 4: this.fightPanel.onPlayerFold(data.playerId);   break; // 折牌

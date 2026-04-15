@@ -113,11 +113,13 @@ export class FightPanel extends Component {
 
     /** 某玩家接受了挑战，播放接受动画 */
     onPlayerAccept(userId: number): void {
+        console.log(`${userId} accepted 播放接受动画`);
         this._getZone(userId)?.playAccept();
     }
 
     /** 某玩家折牌，播放折牌动画 */
     onPlayerFold(userId: number): void {
+        console.log(`${userId} 播放折牌动画`)
         this._getZone(userId)?.playFold();
     }
 
