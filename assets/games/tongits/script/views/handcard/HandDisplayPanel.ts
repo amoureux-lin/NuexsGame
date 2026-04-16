@@ -85,6 +85,11 @@ export class HandDisplayPanel extends Component {
      * @param animate
      */
     show(cards: number[], groups?: GroupData[], animate: boolean = false): void {
+        // onLoad 可能因父节点初始 inactive 而未执行，此处做懒初始化保底
+        if (!this._root) {
+            this._root = new Node('_displayRoot');
+            this.node.addChild(this._root);
+        }
         this.clear();
         if (cards.length === 0) return;
 

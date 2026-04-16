@@ -30,9 +30,14 @@ export class Nexus {
         await ServiceRegistry.bootAll(config);
         Nexus._initialized = true;
 
-        // 监听应用前后台切换
-        game.on(Game.EVENT_HIDE, () => Nexus.emit(NexusEvents.APP_HIDE));
-        game.on(Game.EVENT_SHOW, () => Nexus.emit(NexusEvents.APP_SHOW));
+        // 监听应用前后台切换，APP_SHOW 携带实际后台时长（ms）
+        let _hideTime = 0;
+        game.on(Game.EVENT_HIDE, () => { _hideTime = Date.now(); Nexus.emit(NexusEvents.APP_HIDE); });
+        game.on(Game.EVENT_SHOW, () => {
+            const duration = _hideTime > 0 ? Date.now() - _hideTime : 0;
+            _hideTime = 0;
+            Nexus.emit<number>(NexusEvents.APP_SHOW, duration);
+        });
 
         // 全局错误边界：捕获未处理的 Promise rejection 和同步错误
         if (typeof window !== 'undefined') {

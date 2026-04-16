@@ -16,6 +16,7 @@ import type {
     TakeCardRes,
     LayOffCardRes,
     ChallengeRes,
+    JoinRoomRes,
 } from '../proto/tongits';
 import {SlotGameEvents} from "db://assets/games/slotGame/script/config/SlotGameEvents";
 import {CommonUI} from "db://assets/script/config/UIConfig";
@@ -52,9 +53,19 @@ export class TongitsController extends BaseGameController {
         this.handle(TongitsEvents.CMD_TONGITS_CLICK, () => this.onTongitsClick());
         this.handle(TongitsEvents.CMD_RESULT_DETAILS, () => this.onResultDetails());
 
-        this.handle(TongitsEvents.CMD_OPEN_MOCK, () => this.onOpenMock());
+        this.handle(TongitsEvents.CMD_OPEN_MOCK,     () => this.onOpenMock());
+        this.handle(TongitsEvents.CMD_REFRESH_ROOM,  () => this.onRefreshRoom());
     }
 
+
+    private async onRefreshRoom(): Promise<void> {
+        const roomId = Nexus.data.get<number>('room_id') ?? 0;
+        const res = await this.safeRequest<JoinRoomRes>(
+            MessageType.TONGITS_JOIN_ROOM_REQ,
+            { roomId },
+        );
+        if (res) (this._model as TongitsModel).joinRoom(res);
+    }
 
     protected async onOpenMock(): Promise<void>{
         console.log("Starting Tongits Controller");

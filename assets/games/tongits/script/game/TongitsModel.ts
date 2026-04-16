@@ -7,6 +7,7 @@ import type {
     TongitsPlayerInfo,
     GameInfo,
     Meld,
+    PlayerResult,
     GameStartBroadcast,
     GameResultBroadcast,
     RoomResetBroadcast,
@@ -79,6 +80,18 @@ export interface LayOffResPayload extends LayOffCardRes {
 export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
 
     private _isGroupSort = true;
+
+    /**
+     * 结算前阶段（BeforeResultBroadcast）的倒计时结束时间戳（ms）。
+     * GameInfo 协议无此字段，由 model 独立缓存，供 View 重连时还原用。
+     */
+    beforeResultCountdownEnd: number = 0;
+
+    /**
+     * 最近一局的结算详情（GameResultBroadcast.playerResults）。
+     * 供结算面板重连时兜底展示；主动请求 3029 会覆盖此值。
+     */
+    lastPlayerResults: PlayerResult[] = [];
 
     // ── JoinRoom ─────────────────────────────────────────
 
@@ -244,11 +257,24 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
 
     private _onActionChange(msg: ActionChangeBroadcast): void {
         const data = msg as ActionChangeBroadcast;
+        // 服务端 countdown 为 Unix 时间戳（秒），统一转为毫秒供客户端使用
+        const countdownMs = data.countdown * 1000;
         const gi = this.gameInfo as GameInfo | null;
-        if (gi) gi.actionPlayerId = data.actionPlayerId;
+        if (gi) {
+            gi.actionPlayerId = data.actionPlayerId;
+            // 新回合开始，游戏回到正常游戏中阶段（挑战结束后 status 可能为 3）
+            gi.status = 2;
+        }
+        // 新回合开始，重置所有玩家的挑战状态（挑战阶段残留的 changeStatus 清零）
+        for (const p of this.players) {
+            const uid = p.playerInfo?.userId;
+            if (uid && p.changeStatus !== 1) {
+                this.updatePlayerById(uid, { changeStatus: 1 } as Partial<TongitsPlayerInfo>);
+            }
+        }
         this.updatePlayerById(data.actionPlayerId, {
             status: data.status,
-            countdown: data.countdown,
+            countdown: countdownMs,
             isFight: data.isFight,
         } as Partial<TongitsPlayerInfo>);
 
@@ -265,18 +291,22 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
             layoffHints = this._computeLayoffHints(handCards);
         }
 
-        const payload: ActionChangePayload = { ...data, takeCandidates, layoffHints };
+        const payload: ActionChangePayload = { ...data, countdown: countdownMs, takeCandidates, layoffHints };
         this.notify(TongitsEvents.ACTION_CHANGE, payload);
     }
 
     private _onDrawBroadcast(msg: unknown): void {
         const data = msg as DrawCardBroadcast;
-        // 自己的抽牌已由 applyDrawRes 处理（状态+notify），避免重复
-        if (data.playerId === this.myUserId) return;
+        const isSelf = data.playerId === this.myUserId;
+
+        // 正常自己主动抽牌已由 applyDrawRes 处理；
+        // 但服务端自动抽牌（压后台超时）时 applyDrawRes 不会到来，
+        // 仅当 drawnCard 有值时才需要在此补齐 self model 更新。
+        if (isSelf && !data.drawnCard) return;
+
         const player = this.getPlayerByUserId(data.playerId);
         if (player) {
             const updates: Partial<TongitsPlayerInfo> = { handCardCount: data.handCardCount };
-            // drawnCard !== 0 时表示可见（自己或自动抽牌），0 表示其他玩家不可见
             if (data.drawnCard !== 0) {
                 updates.handCards = [...(player.handCards ?? []), data.drawnCard];
             }
@@ -334,8 +364,13 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
 
     private _onDiscardBroadcast(msg: unknown): void {
         const data = msg as DiscardCardBroadcast;
-        // 自己的弃牌已由 applyDiscardRes 处理（状态+notify），避免重复
-        if (data.playerId === this.myUserId) return;
+        const isSelf = data.playerId === this.myUserId;
+
+        // 正常自己主动弃牌已由 applyDiscardRes 处理；
+        // 服务端自动弃牌（压后台超时）时 applyDiscardRes 不会到来，需在此补齐 self model 更新。
+        // 通过 discardedCard 是否有值判断是否为自动弃牌（主动弃牌走 applyDiscardRes 不会触发此处）。
+        if (isSelf && !data.discardedCard) return;
+
         const player = this.getPlayerByUserId(data.playerId);
         if (player) {
             const updates: Partial<TongitsPlayerInfo> = {
@@ -375,25 +410,46 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
             this.updatePlayerById(data.playerId, updates);
         }
         const gi = this.gameInfo as GameInfo | null;
-        if (gi && data.discard) {
-            gi.discardPile = gi.discardPile?.filter(c => c !== data.discard) ?? [];
-        }
+        // 吃牌始终取走弃牌堆顶牌（最后一张），用 slice 比按值 filter 更可靠
+        if (gi) gi.discardPile = gi.discardPile?.slice(0, -1) ?? [];
         this.notify(TongitsEvents.TAKE, data);
     }
 
     private _onChallenge(msg: unknown): void {
         const data = msg as ChallengeBroadcast;
-        // 自己发起的挑战已由 applyChallengeRes 处理（状态+notify），避免重复
-        if (data.playerId === this.myUserId) return;
+        // 自己发起的挑战：applyChallengeRes 已处理了 changeStatus/countdown，
+        // 但 gi.status 和 basePlayers 中其他玩家仍需在此更新，不能完全跳过。
+        const isSelfChallenger = data.playerId === this.myUserId;
+
+        // 游戏状态进入挑战阶段
+        const gi = this.gameInfo as GameInfo | null;
+        if (gi) gi.status = 3;
+
         if (data.basePlayers) {
             for (const bp of data.basePlayers) {
+                // 自己发起时 applyChallengeRes 已更新了 self 的 changeStatus/countdown，跳过避免重复
+                if (isSelfChallenger && bp.playerId === this.myUserId) continue;
+                // 服务端 countdown 为 Unix 秒时间戳，转为毫秒
+                const countdownMs = bp.countdown > 0 ? bp.countdown * 1000 : 0;
                 this.updatePlayerById(bp.playerId, {
                     changeStatus: bp.changeStatus,
-                    countdown: bp.countdown,
+                    countdown: countdownMs,
                 } as Partial<TongitsPlayerInfo>);
             }
         }
-        this.notify(TongitsEvents.CHALLENGE, data);
+
+        // 自己发起时 ChallengeBroadcast 已在 onChallengeRes 处理过 View，此处不重复 notify
+        if (isSelfChallenger) return;
+
+        // basePlayers 的 countdown 统一转为 ms 后再透传给 View
+        const normalized: ChallengeBroadcast = data.basePlayers ? {
+            ...data,
+            basePlayers: data.basePlayers.map(bp => ({
+                ...bp,
+                countdown: bp.countdown > 0 ? bp.countdown * 1000 : 0,
+            })),
+        } : data;
+        this.notify(TongitsEvents.CHALLENGE, normalized);
     }
 
     private _onPK(msg: unknown): void {
@@ -405,21 +461,27 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
     private _onBeforeResult(msg: unknown): void {
         const data = msg as BeforeResultBroadcast;
         if (data.players) this.updatePlayers(data.players);
-        // 更新 gameInfo 的 winType 和 pot
         const gi = this.gameInfo as GameInfo | null;
         if (gi) {
             if (data.winType) gi.winType = data.winType;
             if (data.pot) gi.pot = data.pot;
             gi.status = 4; // 结算前阶段
         }
+        // 缓存结算前倒计时（服务端为 Unix 秒时间戳，转为毫秒）
+        if (data.countdown > 0) {
+            this.beforeResultCountdownEnd = data.countdown * 1000;
+        }
         this.notify(TongitsEvents.BEFORE_RESULT, data);
     }
 
     private _onGameResult(msg: unknown): void {
         const data = msg as GameResultBroadcast;
-        // 更新游戏状态为结算中
         const gi = this.gameInfo as GameInfo | null;
         if (gi) gi.status = 5;
+        // 缓存结算数据，供结算面板重连时兜底展示（主动请求 3029 会覆盖）
+        if (data.playerResults?.length) {
+            this.lastPlayerResults = data.playerResults;
+        }
         this.notify(TongitsEvents.GAME_RESULT, data);
     }
 
@@ -516,8 +578,9 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
         }
         this.updatePlayerById(pid, updates);
         const gi = this.gameInfo as GameInfo | null;
-        if (gi && res.discard) {
-            gi.discardPile = gi.discardPile?.filter(c => c !== res.discard) ?? [];
+        if (gi) {
+            // 吃牌始终取走弃牌堆顶牌（最后一张），用 slice 比按值 filter 更可靠
+            gi.discardPile = gi.discardPile?.slice(0, -1) ?? [];
         }
         const layoffHints = this._computeLayoffHints(newHandCards);
         this.notify<TakeResPayload>(TongitsEvents.TAKE_RES, { ...res, layoffHints, discardPile: gi?.discardPile ?? [] });
@@ -598,12 +661,22 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
     applyChallengeRes(res: ChallengeRes): void {
         if (res.basePlayers) {
             for (const bp of res.basePlayers) {
+                // 服务端 countdown 为 Unix 秒时间戳，统一转为毫秒
+                const countdownMs = bp.countdown > 0 ? bp.countdown * 1000 : 0;
                 this.updatePlayerById(bp.playerId, {
                     changeStatus: bp.changeStatus,
-                    countdown: bp.countdown,
+                    countdown: countdownMs,
                 } as Partial<TongitsPlayerInfo>);
             }
         }
-        this.notify<ChallengeRes>(TongitsEvents.CHALLENGE_RES, res);
+        // 透传给 View 时同样转为 ms
+        const normalized: ChallengeRes = res.basePlayers ? {
+            ...res,
+            basePlayers: res.basePlayers.map(bp => ({
+                ...bp,
+                countdown: bp.countdown > 0 ? bp.countdown * 1000 : 0,
+            })),
+        } : res;
+        this.notify<ChallengeRes>(TongitsEvents.CHALLENGE_RES, normalized);
     }
 }

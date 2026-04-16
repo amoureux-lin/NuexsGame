@@ -1106,9 +1106,9 @@ export class MockView extends UIPanel {
         this._send(MessageType.TONGITS_CHALLENGE_BROADCAST, {
             playerId:    P2_ID,
             basePlayers: [
-                { playerId: SELF_ID, changeStatus: p.changeStatus,  countdown: Date.now() + 10000 },
+                { playerId: SELF_ID, changeStatus: p.changeStatus,  countdown: Math.floor(Date.now() / 1000) + 10 },
                 { playerId: P2_ID,   changeStatus: p2.changeStatus, countdown: 0                  },
-                { playerId: P3_ID,   changeStatus: p3.changeStatus, countdown: Date.now() + 10000 },
+                { playerId: P3_ID,   changeStatus: p3.changeStatus, countdown: Math.floor(Date.now() / 1000) + 10 },
             ],
             userId: SELF_ID,
         } as ChallengeBroadcast);
@@ -1137,8 +1137,8 @@ export class MockView extends UIPanel {
         this._send(MessageType.TONGITS_CHALLENGE_BROADCAST, {
             playerId:    P3_ID,
             basePlayers: [
-                { playerId: SELF_ID, changeStatus: p.changeStatus,  countdown: Date.now() + 10000 },
-                { playerId: P2_ID,   changeStatus: p2.changeStatus, countdown: Date.now() + 10000 },
+                { playerId: SELF_ID, changeStatus: p.changeStatus,  countdown: Math.floor(Date.now() / 1000) + 10 },
+                { playerId: P2_ID,   changeStatus: p2.changeStatus, countdown: Math.floor(Date.now() / 1000) + 10 },
                 { playerId: P3_ID,   changeStatus: p3.changeStatus, countdown: 0                  },
             ],
             userId: SELF_ID,
@@ -1168,9 +1168,9 @@ export class MockView extends UIPanel {
         this._send(MessageType.TONGITS_CHALLENGE_BROADCAST, {
             playerId:    P2_ID,
             basePlayers: [
-                { playerId: SELF_ID, changeStatus: p.changeStatus,  countdown: Date.now() + 10000 },
+                { playerId: SELF_ID, changeStatus: p.changeStatus,  countdown: Math.floor(Date.now() / 1000) + 10 },
                 { playerId: P2_ID,   changeStatus: p2.changeStatus, countdown: 0                  },
-                { playerId: P3_ID,   changeStatus: p3.changeStatus, countdown: Date.now() + 10000 },
+                { playerId: P3_ID,   changeStatus: p3.changeStatus, countdown: Math.floor(Date.now() / 1000) + 10 },
             ],
             userId: SELF_ID,
         } as ChallengeBroadcast);
@@ -1199,8 +1199,8 @@ export class MockView extends UIPanel {
             playerId:    SELF_ID,
             basePlayers: [
                 { playerId: SELF_ID, changeStatus: p.changeStatus,  countdown: 0                  },
-                { playerId: P2_ID,   changeStatus: p2.changeStatus, countdown: Date.now() + 10000 },
-                { playerId: P3_ID,   changeStatus: p3.changeStatus, countdown: Date.now() + 10000 },
+                { playerId: P2_ID,   changeStatus: p2.changeStatus, countdown: Math.floor(Date.now() / 1000) + 10 },
+                { playerId: P3_ID,   changeStatus: p3.changeStatus, countdown: Math.floor(Date.now() / 1000) + 10 },
             ],
             userId: SELF_ID,
         } as ChallengeBroadcast);
@@ -1374,7 +1374,7 @@ export class MockView extends UIPanel {
 
         const data: ActionChangeBroadcast = {
             actionPlayerId: pid,
-            countdown:      Date.now() + 25 * 1000,
+            countdown:      Math.floor(Date.now() / 1000) + 25,  // 服务端格式：Unix 秒时间戳
             isFight:        p.isFight,
             status:         p.status,
             userId:         SELF_ID,

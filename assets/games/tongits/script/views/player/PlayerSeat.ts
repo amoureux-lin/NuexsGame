@@ -305,6 +305,20 @@ export class PlayerSeat extends Component {
         }
     }
 
+    /** 隐藏赢得金额节点与赢动画（游戏重置时调用） */
+    resetWin(): void {
+        if (this.winNode) {
+            Tween.stopAllByTarget(this.winNode);
+            this.winNode.setPosition(this._winOrigin);
+            this.winNode.active = false;
+        }
+        if (this.winAnimation) {
+            this.winAnimation.clearTracks();
+            this.winAnimation.setCompleteListener(null);
+            this.winAnimation.node.active = false;
+        }
+    }
+
     /** 获取当前玩家的 userId，空座位返回 0 */
     getUserId(): number {
         return this._data?.playerInfo?.userId ?? 0;

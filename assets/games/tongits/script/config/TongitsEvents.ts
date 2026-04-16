@@ -68,6 +68,8 @@ export const TongitsEvents = {
     CMD_TONGITS_CLICK: 'tongits:cmd:tongitsClick',
     /** 查看结算详情 */
     CMD_RESULT_DETAILS: 'tongits:cmd:resultDetails',
+    /** 回前台/重连后主动拉取最新房间状态（3001→3002） */
+    CMD_REFRESH_ROOM: 'tongits:cmd:refreshRoom',
     /** 手牌分组（本地操作） */
     CMD_GROUP: 'tongits:cmd:group',
     /** 手牌取消分组（本地操作） */
