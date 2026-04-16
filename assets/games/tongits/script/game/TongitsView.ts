@@ -761,7 +761,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         if (data.winType === 1) { //tongits
             const winner = (data.players ?? []).find(p => p.isWin);
             if (winner && this.tongitsResultPanel) {
-                this.tongitsResultPanel.show(winner.handCards ?? []);
+                this.tongitsResultPanel.show(winner);
             }
         } else if (data.winType === 2 && this.fightPanel) { //挑战
             this.fightPanel.onBeforeResult();
