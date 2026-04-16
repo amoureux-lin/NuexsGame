@@ -165,6 +165,8 @@ export class HandCardPanel extends Component {
 
     /** 拖拽状态（null = 无拖拽） */
     private _drag: DragState | null = null;
+    /** 是否允许拖拽（Tongits 请求返回或结算通知后置 false） */
+    private _dragEnabled = true;
     /** Lerp 预览目标：CardNode → 目标 X（在各自父容器坐标系中） */
     private _previewTargets = new Map<CardNode, number>();
     /** Lerp 容器目标：gv.node → 目标 local X（在 _groupRoot 坐标系中） */
@@ -559,7 +561,7 @@ export class HandCardPanel extends Component {
         this._selectedCandidateIdx = 0;
         // 接管牌组点击，用于切换候选组
         for (const [, gv] of this._groupViews) {
-            gv.onGroupClick = (id) => this._onTakeModeGroupClick(id);
+            gv.onGroupClick = (id) => { if (this._dragEnabled) this._onTakeModeGroupClick(id); };
         }
         this._refreshTakeHighlight();
     }
@@ -571,7 +573,7 @@ export class HandCardPanel extends Component {
         this._takeCandidates = [];
         // 恢复牌组点击
         for (const [, gv] of this._groupViews) {
-            gv.onGroupClick = (id) => this._state.toggleGroup(id);
+            gv.onGroupClick = (id) => { if (this._dragEnabled) this._state.toggleGroup(id); };
         }
         this._clearTakeHighlight();
         // _clearTakeHighlight 只清视觉，_state 层的选中也一并清除
@@ -615,6 +617,14 @@ export class HandCardPanel extends Component {
      */
     setDeckDrawEnabled(enabled: boolean): void {
         this.tableAreaView?.setDeckDrawEnabled(enabled);
+    }
+
+    /**
+     * 启用 / 禁用手牌拖拽。
+     * Tongits 请求返回后、结算通知到达后由 TongitsView 调用 setDragEnabled(false)。
+     */
+    setDragEnabled(enabled: boolean): void {
+        this._dragEnabled = enabled;
     }
 
     // ── 状态变化响应 ──────────────────────────────────────
@@ -682,9 +692,10 @@ export class HandCardPanel extends Component {
                 }
                 // 确保有 CardGroupView 组件（prefab 里已挂好，fallback 时手动添加）
                 gv = groupNode.getComponent(CardGroupView) ?? groupNode.addComponent(CardGroupView);
-                gv.onGroupClick = (id) => this._inTakeMode
-                    ? this._onTakeModeGroupClick(id)
-                    : this._state.toggleGroup(id);
+                gv.onGroupClick = (id) => {
+                    if (!this._dragEnabled) return;
+                    this._inTakeMode ? this._onTakeModeGroupClick(id) : this._state.toggleGroup(id);
+                };
                 gv.init(g, (v) => this._createCardNode(v));
                 gv.setMarkerOverlayParent(this._markerOverlayRoot);
                 this._groupViews.set(g.id, gv);
@@ -720,9 +731,10 @@ export class HandCardPanel extends Component {
             if (!this._ungroupNodes.has(val)) {
                 const n  = this._createCardNode(val);
                 const cn = n.getComponent(CardNode) ?? n.addComponent(CardNode);
-                cn.onClick = (v) => this._inTakeMode
-                    ? this._onTakeModeCardClick(v)
-                    : this._state.toggleUngroupCard(v);
+                cn.onClick = (v) => {
+                    if (!this._dragEnabled) return;
+                    this._inTakeMode ? this._onTakeModeCardClick(v) : this._state.toggleUngroupCard(v);
+                };
                 this._bindCardDrag(cn, 'ungroup');
                 this._ungroupRoot.addChild(n);
                 // 解散组时从原组位置起飞，而非从左端(0,0,0)
@@ -1112,7 +1124,7 @@ export class HandCardPanel extends Component {
         cn: CardNode, cardValue: number, uiPos: Vec2,
         sourceKind: 'ungroup' | 'group', sourceGroupId?: string,
     ): void {
-        if (this._drag) return;
+        if (this._drag || !this._dragEnabled) return;
 
         // ── 拖拽开始前捕获元数据（需在 removeCard 之前）────────────────
         // 来源下标（用于计算容器偏移）

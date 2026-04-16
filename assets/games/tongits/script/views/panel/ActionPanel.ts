@@ -150,6 +150,12 @@ export class ActionPanel extends Component {
             .forEach(btn => this._setActive(btn, false));
     }
 
+    /** 禁用所有操作按钮点击（结算展示期间调用，保留按钮可见但不可交互） */
+    disableAll(): void {
+        [this.groupBtn, this.ungroupBtn, this.dropBtn, this.dumpBtn, this.fightBtn, this.sapawBtn]
+            .forEach(btn => this._setInteractable(btn, false));
+    }
+
     // ── 生命周期 ─────────────────────────────────────────
 
     protected onLoad(): void {

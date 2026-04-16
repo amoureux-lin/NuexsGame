@@ -752,6 +752,10 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     }
 
     protected onBeforeResult(data: BeforeResultBroadcast): void {
+        // 游戏即将结算：清除所有玩家倒计时 + 禁止手牌交互 + 清理游戏进行态 UI
+        this.seatManager?.updateActionPlayer(0);
+        this.handCardPanel?.setDragEnabled(false);
+        this._clearGameplayState();
         if (data.players) {
             this._players = data.players;
             this._refreshAllSeats();
@@ -761,6 +765,8 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         if (data.winType === 1) { //tongits
             const winner = (data.players ?? []).find(p => p.isWin);
             if (winner && this.tongitsResultPanel) {
+                const players = data.players ?? [];
+                this.tongitsResultPanel.onHide = () => this._showWinnerBonus(players);
                 this.tongitsResultPanel.show(winner);
             }
         } else if (data.winType === 2 && this.fightPanel) { //挑战
@@ -791,7 +797,12 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
 
     /** 显示赢家奖励动画（winType=2 showdown 完成后 & winType=3 直接调用） */
     private _showWinnerBonus(players: TongitsPlayerInfo[]): void {
-        console.log("显示赢家奖励动画")
+        // 展示除自己以外所有玩家的手牌
+        for (const player of players) {
+            const uid = player.playerInfo?.userId;
+            if (!uid || uid === this._perspectiveId || !player.handCards?.length) continue;
+            this.seatManager?.getSeatByUserId(uid)?.meldField?.showHandCards(player.handCards);
+        }
         const winner = players.find(p => p.isWin);
         if (winner) {
             const bonus = winner.playerInfo?.coinChanged ?? 0;
@@ -800,7 +811,10 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     }
 
     protected onGameResult(_data: GameResultBroadcast): void {
+        // 结算通知到达，兜底清理（onBeforeResult 未触发时的保底）
+        this.handCardPanel?.setDragEnabled(false);
         this.seatManager?.updateActionPlayer(0);
+        this._clearGameplayState();
         this.actionPanel?.hideAll();
         for (let i = 0; i < 3; i++) {
             this.seatManager?.getSeatByIndex(i)?.meldField?.stopTurnHighlight();
@@ -816,6 +830,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
 
     /** 重置到进房间初始状态 */
     private _resetToPreGame(): void {
+        this.handCardPanel?.setDragEnabled(true);
         this._isDealing = false;
         this._isGameStarted = false;
         this._actionPlayerId = 0;
@@ -840,7 +855,10 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         if (this.actionPanel) this.actionPanel.node.active = false;
         this.tongitsPrompt?.hide();
         this.tongitsPrompt?.node && (this.tongitsPrompt.node.active = false);
-        this.tongitsResultPanel?.hide();
+        if (this.tongitsResultPanel) {
+            this.tongitsResultPanel.onHide = null;
+            this.tongitsResultPanel.hide();
+        }
     }
 
     /**
@@ -1001,6 +1019,23 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         this._lastLayoffHints = null;
         this.handCardPanel?.clearLayoffTips();
         this._clearMeldTips();
+    }
+
+    /**
+     * 游戏进入结算阶段时的统一清理：
+     *   - 退出吃牌模式（清除高亮/遮罩）
+     *   - 清除补牌提示（手牌 tipNode + meld 块提示）
+     *   - 停止所有座位 meldField 回合呼吸高亮
+     *   - 禁用 ActionPanel 所有按钮点击
+     * onBeforeResult / onGameResult 均调用此方法。
+     */
+    private _clearGameplayState(): void {
+        this._exitTakeMode();
+        this._clearLayoffTips();
+        for (let i = 0; i < 3; i++) {
+            this.seatManager?.getSeatByIndex(i)?.meldField?.stopTurnHighlight();
+        }
+        this.actionPanel?.disableAll();
     }
 
     private _onDeckDrawClick(): void {

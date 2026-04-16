@@ -19,6 +19,7 @@ import { CardNode, DEFAULT_CARD_W, DEFAULT_CARD_H, CARD_SPACING } from '../handc
 import { HandDisplayPanel }                                        from '../handcard/HandDisplayPanel';
 import { FlyUtil } from '../../utils/FlyUtil';
 import type { Meld } from '../../proto/tongits';
+import type { GroupData } from '../../utils/GroupAlgorithm';
 
 const { ccclass, property } = _decorator;
 
@@ -257,7 +258,7 @@ export class PlayerMeldField extends Component {
         for (const m of melds) this.addMeld(m);
     }
 
-    /** 清空所有展示节点与状态 */
+    /** 清空所有展示节点与状态（含手牌展示） */
     clear(): void {
         for (const row of this._rows) {
             if (row.node?.isValid) row.node.destroy();
@@ -267,6 +268,7 @@ export class PlayerMeldField extends Component {
         this._blocks.clear();
         this._meldData.clear();
         this.clearLayoffTips();
+        this.clearHandCards();
     }
 
     /** 获取当前所有已亮出牌组数据（供补牌候选检测使用） */
@@ -276,6 +278,25 @@ export class PlayerMeldField extends Component {
             result.push({ meldId, cards: [...cards] });
         }
         return result;
+    }
+
+    /**
+     * 结算时展示玩家手牌（显示 handCardsNode，调用 HandDisplayPanel.show）。
+     * @param cards  手牌值列表
+     * @param groups 服务端分组数据（不传则 HandDisplayPanel 自动分组）
+     * @param animate 是否播放展开动画，默认 true
+     */
+    showHandCards(cards: number[], groups?: GroupData[], animate = true): void {
+        console.log("结算时展示玩家手牌:", cards);
+        if (!this.handDisplay || cards.length === 0) return;
+        if (this.handCardsNode) this.handCardsNode.active = true;
+        this.handDisplay.show(cards, groups, animate);
+    }
+
+    /** 清空手牌展示并隐藏 handCardsNode */
+    clearHandCards(): void {
+        this.handDisplay?.clear();
+        if (this.handCardsNode) this.handCardsNode.active = false;
     }
 
     /** 在指定 meld 块上显示补牌提示节点（status=3 时调用） */

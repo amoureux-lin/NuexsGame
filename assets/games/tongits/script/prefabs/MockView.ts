@@ -1225,18 +1225,57 @@ export class MockView extends UIPanel {
 
     // ── 按钮：结算前 ──────────────────────────────────────────
 
-    /** 模拟结算前比牌广播（自己获胜） */
+    /** 模拟结算前比牌广播（自己获胜，winType=1 Tongits，含所有玩家手牌） */
     clickBeforeResult(): void {
-        const p = this._getPlayer(SELF_ID)!;
-        p.isWin = true;
-        this._gameData!.gameInfo.status = 4;
+        if (!this._gameData) return;
+        this._gameData.gameInfo.status = 4;
+
+        const players = this._gameData.players.map(p => {
+            const uid  = p.playerInfo!.userId;
+            const hand = uid === SELF_ID ? [...p.handCards] : [...this._aiHand(uid)];
+            return {
+                ...p,
+                isWin:          uid === SELF_ID,
+                handCards:      hand,
+                cardPoint:      this._calcCardPoint(hand, p.displayedMelds),
+                displayedMelds: p.displayedMelds.map(m => ({ ...m, cards: [...m.cards] })),
+            };
+        });
 
         const data: BeforeResultBroadcast = {
             winnerId:  SELF_ID,
             winType:   1,
-            players:   this._snapPlayers(),
+            players,
             countdown: 5,
-            pot:       { ...this._gameData!.gameInfo.pot! },
+            pot:       { ...this._gameData.gameInfo.pot! },
+            userId:    SELF_ID,
+        };
+        this._send(MessageType.TONGITS_GAME_WIN_BROADCAST, data);
+    }
+
+    /** 模拟结算前广播（winType=3 牌堆摸完，比点数，含所有玩家手牌） */
+    clickBeforeResultDeckEmpty(winnerId: number = SELF_ID): void {
+        if (!this._gameData) return;
+        this._gameData.gameInfo.status = 4;
+
+        const players = this._gameData.players.map(p => {
+            const uid  = p.playerInfo!.userId;
+            const hand = uid === SELF_ID ? [...p.handCards] : [...this._aiHand(uid)];
+            return {
+                ...p,
+                isWin:          uid === winnerId,
+                handCards:      hand,
+                cardPoint:      this._calcCardPoint(hand, p.displayedMelds),
+                displayedMelds: p.displayedMelds.map(m => ({ ...m, cards: [...m.cards] })),
+            };
+        });
+
+        const data: BeforeResultBroadcast = {
+            winnerId,
+            winType:   3,
+            players,
+            countdown: 5,
+            pot:       { ...this._gameData.gameInfo.pot! },
             userId:    SELF_ID,
         };
         this._send(MessageType.TONGITS_GAME_WIN_BROADCAST, data);

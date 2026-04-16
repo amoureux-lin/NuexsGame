@@ -39,8 +39,11 @@ export class TongitsResultPanel extends Component {
     @property({ type: HandDisplayPanel, tooltip: '底部手牌展示组件' })
     handDisplay: HandDisplayPanel | null = null;
 
-    private _pendingCards: number[] = [];
-    private _pendingGroups: GroupData[] | undefined = undefined;
+    private _avatarCancelled = false;
+    private _autoHideTimer: any = null;
+
+    /** 面板完全隐藏后的回调（disappear 动画结束、节点 active=false 之后触发） */
+    onHide: (() => void) | null = null;
 
     // ── 公开 API ──────────────────────────────────────────
 
@@ -50,6 +53,8 @@ export class TongitsResultPanel extends Component {
      * @param groups 服务端分组数据（不传则 HandDisplayPanel 自动分组）
      */
     show(winner: TongitsPlayerInfo, groups?: GroupData[]): void {
+        this._cancelAutoHide();
+        this._avatarCancelled = false;
         this.node.active = true;
 
         // 预置透明度为 0，随 appear 同步渐显
@@ -61,6 +66,12 @@ export class TongitsResultPanel extends Component {
 
         this._refreshPlayerInfo(winner);
         this._playIntroLoop();
+
+        // loop 展示 2s 后自动隐藏
+        this._autoHideTimer = setTimeout(() => {
+            this._autoHideTimer = null;
+            this.hide();
+        }, 3000);
     }
 
     /**
@@ -68,13 +79,18 @@ export class TongitsResultPanel extends Component {
      * 若 Skeleton 未绑定则立即隐藏。
      */
     hide(): void {
+        this._cancelAutoHide();
         const sk = this.tongitsAnimation;
         if (!sk || !sk.node.active) {
             this._doHide();
             return;
         }
         sk.setCompleteListener(null);
+        sk.clearTracks();                        // 立即中断当前动画，不等 loop 完成
         sk.setAnimation(0, 'disappear', false);
+        // 与 disappear 同步启动渐隐（时长与 appear 对称）
+        this._fadeOut(this.playerInfoNode, 0.5);
+        this._fadeOut(this.handDisplay?.node ?? null, 0.5);
         sk.setCompleteListener(() => {
             if (!sk.isValid) return;
             sk.setCompleteListener(null);
@@ -91,7 +107,7 @@ export class TongitsResultPanel extends Component {
         }
         if (this.avatarSprite && info?.avatar) {
             Nexus.asset.loadRemote<SpriteFrame>(info.avatar).then((sf) => {
-                if (!this.isValid || !this.avatarSprite) return;
+                if (!this.isValid || !this.avatarSprite || this._avatarCancelled) return;
                 this.avatarSprite.spriteFrame = sf;
             }).catch(() => {});
         }
@@ -120,7 +136,23 @@ export class TongitsResultPanel extends Component {
         tween(uo).to(duration, { opacity: 255 }).start();
     }
 
+    /** 对目标节点渐隐（通过 UIOpacity 组件） */
+    private _fadeOut(node: Node | null, duration: number): void {
+        if (!node) return;
+        const uo = node.getComponent(UIOpacity) ?? node.addComponent(UIOpacity);
+        Tween.stopAllByTarget(uo);
+        tween(uo).to(duration, { opacity: 0 }).start();
+    }
+
+    private _cancelAutoHide(): void {
+        if (this._autoHideTimer !== null) {
+            clearTimeout(this._autoHideTimer);
+            this._autoHideTimer = null;
+        }
+    }
+
     private _doHide(): void {
+        this._avatarCancelled = true;
         const sk = this.tongitsAnimation;
         if (sk) {
             sk.clearTracks();
@@ -137,9 +169,8 @@ export class TongitsResultPanel extends Component {
             this._setOpacity(this.handDisplay.node, 255);
         }
         this.handDisplay?.clear();
-        this._pendingCards  = [];
-        this._pendingGroups = undefined;
         this.node.active = false;
+        this.onHide?.();
     }
 
     private _setOpacity(node: Node | null, opacity: number): void {
