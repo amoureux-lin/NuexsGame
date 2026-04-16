@@ -185,6 +185,12 @@ export class MockView extends UIPanel {
     /** 防止多次点击 roundMsg 造成并发 */
     private _roundRunning: boolean = false;
 
+    /** 下一次自己摸牌时返回 hasTongits=true */
+    private _pendingHasTongits: boolean = false;
+
+    /** roundMsg 检测：Tongits 已声明，应退出循环 */
+    private _tongitsDeclared: boolean = false;
+
     // ── 内部工具 ──────────────────────────────────────────────
 
     private get _actionId(): number { return TURN_ORDER[this._actionIdx]; }
@@ -284,6 +290,7 @@ export class MockView extends UIPanel {
         Nexus.net.registerMockHandler?.(MessageType.TONGITS_DISCARD_REQ,           (b) => this._mockDiscard(b));
         Nexus.net.registerMockHandler?.(MessageType.TONGITS_TAKE_REQ,              (b) => this._mockTake(b));
         Nexus.net.registerMockHandler?.(MessageType.TONGITS_CHALLENGE_ACTION_REQ,  (b) => this._mockChallenge(b));
+        Nexus.net.registerMockHandler?.(MessageType.TONGITS_WIN_CLICK_REQ,         () => this._mockWinClick());
     }
 
     private _unregisterMockHandlers(): void {
@@ -293,6 +300,7 @@ export class MockView extends UIPanel {
         Nexus.net.unregisterMockHandler?.(MessageType.TONGITS_DISCARD_REQ);
         Nexus.net.unregisterMockHandler?.(MessageType.TONGITS_TAKE_REQ);
         Nexus.net.unregisterMockHandler?.(MessageType.TONGITS_CHALLENGE_ACTION_REQ);
+        Nexus.net.unregisterMockHandler?.(MessageType.TONGITS_WIN_CLICK_REQ);
     }
 
     /** 拦截 DRAW_REQ：摸一张牌，返回 DrawCardRes */
@@ -303,9 +311,10 @@ export class MockView extends UIPanel {
         p.handCardCount = p.handCards.length;
         p.status        = PLAYER_STATUS.ACTION;
         if (this._gameData) this._gameData.gameInfo.deckCardCount = this._gameData.deck.length;
-        console.log(`[Mock←RES] DRAW  card=${card}`);
-        console.log("this._gameData?.deck.length:",this._gameData?.deck.length);
-        return { drawnCard: card, hasTongits: false, handCardCount: p.handCardCount };
+        const hasTongits = this._pendingHasTongits;
+        this._pendingHasTongits = false;
+        console.log(`[Mock←RES] DRAW  card=${card} hasTongits=${hasTongits}`);
+        return { drawnCard: card, hasTongits, handCardCount: p.handCardCount };
     }
 
     /** 拦截 MELD_REQ：从手牌移除这些牌，生成新牌组，返回 MeldCardRes */
@@ -390,6 +399,19 @@ export class MockView extends UIPanel {
         if (this._gameData) this._gameData.gameInfo.discardCard = 0;
         console.log(`[Mock←RES] TAKE  fromHand=${req.cardsFromHand} discard=${discardCard}`);
         return { newMeld, hasTongits: false, handCardCount: p.handCardCount, discard: discardCard };
+    }
+
+    /** 拦截 TONGITS_WIN_CLICK_REQ：声明 Tongits，通知 roundMsg 结束，延迟发 BeforeResult */
+    private _mockWinClick(): object {
+        console.log('[Mock←RES] WIN_CLICK  Tongits declared');
+        this._tongitsDeclared = true;
+        // 解除 roundMsg 的 _waitForSelfDiscard 等待
+        const resolve = this._selfDiscardResolver;
+        this._selfDiscardResolver = null;
+        resolve?.();
+        // 延迟推送 BeforeResult（winType=1，自己获胜）
+        setTimeout(() => this.clickBeforeResult(), 800);
+        return {};
     }
 
     /** 拦截 CHALLENGE_ACTION_REQ：更新自身 changeStatus，返回 ChallengeRes */
@@ -551,9 +573,19 @@ export class MockView extends UIPanel {
 
                 if (pid === SELF_ID) {
                     // ── 自己回合：由玩家真实操作 DRAW_REQ → mock handler → DRAW_RES ──────────
-                    // 不在此处预摸牌，避免与玩家点击摸牌重复消耗牌堆
+                    // loop 1 时触发 Tongits 场景：摸牌后返回 hasTongits=true
+                    if (loop === 1) {
+                        this._pendingHasTongits = true;
+                        console.log('[roundMsg] loop=1 已设置 hasTongits，等待玩家摸牌声明 Tongits...');
+                    }
                     console.log('[roundMsg] 等待自己摸牌并弃牌...');
                     await this._waitForSelfDiscard();
+                    // 若玩家声明了 Tongits，退出循环（BeforeResult 由 _mockWinClick 发出）
+                    if (this._tongitsDeclared) {
+                        this._tongitsDeclared = false;
+                        this._roundRunning = false;
+                        return;
+                    }
                     await W(500);
 
                 } else if (pid === P3_ID) {
@@ -649,6 +681,27 @@ export class MockView extends UIPanel {
             hasTongits: false,
             drawnCard:     card,
             handCardCount: p.handCardCount
+        };
+        this._send(MessageType.TONGITS_DRAW_RES, data);
+    }
+
+    /**
+     * 模拟摸牌后达成 Tongits 条件（hasTongits=true）。
+     * 正常摸一张牌，同时将 hasTongits 置为 true，触发 TongitsPrompt 显示。
+     */
+    clickHasTongits(): void {
+        if (!this._gameData) this.clickInitGame();
+        const p    = this._getPlayer(SELF_ID)!;
+        const card = this._gameData!.deck.pop() ?? 0;
+        if (card) p.handCards = [...p.handCards, card];
+        p.handCardCount = p.handCards.length;
+        p.status        = PLAYER_STATUS.ACTION;
+        this._gameData!.gameInfo.deckCardCount = this._gameData!.deck.length;
+
+        const data: DrawCardRes = {
+            hasTongits:    true,
+            drawnCard:     card,
+            handCardCount: p.handCardCount,
         };
         this._send(MessageType.TONGITS_DRAW_RES, data);
     }
@@ -1204,6 +1257,7 @@ export class MockView extends UIPanel {
             const hand = uid === SELF_ID ? [...p.handCards] : [...this._aiHand(uid)];
             return {
                 ...p,
+                isWin:          uid === winnerId,
                 handCards:      hand,
                 cardPoint:      this._calcCardPoint(hand, p.displayedMelds),
                 displayedMelds: p.displayedMelds.map(m => ({ ...m, cards: [...m.cards] })),

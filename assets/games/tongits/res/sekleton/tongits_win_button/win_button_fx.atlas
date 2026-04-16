@@ -1,0 +1,83 @@
+
+win_button_fx.png
+size: 636,1047
+format: RGBA8888
+filter: Linear,Linear
+repeat: none
+BUTTON-WIN-press
+  rotate: false
+  xy: 201, 18
+  size: 233, 190
+  orig: 246, 212
+  offset: 10, 4
+  index: -1
+Circle_17
+  rotate: true
+  xy: 204, 210
+  size: 244, 245
+  orig: 256, 256
+  offset: 6, 5
+  index: -1
+Circle_18
+  rotate: false
+  xy: 436, 10
+  size: 198, 198
+  orig: 256, 256
+  offset: 29, 29
+  index: -1
+Light_23
+  rotate: false
+  xy: 204, 734
+  size: 346, 311
+  orig: 358, 334
+  offset: 9, 10
+  index: -1
+Light_Line
+  rotate: true
+  xy: 2, 231
+  size: 814, 200
+  orig: 1024, 512
+  offset: 106, 156
+  index: -1
+Spark_12
+  rotate: false
+  xy: 552, 992
+  size: 50, 53
+  orig: 59, 61
+  offset: 4, 6
+  index: -1
+Spark_12b
+  rotate: false
+  xy: 552, 940
+  size: 50, 50
+  orig: 53, 55
+  offset: 1, 1
+  index: -1
+button-win
+  rotate: true
+  xy: 2, 2
+  size: 227, 197
+  orig: 242, 214
+  offset: 11, 3
+  index: -1
+fx_cycle_innerglow_b
+  rotate: false
+  xy: 487, 600
+  size: 132, 132
+  orig: 132, 132
+  offset: 0, 0
+  index: -1
+fx_cycle_innerglow_elipe
+  rotate: false
+  xy: 487, 466
+  size: 131, 132
+  orig: 131, 132
+  offset: 0, 0
+  index: -1
+fx_dust
+  rotate: false
+  xy: 204, 456
+  size: 281, 276
+  orig: 304, 304
+  offset: 12, 14
+  index: -1

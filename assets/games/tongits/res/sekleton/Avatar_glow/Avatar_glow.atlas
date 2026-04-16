@@ -1,0 +1,20 @@
+
+Avatar_glow.png
+size: 326,202
+format: RGBA8888
+filter: Linear,Linear
+repeat: none
+aura
+  rotate: false
+  xy: 202, 78
+  size: 122, 122
+  orig: 128, 128
+  offset: 3, 3
+  index: -1
+xingxing_a
+  rotate: false
+  xy: 2, 2
+  size: 198, 198
+  orig: 256, 256
+  offset: 29, 29
+  index: -1

@@ -437,6 +437,7 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
 
     /** 抽牌响应 */
     applyDrawRes(res: DrawCardRes): void {
+        console.log("抽牌响应:",res)
         const pid = this.myUserId;
         const player = this.getPlayerByUserId(pid);
         if (!player) return;
@@ -451,6 +452,7 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
         if (gi) gi.deckCardCount = Math.max(0, (gi.deckCardCount ?? 0) - 1);
         const layoffHints = this._computeLayoffHints(newHandCards);
         this.notify<DrawResPayload>(TongitsEvents.DRAW_RES, { ...res, layoffHints });
+        if (res.hasTongits) this.notify(TongitsEvents.HAS_TONGITS);
     }
 
     /** 出牌组响应 */
@@ -470,6 +472,7 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
         // updatePlayerById 已更新 displayedMelds，_computeLayoffHints 读最新 players 数据
         const layoffHints = this._computeLayoffHints(newHandCards);
         this.notify<MeldResPayload>(TongitsEvents.MELD_RES, { ...res, layoffHints });
+        if (res.hasTongits) this.notify(TongitsEvents.HAS_TONGITS);
     }
 
     /** 弃牌响应 */
@@ -518,6 +521,7 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
         }
         const layoffHints = this._computeLayoffHints(newHandCards);
         this.notify<TakeResPayload>(TongitsEvents.TAKE_RES, { ...res, layoffHints, discardPile: gi?.discardPile ?? [] });
+        if (res.hasTongits) this.notify(TongitsEvents.HAS_TONGITS);
     }
 
     /** 补牌/压牌响应 */
@@ -548,6 +552,7 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
         // 更新完 displayedMelds 和手牌后再计算（反映最新牌组状态）
         const layoffHints = this._computeLayoffHints(newHandCards);
         this.notify<LayOffResPayload>(TongitsEvents.LAY_OFF_RES, { ...res, layoffHints });
+        if (res.hasTongits) this.notify(TongitsEvents.HAS_TONGITS);
     }
 
     // ── 私有：提示数据计算 ────────────────────────────────

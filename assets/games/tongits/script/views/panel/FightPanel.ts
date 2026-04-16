@@ -24,10 +24,10 @@
  *   this.fightPanel.reset();
  */
 
-import { _decorator, Component } from 'cc';
-import { FightZone }              from './FightZone';
-import { ChallengeResponsePanel } from './ChallengeResponsePanel';
-import type { GroupData }         from '../../utils/GroupAlgorithm';
+import {_decorator, Component,Node} from 'cc';
+import {FightZone} from './FightZone';
+import {ChallengeResponsePanel} from './ChallengeResponsePanel';
+import type {GroupData} from '../../utils/GroupAlgorithm';
 
 const { ccclass, property } = _decorator;
 
@@ -65,6 +65,9 @@ export class FightPanel extends Component {
     @property({ type: ChallengeResponsePanel, tooltip: '挑战响应面板（本地玩家专用）' })
     responsePanel: ChallengeResponsePanel | null = null;
 
+    @property({ type:Node ,tooltip: 'fight bg' })
+    fightBg: Node | null = null;
+
     // ── 对外注入 ──────────────────────────────────────────
 
     /**
@@ -83,7 +86,7 @@ export class FightPanel extends Component {
 
     protected onLoad(): void {
         this.node.active = false;
-
+        this.fightBg.active = false;
         if (this.responsePanel) {
             this.responsePanel.onChallenge = () => {
                 this.responsePanel?.hide();
@@ -101,6 +104,7 @@ export class FightPanel extends Component {
     /** 某玩家发起了挑战：激活面板，在对应方向播放挑战动画 */
     onPlayerChallenge(userId: number): void {
         this.node.active = true;
+        this.fightBg.active = true;
         this._getZone(userId)?.playChallenge();
     }
 
@@ -138,13 +142,22 @@ export class FightPanel extends Component {
     /**
      * 进入 Showdown 比牌阶段：隐藏响应面板，在各方向区域展示手牌与点数。
      * @param infos 各玩家 Showdown 数据
+     * @param onComplete
      */
-    showShowdown(infos: ShowdownInfo[]): void {
+    showShowdown(infos: ShowdownInfo[], onComplete?: () => void): void {
         this.responsePanel?.hide();
+        const zones = infos.map(info => this._getZone(info.userId)).filter(z => z !== null);
+        let remaining = zones.length;
         for (const info of infos) {
             const fightZone = this._getZone(info.userId);
             if (fightZone) {
-                fightZone.onShowdownComplete = () => { this.reset(); };
+                fightZone.onShowdownComplete = () => {
+                    remaining--;
+                    if (remaining <= 0) {
+                        this.reset();
+                        onComplete?.();
+                    }
+                };
                 fightZone.initPos();
                 fightZone.showResult(info.cards, info.points, info.groups, info.isWin);
             }
@@ -170,13 +183,13 @@ export class FightPanel extends Component {
         this.rightZone?.reset();
         this.responsePanel?.hide();
         this.node.active = false;
+        this.fightBg.active = false;
     }
 
     // ── 私有 ──────────────────────────────────────────────
 
     private _getZone(userId: number): FightZone | null {
-        const zone = this.zoneResolver?.(userId) ?? null;
-        console.warn(`[FightPanel] _getZone(${userId}) →`, zone?.node.name ?? 'null (resolver 未设置或未找到)');
-        return zone;
+        // console.warn(`[FightPanel] _getZone(${userId}) →`, zone?.node.name ?? 'null (resolver 未设置或未找到)');
+        return this.zoneResolver?.(userId) ?? null;
     }
 }

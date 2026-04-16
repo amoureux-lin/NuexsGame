@@ -34,6 +34,8 @@ export const TongitsEvents = {
     RESULT_DETAILS: 'tongits:resultDetails',
 
     // ---------- Model -> View（自己操作的 RES 响应） ----------
+    /** 操作完成后服务端判定达成 Tongits 条件 */
+    HAS_TONGITS: 'tongits:hasTongits',
     /** 自己抽牌响应 */
     DRAW_RES: 'tongits:drawRes',
     /** 自己出牌组响应 */

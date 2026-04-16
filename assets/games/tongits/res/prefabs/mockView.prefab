@@ -6042,7 +6042,7 @@
   },
   {
     "__type__": "cc.Node",
-    "_name": "Button-005",
+    "_name": "tongtis",
     "_objFlags": 0,
     "__editorExtras__": {},
     "_parent": {
@@ -6197,7 +6197,7 @@
       "b": 0,
       "a": 255
     },
-    "_string": "pk",
+    "_string": "tongits",
     "_horizontalAlign": 1,
     "_verticalAlign": 1,
     "_actualFontSize": 20,
@@ -6410,7 +6410,7 @@
     },
     "component": "",
     "_componentId": "7fa522J1V9L2YuLqp4zS1K9",
-    "handler": "clickBurnP3",
+    "handler": "clickHasTongits",
     "customEventData": ""
   },
   {

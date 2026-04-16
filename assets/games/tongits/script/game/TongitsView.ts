@@ -36,7 +36,9 @@ import {GameStartEffect} from "db://assets/games/tongits/script/views/effect/Gam
 import { FlyUtil } from '../utils/FlyUtil';
 import { CardNode, DEFAULT_CARD_W, CARD_SPACING } from '../views/handcard/CardNode';
 import { TableAreaView } from '../views/panel/TableAreaView';
-import { FightPanel }    from '../views/panel/FightPanel';
+import { FightPanel }         from '../views/panel/FightPanel';
+import { TongitsPrompt }      from '../views/panel/TongitsPrompt';
+import { TongitsResultPanel } from '../views/panel/TongitsResultPanel';
 
 const { ccclass, property } = _decorator;
 
@@ -78,6 +80,12 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
 
     @property({ type: FightPanel, tooltip: '挑战/比牌/烧死动画容器' })
     fightPanel: FightPanel | null = null;
+
+    @property({ type: TongitsPrompt, tooltip: 'Tongits 提示浮层' })
+    tongitsPrompt: TongitsPrompt | null = null;
+
+    @property({ type: TongitsResultPanel, tooltip: 'Tongits 结算展示面板' })
+    tongitsResultPanel: TongitsResultPanel | null = null;
 
     // ── 缓存本地状态 ─────────────────────────────────────
 
@@ -123,6 +131,15 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
             this.fightPanel.onChallengeResponse = (accepted) => {
                 this.challenge(accepted ? 3 : 4);
             };
+        }
+        if (this.tongitsPrompt) {
+            this.tongitsPrompt.onClick = () => {
+                Nexus.emit(TongitsEvents.CMD_TONGITS_CLICK);
+            };
+            this.tongitsPrompt.node.active = false;
+        }
+        if (this.tongitsResultPanel) {
+            this.tongitsResultPanel.node.active = false;
         }
     }
 
@@ -192,6 +209,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         this.listen<TakeResPayload>(TongitsEvents.TAKE_RES,              (d) => this.onTakeRes(d));
         this.listen<LayOffResPayload>(TongitsEvents.LAY_OFF_RES,         (d) => this.onLayOffRes(d));
         this.listen<ChallengeRes>(TongitsEvents.CHALLENGE_RES,          (d) => this.onChallengeRes(d));
+        this.listen(TongitsEvents.HAS_TONGITS,                          ()  => this._onHasTongits());
         this.listen<BeforeResultBroadcast>(TongitsEvents.BEFORE_RESULT, (d) => this.onBeforeResult(d));
         this.listen<GameResultBroadcast>(TongitsEvents.GAME_RESULT,     (d) => this.onGameResult(d));
         this.listen<RoomResetBroadcast>(TongitsEvents.ROOM_RESET,       (d) => this.onRoomReset(d));
@@ -740,27 +758,44 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         }
         /** 胜利类型  1 tongits 2 挑战 3 时间结束比大小: */
         // winType=2（挑战结算）：fx 隐藏 + bg 切 bg_loop + 展示各玩家手牌
-        if(data.winType === 1){ //tongits
-
-        }else if (data.winType === 2 && this.fightPanel) { //挑战
+        if (data.winType === 1) { //tongits
+            const winner = (data.players ?? []).find(p => p.isWin);
+            if (winner && this.tongitsResultPanel) {
+                this.tongitsResultPanel.show(winner.handCards ?? []);
+            }
+        } else if (data.winType === 2 && this.fightPanel) { //挑战
             this.fightPanel.onBeforeResult();
-            const infos = (data.players ?? [])
+            const players = data.players ?? [];
+            const infos = players
                 .filter(p => (p.handCards?.length ?? 0) > 0)
                 .map(p => ({
                     userId: p.playerInfo!.userId,
                     cards:  p.handCards,
                     points: p.cardPoint ?? 0,
-                    isWin:  p.playerInfo!.userId === data.winnerId,
+                    isWin:  p.isWin ?? false,
                 }));
             if (infos.length > 0) {
-                this.fightPanel.showShowdown(infos);
+                this.fightPanel.showShowdown(infos, () => this._showWinnerBonus(players));
             }
         } else if (data.winType === 3) { //摸完牌
-            const winner = (data.players ?? []).find(p => p.isWin);
-            if (winner) {
-                const bonus = winner.playerInfo?.coinChanged ?? 0;
-                this.seatManager?.showWin(winner.playerInfo!.userId, bonus);
-            }
+            this._showWinnerBonus(data.players ?? []);
+        }
+    }
+
+    /** 收到 hasTongits=true，显示 Tongits 提示浮层 */
+    private _onHasTongits(): void {
+        if (!this.tongitsPrompt) return;
+        this.tongitsPrompt.node.active = true;
+        this.tongitsPrompt.show();
+    }
+
+    /** 显示赢家奖励动画（winType=2 showdown 完成后 & winType=3 直接调用） */
+    private _showWinnerBonus(players: TongitsPlayerInfo[]): void {
+        console.log("显示赢家奖励动画")
+        const winner = players.find(p => p.isWin);
+        if (winner) {
+            const bonus = winner.playerInfo?.coinChanged ?? 0;
+            this.seatManager?.showWin(winner.playerInfo!.userId, bonus);
         }
     }
 
@@ -803,6 +838,9 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         this._refreshPanelVisibility();
         // actionPanel 重置时始终隐藏，等动画回调时再显示
         if (this.actionPanel) this.actionPanel.node.active = false;
+        this.tongitsPrompt?.hide();
+        this.tongitsPrompt?.node && (this.tongitsPrompt.node.active = false);
+        this.tongitsResultPanel?.hide();
     }
 
     /**

@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, Label, Sprite, SpriteFrame, EventTouch, Button, Vec3, tween, Tween } from 'cc';
+import { _decorator, Component, Node, sp ,Label, Sprite, SpriteFrame, EventTouch, Button, Vec3, tween, Tween } from 'cc';
 import { Nexus } from 'db://nexus-framework/index';
 import type { TongitsPlayerInfo } from '../../proto/tongits';
 import { PlayerMeldField } from './PlayerMeldField';
@@ -83,8 +83,8 @@ export class PlayerSeat extends Component {
     offlineIcon: Node = null!;
 
     /** 当前操作高亮（轮到此玩家时显示） */
-    @property({ type: Node, tooltip: '当前操作高亮框，轮到此玩家操作时显示' })
-    actionNode: Node = null!;
+    @property({ type: sp.Skeleton, tooltip: '当前操作高亮框，轮到此玩家操作时显示' })
+    actionNode: sp.Skeleton = null!;
 
     /** 牌组展示区（独立节点，在 Inspector 中拖入，不要求是本节点的子节点） */
     @property({ type: PlayerMeldField, tooltip: '已打出牌组展示区' })
@@ -107,6 +107,9 @@ export class PlayerSeat extends Component {
 
     @property({ type: Label, tooltip: "嬴金额"})
     winLab: Label = null!;
+
+    @property({ type: sp.Skeleton, tooltip: '赢动画 Skeleton' })
+    winAnimation: sp.Skeleton = null!;
 
     // ── 私有状态 ─────────────────────────────────────────
 
@@ -131,6 +134,8 @@ export class PlayerSeat extends Component {
     private _countdownRunning: boolean = false;
     /** follower 距圆心的半径，由 onLoad 时初始位置自动计算 */
     private _followerRadius: number = 0;
+    /** winNode 的初始位置，onLoad 时缓存，每次 showWin 从此处开始上移 */
+    private _winOrigin: Vec3 = new Vec3();
 
     /** 点击空座位回调（坐下），由 PlayerSeatManager 注入 */
     public onEmptySeatClick: ((seat: PlayerSeat) => void) | null = null;
@@ -151,6 +156,11 @@ export class PlayerSeat extends Component {
             const p = this.countdownFollower.position;
             this._followerRadius = Math.sqrt(p.x * p.x + p.y * p.y);
         }
+        if (this.winNode) {
+            this._winOrigin = this.winNode.position.clone();
+            this.winNode.active = false;
+        }
+        if (this.winAnimation) this.winAnimation.node.active = false;
     }
 
     protected onDestroy(): void {
@@ -203,7 +213,23 @@ export class PlayerSeat extends Component {
      * @param active 是否为当前操作玩家
      */
     setActionActive(active: boolean): void {
-        if (this.actionNode) this.actionNode.active = active;
+        if (this.actionNode) {
+            if (active) {
+                this.actionNode.node.active = true;
+                this.actionNode.setCompleteListener(null);
+                this.actionNode.setAnimation(0, 'avatar_glow', false);
+                this.actionNode.setCompleteListener(() => {
+                    if (this.actionNode?.isValid) {
+                        this.actionNode.node.active = false;
+                        this.actionNode.setCompleteListener(null);
+                    }
+                });
+            } else {
+                this.actionNode.clearTracks();
+                this.actionNode.setCompleteListener(null);
+                this.actionNode.node.active = false;
+            }
+        }
         if (this.countdownNode) this.countdownNode.node.active = active;
         if (this.countdownFollower) this.countdownFollower.active = active;
         if (!active) this._stopCountdown();
@@ -263,17 +289,20 @@ export class PlayerSeat extends Component {
         if (this.winLab) this.winLab.string = `+${amount}`;
 
         Tween.stopAllByTarget(this.winNode);
-        const origin = this.winNode.position.clone();
-        this.winNode.setPosition(origin);
+        this.winNode.setPosition(this._winOrigin);
         this.winNode.active = true;
 
         tween(this.winNode)
-            .to(0.8, { position: new Vec3(origin.x, origin.y + 150, origin.z) }, { easing: 'quadOut' })
-            .call(() => {
-                if (this.winNode?.isValid) this.winNode.active = false;
-                this.winNode?.setPosition(origin);
-            })
+            .to(0.8, { position: new Vec3(this._winOrigin.x, this._winOrigin.y + 80, this._winOrigin.z) }, { easing: 'quadOut' })
             .start();
+
+        if (this.winAnimation) {
+            const sk = this.winAnimation;
+            sk.node.active = true;
+            sk.setCompleteListener(null);
+            sk.setAnimation(0, 'appear', false);
+            sk.addAnimation(0, 'idle', true, 0);
+        }
     }
 
     /** 获取当前玩家的 userId，空座位返回 0 */
@@ -338,9 +367,19 @@ export class PlayerSeat extends Component {
         if (this.emptyNode) this.emptyNode.active = isEmpty;
         if (this.occupiedNode) this.occupiedNode.active = !isEmpty;
 
-        // 无人时清除操作高亮
+        // 无人时清除操作高亮及赢动画
         if (isEmpty) {
             this.setActionActive(false);
+            if (this.winNode) {
+                Tween.stopAllByTarget(this.winNode);
+                this.winNode.setPosition(this._winOrigin);
+                this.winNode.active = false;
+            }
+            if (this.winAnimation) {
+                this.winAnimation.clearTracks();
+                this.winAnimation.setCompleteListener(null);
+                this.winAnimation.node.active = false;
+            }
             return;
         }
 
