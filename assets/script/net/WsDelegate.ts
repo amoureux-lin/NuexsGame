@@ -12,6 +12,7 @@ import { Nexus } from 'db://nexus-framework/index';
 import { MessageType } from '../proto/message_type';
 import type { PingMessage, PongMessage } from '../proto/gateway';
 import { CommonUI } from '../config/UIConfig';
+import { ErrorCodeHandler } from './ErrorCodeHandler';
 
 const HEADER_SIZE = 16;
 const HEARTBEAT_RES = MessageType.GATEWAY_PONG_RES;
@@ -126,11 +127,13 @@ export class WsDelegate implements IWsDelegate {
             return true;
         }
 
-        // 服务端错误码：弹窗提示 + reject 对应的 wsRequest Promise
+        // 服务端错误码：交由 ErrorCodeHandler 按 CSV 配置决定展示方式
         if ((pkt.errorCode ?? 0) !== 0) {
-            console.warn('[WsDelegate] 服务端错误码：', pkt.errorCode, pkt);
-            Nexus.ui.show(CommonUI.ALERT, { content: `错误码: ${pkt.errorCode}` });
-            return new Error(`Server error: ${pkt.errorCode}`);
+            const code = pkt.errorCode!;
+            ErrorCodeHandler.handle(code);
+            return ErrorCodeHandler.shouldReject(code)
+                ? new Error(`server:${code}`)
+                : undefined;
         }
 
         console.log('【ws】收到消息：', pkt.msgType, pkt);

@@ -208,6 +208,12 @@ export abstract class IUIService extends ServiceBase {
     abstract unregisterPanels(ids: string[] | Record<string, string>): void;
     /** 显示一个 UI 面板，返回面板根节点。 */
     abstract show(name: string, params?: unknown, layer?: UILayer): Promise<Node>;
+    /**
+     * 将面板加载到指定父节点下（而非全局 Layer）。
+     * 适用于需要挂载在场景内特定节点的面板（如游戏内局部弹层）。
+     * hide / destroy 仍通过 name 调用，生命周期与 show() 完全一致。
+     */
+    abstract showInNode(name: string, parentNode: Node, params?: unknown): Promise<Node>;
     /** 隐藏一个已显示的 UI 面板。 */
     abstract hide(name: string): Promise<void>;
     /** 销毁一个已创建的 UI 面板。 */
@@ -421,6 +427,56 @@ export abstract class IObjectPoolService extends ServiceBase {
     abstract clear(key: string): void;
     /** 销毁全部池节点。 */
     abstract clearAll(): void;
+}
+
+// ── Config ───────────────────────────────────────────────────────────────────
+
+/**
+ * 配置服务：运行时加载并缓存 CSV / JSON 配置文件。
+ *
+ * 典型用法：
+ *   // 游戏启动时加载
+ *   await Nexus.configs.loadCSV('errorCodes', 'common', 'configs/error_codes');
+ *   // 业务使用
+ *   const rows = Nexus.configs.getCSVRows('errorCodes');
+ */
+export abstract class IConfigService extends ServiceBase {
+    /**
+     * 加载 CSV 配置并以 key 缓存。
+     * @param key    缓存标识
+     * @param bundle Cocos Bundle 名称
+     * @param path   Bundle 内的资源路径（不含扩展名）
+     */
+    abstract loadCSV(key: string, bundle: string, path: string): Promise<void>;
+
+    /**
+     * 加载 JSON 配置并以 key 缓存。
+     * @param key    缓存标识
+     * @param bundle Cocos Bundle 名称
+     * @param path   Bundle 内的资源路径（不含扩展名）
+     */
+    abstract loadJSON<T = unknown>(key: string, bundle: string, path: string): Promise<void>;
+
+    /**
+     * 获取已加载的 CSV 数据（每行为一个对象，key 为表头列名）。
+     * 未加载时返回空数组。
+     */
+    abstract getCSVRows(key: string): Record<string, string>[];
+
+    /**
+     * 获取已加载的 JSON 数据。
+     * 未加载时返回 undefined。
+     */
+    abstract getJSON<T = unknown>(key: string): T | undefined;
+
+    /** 指定 key 的配置是否已加载。 */
+    abstract isLoaded(key: string): boolean;
+
+    /**
+     * 清除缓存。
+     * @param key 指定 key 则只清除该条；省略则清除全部。
+     */
+    abstract clear(key?: string): void;
 }
 
 // ── Toast ────────────────────────────────────────────────────────────────────

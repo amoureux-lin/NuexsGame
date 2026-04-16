@@ -264,6 +264,74 @@ export class UIServiceImpl extends IUIService {
         this._removeModal(name);
     }
 
+    /**
+     * 将面板加载到指定父节点下（而非全局 Layer）。
+     * - hide / destroy 通过 name 调用，生命周期与 show() 完全一致。
+     * - 不参与模态栈，遮罩（mask）不支持（场景内局部面板通常不需要全屏遮罩）。
+     */
+    async showInNode(name: string, parentNode: Node, params?: unknown): Promise<Node> {
+        const cfg = this._panelConfigs.get(name);
+
+        // ── 已有节点：复用缓存 ──────────────────────────────────
+        const existing = this._panels.get(name);
+        if (existing) {
+            if (existing.animState === 'showing') return existing.node;
+            if (existing.animState === 'hiding') {
+                existing.pendingShow = { params };
+                return existing.node;
+            }
+            if (!existing.node.active) existing.node.active = true;
+            this.dispatch(existing.node, 'onShow', params, name, null);
+            existing.animState = 'showing';
+            await this._playShowAnimation(existing.node);
+            existing.animState = 'idle';
+            if (existing.pendingHide) {
+                existing.pendingHide = false;
+                this.hide(name);
+            }
+            return existing.node;
+        }
+
+        // ── 加载 prefab ─────────────────────────────────────────
+        if (this._loadingSet.has(name)) return new Node();
+        this._loadingSet.add(name);
+        let prefab: Prefab;
+        try {
+            const prefabNameOrPath = cfg?.prefab ?? name;
+            const bundleOverride   = cfg?.bundle;
+            prefab = await this.loadPrefab(prefabNameOrPath, bundleOverride);
+        } finally {
+            this._loadingSet.delete(name);
+        }
+
+        if (this._pendingHide.has(name)) {
+            this._pendingHide.delete(name);
+            return new Node();
+        }
+
+        // ── 挂载到指定父节点 ────────────────────────────────────
+        const node = instantiate(prefab!);
+        parentNode.addChild(node);
+
+        const record: PanelRecord = {
+            node, layer: UILayer.SCENE, maskNode: null,
+            animState: 'idle', pendingHide: false, pendingShow: null,
+        };
+        this._panels.set(name, record);
+        this.dispatch(node, 'onShow', params, name, null);
+
+        record.animState = 'showing';
+        await this._playShowAnimation(node);
+        record.animState = 'idle';
+
+        if (record.pendingHide) {
+            record.pendingHide = false;
+            this.hide(name);
+        }
+
+        return node;
+    }
+
     // ── 导航栈 ───────────────────────────────────────────
 
     async showWithStack(name: string, params?: unknown, layer?: UILayer): Promise<Node> {

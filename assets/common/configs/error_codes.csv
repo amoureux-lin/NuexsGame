@@ -1,0 +1,30 @@
+# 错误码配置表
+# code     — 服务端错误码（整数字符串）
+# type     — 展示方式：toast | popup | silent
+# i18nKey  — 国际化 key（对应 i18n 配置文件中的字段）
+# extra    — 服务端对该错误码的补充描述（仅供参考）
+code,type,i18nKey,extra
+# ── 通用 ─────────────────────────────────────────────────────────────────────
+1000,toast,error.unknown,未知错误
+1001,toast,error.server,服务器内部错误
+1002,toast,error.timeout,请求超时
+1003,toast,error.network,网络连接异常
+1004,popup,error.maintenance,服务器维护中
+# ── 用户 / 登录 ───────────────────────────────────────────────────────────────
+2001,popup,error.token_expired,登录已过期，请重新登录
+2002,popup,error.account_banned,账号已被封禁
+2003,toast,error.login_failed,登录失败
+2004,toast,error.no_permission,无操作权限
+# ── 金币 / 钱包 ───────────────────────────────────────────────────────────────
+3001,popup,error.insufficient_coins,金币不足
+3002,toast,error.coin_overflow,金币上限，无法继续充值
+# ── 房间 / 游戏 ───────────────────────────────────────────────────────────────
+4001,toast,error.room_full,房间已满
+4002,toast,error.room_not_found,房间不存在
+4003,popup,error.game_in_progress,游戏已在进行中
+4004,toast,error.bet_invalid,无效下注
+4005,toast,error.action_not_allowed,当前状态不允许此操作
+# ── Tongits 专属 ─────────────────────────────────────────────────────────────
+5001,toast,error.tongits.invalid_meld,无效牌组
+5002,toast,error.tongits.cannot_sapaw,不满足补牌条件
+5003,toast,error.tongits.challenge_rejected,挑战已被拒绝

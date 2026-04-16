@@ -198,27 +198,39 @@ export abstract class BaseLoading extends NexusBaseLoading {
         ];
     }
 
-    /** 0-20%：按目录加载 common，进度按比例落在 0~20。 */
+    /** 0-20%：按目录加载 common 资源 + 公共配置文件（CSV / JSON）。 */
     protected async loadCommonResources(): Promise<void> {
         const dirs = this.getCommonPreloadDirs();
-        if (dirs.length === 0) {
-            this.setProgress(PROGRESS_COMMON_END);
-            return;
-        }
         const total = dirs.length;
+        // 为配置加载预留最后 1/N 进度段（dirs 为空时整段都给配置）
+        const dirsEnd = total > 0 ? PROGRESS_COMMON_END * (total / (total + 1)) : 0;
         for (let i = 0; i < dirs.length; i++) {
             if (this.isCancelled()) return;
             const item = dirs[i];
-            // 当前目录在“公共资源 0-20%”段中的起止区间
-            const start = (i / total) * PROGRESS_COMMON_END;
-            const end = ((i + 1) / total) * PROGRESS_COMMON_END;
+            const start = (i / (total + 1)) * PROGRESS_COMMON_END;
+            const end = ((i + 1) / (total + 1)) * PROGRESS_COMMON_END;
             await Nexus.asset.loadDir('common', item.dir, item.type as any, (finished, dirTotal) => {
                 const ratio = dirTotal > 0 ? finished / dirTotal : 1;
                 const percent = start + ratio * (end - start);
                 this.setProgress(percent, '加载公共资源...');
             });
         }
+        if (this.isCancelled()) return;
+        this.setProgress(dirsEnd, '加载配置文件...');
+        await this.loadCommonConfigs();
         this.setProgress(PROGRESS_COMMON_END, '加载公共资源...');
+    }
+
+    /**
+     * 加载公共配置文件（CSV / JSON），在公共资源目录加载完成后调用。
+     * 子类可覆写以追加游戏内配置，调用 super 保留基类行为。
+     */
+    protected async loadCommonConfigs(): Promise<void> {
+        try {
+            await Nexus.configs.loadCSV('errorCodes', 'common', 'configs/error_codes');
+        } catch (e) {
+            console.warn('[BaseLoading] 加载 error_codes.csv 失败：', e);
+        }
     }
 
     /** 20-80% loadRes → 80-85% playMusic → 85-90% 连接 → 90-100% joinRoom。 */

@@ -9,6 +9,7 @@ import {
     IAssetService,
     IAudioService,
     IBundleService,
+    IConfigService,
     IDataStoreService,
     IEventService,
     II18nService,
@@ -144,6 +145,11 @@ export class Nexus {
     /** Toast 全局提示服务快捷入口。 */
     static get toast(): IToastService {
         return ServiceRegistry.get(IToastService);
+    }
+
+    /** 配置服务快捷入口（CSV / JSON 配置加载与读取）。 */
+    static get configs(): IConfigService {
+        return ServiceRegistry.get(IConfigService);
     }
 
     /** Proto 消息类型映射：registerCommon 启动时调用，registerSubgame 子游戏 Loading 时调用。 */
