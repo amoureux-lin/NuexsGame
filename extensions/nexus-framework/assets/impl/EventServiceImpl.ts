@@ -69,6 +69,11 @@ export class EventServiceImpl extends IEventService {
         }
 
         for (const record of [...listeners]) {
+            if (typeof record.fn !== 'function') {
+                console.error(`[Nexus][Event] emit: listener fn is not a function for event "${event}", skipping.`, record);
+                listeners.delete(record);
+                continue;
+            }
             if (record.target) {
                 record.fn.call(record.target, data);
             } else {
@@ -96,6 +101,11 @@ export class EventServiceImpl extends IEventService {
 
     /** 统一创建并保存监听记录。 */
     private addListener<T>(event: string, fn: (data: T) => void, once: boolean, target?: object): void {
+        if (typeof fn !== 'function') {
+            console.error(`[Nexus][Event] addListener: fn is not a function for event "${event}". Registration skipped.`, 'fn:', fn, 'target:', target);
+            return;
+        }
+
         if (!this._listeners.has(event)) {
             this._listeners.set(event, new Set());
         }

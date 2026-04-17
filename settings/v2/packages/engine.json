@@ -27,7 +27,7 @@
             "_value": true
           },
           "meshopt": {
-            "_value": false
+            "_value": true
           },
           "2d": {
             "_value": true
@@ -54,10 +54,10 @@
             "_value": true
           },
           "particle": {
-            "_value": true
+            "_value": false
           },
           "physics": {
-            "_value": true,
+            "_value": false,
             "_option": "physics-ammo"
           },
           "physics-ammo": {
@@ -79,8 +79,8 @@
             "_value": false
           },
           "physics-2d": {
-            "_value": true,
-            "_option": "physics-2d-box2d"
+            "_value": false,
+            "_option": "physics-2d-builtin"
           },
           "physics-2d-box2d": {
             "_value": true
@@ -101,10 +101,10 @@
             "_value": true
           },
           "primitive": {
-            "_value": true
+            "_value": false
           },
           "profiler": {
-            "_value": true
+            "_value": false
           },
           "occlusion-query": {
             "_value": false
@@ -125,7 +125,7 @@
             "_value": true
           },
           "webview": {
-            "_value": true
+            "_value": false
           },
           "tween": {
             "_value": true
@@ -137,13 +137,13 @@
             "_value": false
           },
           "terrain": {
-            "_value": true
+            "_value": false
           },
           "light-probe": {
             "_value": true
           },
           "tiled-map": {
-            "_value": true
+            "_value": false
           },
           "vendor-google": {
             "_value": false
@@ -191,8 +191,7 @@
           }
         },
         "flags": {
-          "LOAD_SPINE_MANUALLY": false,
-          "LOAD_BULLET_MANUALLY": false
+          "LOAD_SPINE_MANUALLY": false
         },
         "includeModules": [
           "2d",
@@ -209,23 +208,16 @@
           "light-probe",
           "marionette",
           "mask",
-          "particle",
+          "meshopt",
           "particle-2d",
-          "physics-2d-box2d",
-          "physics-ammo",
-          "primitive",
-          "profiler",
           "rich-text",
           "skeletal-animation",
           "spine-3.8",
-          "terrain",
-          "tiled-map",
           "tween",
           "ui",
           "ui-skew",
           "video",
-          "websocket",
-          "webview"
+          "websocket"
         ],
         "noDeprecatedFeatures": {
           "value": false,
