@@ -1,0 +1,17 @@
+info size=38 unicode=1 stretchH=100 smooth=1 aa=1 padding=0,0,0,0 spacing=1,1 outline=0
+common lineHeight=38 base=23 scaleW=242 scaleH=82 pages=1 packed=0
+page id=0 file="result_font_win.png"
+chars count=14char id=45 x=2 y=2 width=32 height=38 xoffset=0 yoffset=0 xadvance=32 
+char id=43 x=36 y=2 width=32 height=38 xoffset=0 yoffset=0 xadvance=32 
+char id=48 x=70 y=2 width=32 height=38 xoffset=0 yoffset=0 xadvance=32 
+char id=49 x=104 y=2 width=32 height=38 xoffset=0 yoffset=0 xadvance=32 
+char id=50 x=138 y=2 width=32 height=38 xoffset=0 yoffset=0 xadvance=32 
+char id=51 x=172 y=2 width=32 height=38 xoffset=0 yoffset=0 xadvance=32 
+char id=52 x=206 y=2 width=32 height=38 xoffset=0 yoffset=0 xadvance=32 
+char id=53 x=2 y=42 width=32 height=38 xoffset=0 yoffset=0 xadvance=32 
+char id=54 x=36 y=42 width=32 height=38 xoffset=0 yoffset=0 xadvance=32 
+char id=55 x=70 y=42 width=32 height=38 xoffset=0 yoffset=0 xadvance=32 
+char id=56 x=104 y=42 width=32 height=38 xoffset=0 yoffset=0 xadvance=32 
+char id=57 x=138 y=42 width=32 height=38 xoffset=0 yoffset=0 xadvance=32 
+char id=46 x=172 y=42 width=32 height=38 xoffset=0 yoffset=0 xadvance=32 
+char id=44 x=206 y=42 width=32 height=38 xoffset=0 yoffset=0 xadvance=32 

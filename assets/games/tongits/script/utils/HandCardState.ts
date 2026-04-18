@@ -229,7 +229,6 @@ export class HandCardState {
      * Group 按钮：将当前选中的所有牌合并为新组
      * - 从各自原位置移除
      * - 创建新 GroupData，type 由算法判断
-     * - autoGroup ON 时，对剩余 UNGROUP 重新跑 autoGroup
      */
     createGroup(): void {
         const selCards = this._getSelectedCards();
@@ -252,17 +251,12 @@ export class HandCardState {
         };
         this._groups.push(newGroup);
 
-        // autoGroup ON → 对剩余 UNGROUP 补跑一次
-        if (this._autoGroupEnabled) this._runAutoGroupOnUngroup();
-
         this._clearSelSilent();
         this._notify();
     }
 
     /**
-     * Ungroup 按钮：解散选中的组
-     * autoGroup ON → 所有牌重新分组
-     * autoGroup OFF → 牌进入 UNGROUP 排序
+     * Ungroup 按钮：解散选中的组，牌回到散牌区（不重跑 autoGroup）
      */
     dissolveGroup(): void {
         if (this._selectedGroupIds.size !== 1) return;
@@ -275,7 +269,6 @@ export class HandCardState {
         this._clearSelSilent();
 
         this._ungroup = sortCards([...this._ungroup, ...released], this._sortMode);
-
         this._notify();
     }
 
@@ -364,14 +357,6 @@ export class HandCardState {
     toggleAutoGroup(): void {
         this._autoGroupEnabled = !this._autoGroupEnabled;
         this._clearSelSilent();
-
-        const all = this._getAllCards();
-        this._groups  = [];
-        this._ungroup = sortCards(all, this._sortMode);
-
-        if (this._autoGroupEnabled) {
-            this._runAutoGroupAll();
-        }
         this._notify();
     }
 

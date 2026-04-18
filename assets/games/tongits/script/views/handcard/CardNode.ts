@@ -58,7 +58,6 @@ export class CardNode extends Component {
 
     private _cardValue: number  = 0;
     private _selected:  boolean = false;
-    private _hinted:    boolean = false;
     private _faceDown:  boolean = true;   // 默认背面朝上
     private _liftTween: Tween<Node> | null = null;
     private _moveTween: Tween<Node> | null = null;
@@ -80,8 +79,9 @@ export class CardNode extends Component {
     // ── 生命周期 ──────────────────────────────────────────
 
     onLoad(): void {
-        if (this.maskNode) this.maskNode.active = false;
-        if (this.tipNode) this.tipNode.active = false;
+        this.setHinted(false);
+        this.setMasked(false);
+        this.setTipped(false);
         this._ensureVisuals();
         this.node.on(Node.EventType.TOUCH_START,  this._onTouchStart,  this);
         this.node.on(Node.EventType.TOUCH_MOVE,   this._onTouchMove,   this);
@@ -141,21 +141,16 @@ export class CardNode extends Component {
 
     get isTipped(): boolean { return this.tipNode?.active ?? false; }
 
-    /** Meld 提示态：true → 上移 + 蓝色蒙层 */
+    /** Meld 提示态：true → 显示蓝色蒙层 */
     setHinted(hinted: boolean): void {
-        if (this._hinted === hinted) return;
-        this._hinted = hinted;
-        this._updateLift();
         if (this.hintOverlay) this.hintOverlay.active = hinted;
     }
-
-    get isHinted(): boolean { return this._hinted; }
 
     /** 动画移动到目标 X 位置（布局重排时调用），同时保持正确的 lift Y */
     tweenToX(x: number, duration: number): void {
         this._moveTween?.stop();
         this._liftTween?.stop(); // 统一由此 tween 负责 Y，避免两个 tween 冲突
-        const y = (this._selected || this._hinted) ? LIFT_Y : 0;
+        const y = this._selected ? LIFT_Y : 0;
         this._moveTween = tween(this.node)
             .to(duration, { position: new Vec3(x, y, 0) }, { easing: 'quadOut' })
             .call(() => { this._moveTween = null; })
@@ -210,7 +205,7 @@ export class CardNode extends Component {
         // 如果 tweenToX 正在运行，它已包含正确的 Y，无需再单独 tween
         if (this._moveTween) return;
         this._liftTween?.stop();
-        const offsetY = (this._selected || this._hinted) ? LIFT_Y : 0;
+        const offsetY = this._selected ? LIFT_Y : 0;
         const pos     = this.node.position;
         this._liftTween = tween(this.node)
             .to(LIFT_DURATION, { position: new Vec3(pos.x, offsetY, pos.z) }, { easing: 'quadOut' })
@@ -325,6 +320,8 @@ export class CardNode extends Component {
             this.node.addChild(n);
             this.hintOverlay = n;
         }
+        // 编辑器绑定时兜底：确保初始隐藏
+        this.hintOverlay.active = false;
 
         this._refreshDisplay();
     }

@@ -5,6 +5,18 @@ import { PlayerSeat } from './PlayerSeat';
 import { FightZone } from '../panel/FightZone';
 import type { TongitsPlayerInfo } from '../../proto/tongits';
 
+/** 结算面板所需的单个座位快照 */
+export interface SeatSnapshot {
+    /** 玩家 userId */
+    userId: number;
+    /** 头像节点的世界坐标（结算面板用于定位浮层） */
+    avatarWorldPos: Vec3;
+    /** 完整玩家数据（头像 URL、昵称、金币等） */
+    playerInfo: TongitsPlayerInfo;
+    /** 是否为视角玩家（自己） */
+    isSelf: boolean;
+}
+
 const { ccclass, property } = _decorator;
 
 /**
@@ -169,6 +181,39 @@ export class PlayerSeatManager extends Component {
      */
     showWin(userId:number,bonusAmount:number): void {
         this.getSeatByUserId(userId)?.showWin(bonusAmount);
+    }
+
+    /**
+     * 结算时在所有在座玩家头像旁显示手牌点数，赢家用背景1，输家用背景2。
+     * 需在 setData / refreshFromPlayers 已更新 cardPoint 之后调用。
+     * @param winnerId 本局赢家 userId
+     */
+    showResultPoints(winnerId: number): void {
+        for (const seat of this._allSeats()) {
+            if (!seat || seat.isEmpty()) continue;
+            seat.showResultPoint(seat.getUserId() === winnerId);
+        }
+    }
+
+    /**
+     * 获取所有有玩家座位的快照，供结算面板使用。
+     * 返回顺序与屏幕位置一致：[bottom(自己), right, left]。
+     */
+    getSeatSnapshots(): SeatSnapshot[] {
+        const result: SeatSnapshot[] = [];
+        for (const seat of this._allSeats()) {
+            if (!seat || seat.isEmpty()) continue;
+            const avatarWorldPos = seat.getAvatarWorldPosition();
+            const playerInfo     = seat.getPlayerInfo();
+            if (!avatarWorldPos || !playerInfo) continue;
+            result.push({
+                userId:         seat.getUserId(),
+                avatarWorldPos: avatarWorldPos,
+                playerInfo:     playerInfo,
+                isSelf:         seat.isSelf(),
+            });
+        }
+        return result;
     }
 
     // ── 私有：视角排列计算 ────────────────────────────────

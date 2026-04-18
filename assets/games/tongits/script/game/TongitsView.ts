@@ -39,6 +39,10 @@ import { TableAreaView } from '../views/panel/TableAreaView';
 import { FightPanel }         from '../views/panel/FightPanel';
 import { TongitsPrompt }      from '../views/panel/TongitsPrompt';
 import { TongitsResultPanel } from '../views/panel/TongitsResultPanel';
+import {TongitsPanel} from "db://assets/games/tongits/script/views/panel/TongitsPanel";
+import { PotTrophyPanel } from '../views/panel/PotTrophyPanel';
+import { DiscardHistoryPanel } from '../views/panel/DiscardHistoryPanel';
+import type { PotInfo } from '../proto/tongits';
 
 const { ccclass, property } = _decorator;
 
@@ -84,8 +88,19 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     @property({ type: TongitsPrompt, tooltip: 'Tongits 提示浮层' })
     tongitsPrompt: TongitsPrompt | null = null;
 
-    @property({ type: TongitsResultPanel, tooltip: 'Tongits 结算展示面板' })
+    @property({ type: TongitsPanel, tooltip: '达成 Tongits 结算展示面板' })
+    TongitsPanel: TongitsPanel | null = null;
+
+    @property({ type: TongitsResultPanel, tooltip: 'result结算展示面板' })
     tongitsResultPanel: TongitsResultPanel | null = null;
+
+    /** 顶部底池奖杯面板（两个奖杯图标 + 飞行动画） */
+    @property({ type: PotTrophyPanel, tooltip: '顶部底池奖杯面板' })
+    potTrophyPanel: PotTrophyPanel | null = null;
+
+    /** 弃牌历史记录面板 */
+    @property({ type: DiscardHistoryPanel, tooltip: '弃牌历史记录面板' })
+    discardHistoryPanel: DiscardHistoryPanel | null = null;
 
     // ── 缓存本地状态 ─────────────────────────────────────
 
@@ -101,6 +116,8 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     private _gameInfo: GameInfo | null = null;
     private _isLocalOwner: boolean = false;
     private _isGameStarted: boolean = false;
+    /** 缓存 BeforeResult 的胜利类型，供 onGameResult 传给结算面板 */
+    private _lastWinType: number = 0;
     /** 发牌动画进行中，此期间拦截操作按钮刷新 */
     private _isDealing: boolean = false;
     /** 手牌状态机最新的按钮可用状态 */
@@ -144,6 +161,11 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         if (this.tongitsResultPanel) {
             this.tongitsResultPanel.node.active = false;
         }
+        if (this.tableAreaView) {
+            this.tableAreaView.onHistoryClick = () => {
+                this.discardHistoryPanel?.show(this.tableAreaView.discardPile);
+            };
+        }
     }
 
     // ── 事件注册 ─────────────────────────────────────────
@@ -166,6 +188,9 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
                 this._refreshActionPanel();
                 // cardCountNode 与 actionPanel 同时显示
                 this.seatManager?.setContext(this._isLocalOwner, true);
+                // setContext 用 _data.cardPoint 初始化点数，紧接着用本地手牌实时计算值覆盖
+                const selfSeat = this.seatManager?.getSeatByUserId(this._perspectiveId);
+                selfSeat?.updateGamePoint(this.handCardPanel?.point ?? 0);
                 if (this.actionPanel) {this.actionPanel.node.active = true;}
             };
             // 手牌选中状态变化 → 实时更新按钮可交互状态
@@ -174,6 +199,9 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
                 if (this._isDealing) return;
                 // group/ungroup 是本地操作，不受回合限制，始终随选牌状态更新
                 this.actionPanel?.refreshGroupButtons(info.buttons);
+                // 实时更新自己的手牌点数（本地计算值）
+                const selfSeat = this.seatManager?.getSeatByUserId(this._perspectiveId);
+                selfSeat?.updateGamePoint(this.handCardPanel.point);
                 // drop/dump/sapaw/fight 只在轮到自己时开启
                 if (this._actionPlayerId === this._perspectiveId) {
                     this._refreshActionPanel();
@@ -384,6 +412,8 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         console.log('onGameStart', data);
         this._resetToPreGame();
         this._isGameStarted = true;
+        // 游戏开始立即隐藏所有座位的 kickBtn（不等发牌动画完成）
+        this.seatManager?.setContext(this._isLocalOwner, true);
         // waitingPanel 立即隐藏，actionPanel 等动画回调时与 cardCountNode 同步显示
         this._refreshPanelVisibility();
 
@@ -395,12 +425,14 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         // GameStart 带的 gameInfo 包含初始 actionPlayerId，缓存备用
         if (data.gameInfo) this._gameInfo = data.gameInfo as GameInfo;
 
+        // 初始化顶部奖杯数字（pot.winCount = 底池已累积局数）
+        this.potTrophyPanel?.setWinCount(data.gameInfo?.pot?.winCount ?? 0);
+
         // 标记发牌中，拦截期间的 ActionChange 按钮刷新
         this._isDealing = true;
 
         const selfPlayer = this._players.find(p => p.playerInfo?.userId === this._perspectiveId);
-        const potAmount = (data.gameInfo?.betAmount ?? 0)
-            * (data.gameInfo?.pot?.base ?? 1);
+        const potAmount = (data.gameInfo?.pot?.base ?? 0);
         const avatarPositions = this.seatManager?.getAvatarWorldPositions() ?? [];
 
         // 开场动画 → 发牌 → 发牌完成后刷新操作按钮
@@ -874,6 +906,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     }
 
     protected onBeforeResult(data: BeforeResultBroadcast): void {
+        console.log("onBeforeResult:",data);
         // 游戏即将结算：清除所有玩家倒计时 + 禁止手牌交互 + 清理游戏进行态 UI
         this.seatManager?.updateActionPlayer(0);
         this.handCardPanel?.setDragEnabled(false);
@@ -883,13 +916,22 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
             this._refreshAllSeats();
         }
         /** 胜利类型  1 tongits 2 挑战 3 时间结束比大小: */
-        // winType=2（挑战结算）：fx 隐藏 + bg 切 bg_loop + 展示各玩家手牌
+        // 缓存 winType，onGameResult 收到完整结算数据后再显示结算面板
+        this._lastWinType = data.winType;
+
+        // 结算前：在座位头像旁显示所有玩家手牌点数（赢/输背景）
+        this.seatManager?.showResultPoints(data.winnerId);
+
+        const pot = data.pot;
         if (data.winType === 1) { //tongits
-            const winner = (data.players ?? []).find(p => p.isWin);
-            if (winner && this.tongitsResultPanel) {
-                const players = data.players ?? [];
-                this.tongitsResultPanel.onHide = () => this._showWinnerBonus(players);
-                this.tongitsResultPanel.show(winner);
+            const players = data.players ?? [];
+            const winner  = players.find(p => p.playerInfo?.userId === data.winnerId);
+            console.log('[TongitsView] winType=1 TongitsPanel=', this.TongitsPanel, 'winner=', winner?.playerInfo?.userId);
+            if (this.TongitsPanel && winner) {
+                this.TongitsPanel.onHide = () => this._showWinnerBonus(players, pot);
+                this.TongitsPanel.show(winner);
+            } else {
+                this._showWinnerBonus(players, pot);
             }
         } else if (data.winType === 2 && this.fightPanel) { //挑战
             this.fightPanel.onBeforeResult();
@@ -903,10 +945,10 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
                     isWin:  p.isWin ?? false,
                 }));
             if (infos.length > 0) {
-                this.fightPanel.showShowdown(infos, () => this._showWinnerBonus(players));
+                this.fightPanel.showShowdown(infos, () => this._showWinnerBonus(players, pot));
             }
         } else if (data.winType === 3) { //摸完牌
-            this._showWinnerBonus(data.players ?? []);
+            this._showWinnerBonus(data.players ?? [], pot);
         }
     }
 
@@ -918,7 +960,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     }
 
     /** 显示赢家奖励动画（winType=2 showdown 完成后 & winType=3 直接调用） */
-    private _showWinnerBonus(players: TongitsPlayerInfo[]): void {
+    private _showWinnerBonus(players: TongitsPlayerInfo[], pot?: PotInfo): void {
         // 展示除自己以外所有玩家的手牌
         for (const player of players) {
             const uid = player.playerInfo?.userId;
@@ -930,9 +972,28 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
             const bonus = winner.playerInfo?.coinChanged ?? 0;
             this.seatManager?.showWin(winner.playerInfo!.userId, bonus);
         }
+
+        // 奖杯动画：在赢家座位显示奖杯，飞向顶部 Trophy1
+        console.log('[Trophy] _showWinnerBonus pot=', pot, 'potTrophyPanel=', this.potTrophyPanel, 'winner=', winner?.playerInfo?.userId);
+        if (pot !== undefined && this.potTrophyPanel) {
+            const winCount = pot.winCount ?? 0;
+            // 更新顶部 Trophy1 上的数字（结算时再次刷新）
+            this.potTrophyPanel.setWinCount(winCount);
+
+            if (winner) {
+                const winnerSeat = this.seatManager?.getSeatByUserId(winner.playerInfo!.userId);
+                console.log('[Trophy] winnerSeat=', winnerSeat, 'trophyNode=', winnerSeat?.trophyNode);
+                if (winnerSeat) {
+                    const fromPos = winnerSeat.showTrophy(winCount);
+                    console.log('[Trophy] fromPos=', fromPos);
+                    // toPot2=false：暂时始终飞向 Trophy1，后续按 pot.useId 判断再决定
+                    this.potTrophyPanel.playTrophyFly(fromPos, false);
+                }
+            }
+        }
     }
 
-    protected onGameResult(_data: GameResultBroadcast): void {
+    protected onGameResult(data: GameResultBroadcast): void {
         // 结算通知到达，兜底清理（onBeforeResult 未触发时的保底）
         this.handCardPanel?.setDragEnabled(false);
         this.seatManager?.updateActionPlayer(0);
@@ -940,6 +1001,22 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         this.actionPanel?.hideAll();
         for (let i = 0; i < 3; i++) {
             this.seatManager?.getSeatByIndex(i)?.meldField?.stopTurnHighlight();
+        }
+
+        // 收到结算数据后打开结算面板
+        if (this.tongitsResultPanel && data.playerResults?.length) {
+            const snapshots = this.seatManager?.getSeatSnapshots() ?? [];
+            this.tongitsResultPanel.onDetails = () => this.dispatch(TongitsEvents.CMD_RESULT_DETAILS);
+            // countdown 为服务端 Unix 秒时间戳，转换为毫秒传给结算面板倒计时
+            const endTimestamp = (data.countdown ?? 0) > 0 ? data.countdown * 1000 : 0;
+            this.tongitsResultPanel.show(
+                snapshots,
+                data.playerResults,
+                data.winnerId,
+                this._lastWinType,
+                this._perspectiveId,
+                endTimestamp,
+            );
         }
     }
 
@@ -979,7 +1056,8 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         this.tongitsPrompt?.hide();
         this.tongitsPrompt?.node && (this.tongitsPrompt.node.active = false);
         if (this.tongitsResultPanel) {
-            this.tongitsResultPanel.onHide = null;
+            this.tongitsResultPanel.onHide    = null;
+            this.tongitsResultPanel.onDetails = null;
             this.tongitsResultPanel.hide();
         }
     }
@@ -1209,6 +1287,11 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
             this._players[idx],
             this._players[idx].playerInfo?.userId === this._perspectiveId,
         );
+        // setData 内部 _refresh() 会用 _data.cardPoint（服务端字段，游戏中始终为 0）覆盖 pointLabel。
+        // 若更新的是视角玩家且游戏进行中，立即用本地手牌计算值覆盖，保持点数显示准确。
+        if (playerId === this._perspectiveId && this._isGameStarted) {
+            this.seatManager?.getSeatByUserId(playerId)?.updateGamePoint(this.handCardPanel?.point ?? 0);
+        }
     }
 
 }

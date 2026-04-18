@@ -741,7 +741,7 @@ export class HandCardPanel extends Component {
                 if (this._sapawUngroupWorldPos) {
                     n.setWorldPosition(this._sapawUngroupWorldPos);
                 }
-                // 按数组顺序设置 sibling index，保证叠牌 Z 序正确
+                        // 新节点按插入时的数组位置设初始 sibling index
                 n.setSiblingIndex(ungroup.indexOf(val));
                 cn.setFaceDown(false);       // 正常显示时翻到正面
                 this._ungroupNodes.set(val, cn);
@@ -749,6 +749,12 @@ export class HandCardPanel extends Component {
             // 更新选中状态
             this._ungroupNodes.get(val)?.setSelected(selectedCards.has(val));
         }
+        // 按当前数组顺序统一更新 sibling index，保证排序切换后叠牌 Z-order 正确
+        for (let i = 0; i < ungroup.length; i++) {
+            const cn = this._ungroupNodes.get(ungroup[i]);
+            if (cn) cn.node.setSiblingIndex(i);
+        }
+
         this._sapawUngroupWorldPos = null;
     }
 

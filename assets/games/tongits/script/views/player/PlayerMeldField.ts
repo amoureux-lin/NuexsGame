@@ -95,6 +95,8 @@ export class PlayerMeldField extends Component {
     private _meldData = new Map<number, number[]>();
     /** meldId → 补牌提示节点 */
     private _meldTipNodes = new Map<number, Node>();
+    /** meldId → 当前高亮牌值（最近一次补入的牌，layoff 时遮罩，遮罩清除后恢复） */
+    private _highlightCards = new Map<number, number>();
     /** bgNode 呼吸动画 tween 句柄 */
     private _bgTween: Tween<UIOpacity> | null = null;
     /** 从 prefab 读取的实际牌宽（缩放前） */
@@ -188,10 +190,18 @@ export class PlayerMeldField extends Component {
         this._blocks.set(meld.meldId, blockNode);
         this._meldData.set(meld.meldId, [...meld.cards]);
 
+        // 记录高亮牌值（非零时有效）
+        if (meld.highlightCards) {
+            this._highlightCards.set(meld.meldId, meld.highlightCards);
+        }
+
         if (fromWorldPos) {
-            this._animateMeldFlyIn(blockNode, fromWorldPos, meld.cards.length);
+            this._animateMeldFlyIn(blockNode, fromWorldPos, meld.cards.length, () => {
+                this._applyHighlight(meld.meldId, blockNode);
+            });
         } else {
             this._playMeldLight(blockNode, meld.cards.length);
+            this._applyHighlight(meld.meldId, blockNode);
         }
     }
 
@@ -267,6 +277,7 @@ export class PlayerMeldField extends Component {
         this._placedIds.clear();
         this._blocks.clear();
         this._meldData.clear();
+        this._highlightCards.clear();
         this.clearLayoffTips();
         this.clearHandCards();
     }
@@ -287,7 +298,6 @@ export class PlayerMeldField extends Component {
      * @param animate 是否播放展开动画，默认 true
      */
     showHandCards(cards: number[], groups?: GroupData[], animate = true): void {
-        console.log("结算时展示玩家手牌:", cards);
         if (!this.handDisplay || cards.length === 0) return;
         if (this.handCardsNode) this.handCardsNode.active = true;
         this.handDisplay.show(cards, groups, animate);
@@ -324,17 +334,19 @@ export class PlayerMeldField extends Component {
         }
     }
 
-    /** 清除所有牌组中所有牌的遮罩（补牌 ban 解除时调用） */
+    /** 清除所有牌组中所有牌的遮罩（补牌 ban 解除时调用），并恢复高亮 */
     clearAllMasks(): void {
-        for (const blockNode of this._blocks.values()) {
+        for (const [meldId, blockNode] of this._blocks) {
             if (!blockNode.isValid) continue;
             for (const child of blockNode.children) {
                 child.getComponent(CardNode)?.setMasked(false);
             }
+            // 遮罩清除后恢复该组的高亮牌
+            this._applyHighlight(meldId, blockNode);
         }
     }
 
-    /** 清除所有 meld 块上的补牌提示节点，同时重置点击回调 */
+    /** 清除所有 meld 块上的补牌提示节点（不重置 onMeldTipClick，由外部管理） */
     clearLayoffTips(): void {
         for (const [, tipNode] of this._meldTipNodes) {
             if (tipNode.isValid) {
@@ -343,7 +355,6 @@ export class PlayerMeldField extends Component {
             }
         }
         this._meldTipNodes.clear();
-        this.onMeldTipClick = null;
     }
 
     /**
@@ -374,9 +385,17 @@ export class PlayerMeldField extends Component {
         const CARD_DUR     = 0.18;
         const CARD_STAGGER = 0.04;
 
+        // 清除旧高亮，将新补入的牌设为高亮（遮罩清除后由 clearAllMasks 恢复）
+        this._clearHighlight(blockNode);
+        this._highlightCards.set(meldId, newCard);
+
+        // 只取 CardNode 子节点（排除 layoffBan / meldLight 等特效节点）
+        const cardChildren = blockNode.children.filter(c => c.getComponent(CardNode));
+
         // ── 1. 目标块内：index >= clampedIdx 的牌逐个右移，同时显示遮罩 ──
         for (let i = clampedIdx; i < cardCount; i++) {
-            const card = blockNode.children[i];
+            const card = cardChildren[i];
+            if (!card) continue;
             card.getComponent(CardNode)?.setMasked(true);
             tween(card)
                 .delay((i - clampedIdx) * CARD_STAGGER)
@@ -385,7 +404,7 @@ export class PlayerMeldField extends Component {
         }
         // clampedIdx 之前的既有牌也要显示遮罩
         for (let i = 0; i < clampedIdx; i++) {
-            blockNode.children[i].getComponent(CardNode)?.setMasked(true);
+            cardChildren[i]?.getComponent(CardNode)?.setMasked(true);
         }
 
         // ── 2. 创建新牌节点，插入到正确 siblingIndex ─────────────
@@ -539,7 +558,7 @@ export class PlayerMeldField extends Component {
         // 若目标行也溢出，将其末尾 block 继续下移
         if (nextRow.usedWidth > this._innerW + 0.5 && nextRow.node.children.length > 1) {
             const last  = nextRow.node.children[nextRow.node.children.length - 1];
-            const lastW = this._blockW(last.children.length);
+            const lastW = this._blockW(this._cardCountForBlock(last));
             nextRow.usedWidth -= (lastW + this.blockSpacing);
             this._moveBlockToNextRow(last, nextRowIdx + 1, dur);
         }
@@ -665,7 +684,7 @@ export class PlayerMeldField extends Component {
 
     // ── 私有：飞入动画 ────────────────────────────────────
 
-    private _animateMeldFlyIn(blockNode: Node, fromWorldPos: Vec3, cardCount: number): void {
+    private _animateMeldFlyIn(blockNode: Node, fromWorldPos: Vec3, cardCount: number, onComplete?: () => void): void {
         // 保存最终本地坐标（_placeInRow 已设置好），再用 setWorldPosition 移到起始位置
         const finalPos = new Vec3(blockNode.position.x, blockNode.position.y, 0);
         blockNode.setWorldPosition(fromWorldPos);
@@ -673,7 +692,10 @@ export class PlayerMeldField extends Component {
         // 整块飞向目标位置，结束后播放落牌光效
         tween(blockNode)
             .to(FLY_DUR, { position: finalPos, scale: new Vec3(1, 1, 1) }, { easing: 'quadOut' })
-            .call(() => this._playMeldLight(blockNode, cardCount))
+            .call(() => {
+                this._playMeldLight(blockNode, cardCount);
+                onComplete?.();
+            })
             .start();
 
         // 同步展开：每张牌从叠放位置错开滑向最终 x
@@ -686,6 +708,25 @@ export class PlayerMeldField extends Component {
                 .delay(i * EXPAND_STAGGER)
                 .to(EXPAND_DUR, { position: new Vec3(targetX, 0, 0) }, { easing: 'quadOut' })
                 .start();
+        }
+    }
+
+    /** 对指定 meld 的高亮牌调用 setHinted(true)（位置已稳定后调用） */
+    private _applyHighlight(meldId: number, blockNode: Node): void {
+        const highlightCard = this._highlightCards.get(meldId);
+        if (!highlightCard || !blockNode.isValid) return;
+        const cards = this._meldData.get(meldId) ?? [];
+        const idx   = cards.indexOf(highlightCard);
+        if (idx < 0) return;
+        const cardChildren = blockNode.children.filter(c => c.getComponent(CardNode));
+        cardChildren[idx]?.getComponent(CardNode)?.setHinted(true);
+    }
+
+    /** 清除 blockNode 内所有牌的 hinted 状态 */
+    private _clearHighlight(blockNode: Node): void {
+        if (!blockNode.isValid) return;
+        for (const child of blockNode.children) {
+            child.getComponent(CardNode)?.setHinted(false);
         }
     }
 
@@ -734,7 +775,6 @@ export class PlayerMeldField extends Component {
         effect.setPosition(this._blockW(newCardCount) / 2, 0, 0);
         effect.setScale(1.5,1.5);
         blockNode.addChild(effect);
-        console.log("blockNode:",blockNode.children)
 
         const skeleton = effect.getComponent(sp.Skeleton);
         if (!skeleton) {

@@ -1,14 +1,13 @@
 /**
- * GroupAlgorithm — Tongits 手牌自动分组算法
+ * GroupAlgorithm — Tongits 手牌自动分组算法（最优版本）
+ *
+ * 使用 DFS 回溯枚举所有合法分组方案，选取使未分组手牌总点数最小的组合。
  *
  * 牌型定义：
  *   SPECIAL : 四条（4张同点数）| 5张以上同花顺
  *   VALID   : 三条（3张同点数）| 3~4张同花顺
  *   INVALID : 不满足任何牌型（手动创建时使用）
  *   UNGROUP : 未分组手牌
- *
- * autoGroup 优先级（贪心）：
- *   ① 四条  ② 5+同花顺  ③ 三条  ④ 4张同花顺  ⑤ 3张同花顺
  */
 
 import { getSuit, getRank, sortCards, SortMode } from './CardDef';
@@ -47,152 +46,157 @@ function makeGroup(cards: number[], type: GroupType, isAuto: boolean): GroupData
     return { id: newId(), cards: sortCards(cards, SortMode.BY_RANK), type, isAuto };
 }
 
-/** 从 remaining 中移除指定牌（原地修改），返回被移除的牌 */
-function extract(remaining: number[], cards: number[]): void {
-    const set = new Set(cards);
-    for (let i = remaining.length - 1; i >= 0; i--) {
-        if (set.has(remaining[i])) remaining.splice(i, 1);
-    }
+/** 单张牌的点数（J/Q/K 均为 10） */
+function _cardPoint(card: number): number {
+    const r = getRank(card);
+    return r > 10 ? 10 : r;
 }
 
-// ── 单项匹配函数 ──────────────────────────────────────────
+/** 一组牌的点数之和 */
+function _sumPoint(cards: Iterable<number>): number {
+    let sum = 0;
+    for (const c of cards) sum += _cardPoint(c);
+    return sum;
+}
+
+// ── 枚举所有合法分组 ──────────────────────────────────────
 
 /**
- * 在 remaining 中找出所有四条（4张同点数），返回各组牌
- * 注意：同点数最多4张（一副牌），不会超过4张
+ * 枚举手牌中所有合法的基础分组：
+ *   - 刻子 / 四条：同点数 3 或 4 张的全部 C(n,3) + C(n,4) 组合
+ *   - 同花顺：同花色连续段中所有长度 ≥ 3 的连续子段
  */
-function findQuads(remaining: number[]): number[][] {
+function _generateAllValidGroups(cards: number[]): number[][] {
+    const groups: number[][] = [];
+
+    // 1. 刻子 / 四条
     const byRank = new Map<number, number[]>();
-    for (const c of remaining) {
+    for (const c of cards) {
         const r = getRank(c);
         if (!byRank.has(r)) byRank.set(r, []);
         byRank.get(r)!.push(c);
     }
-    const result: number[][] = [];
-    for (const [, cards] of byRank) {
-        if (cards.length >= 4) result.push(cards.slice(0, 4));
+    for (const [, rc] of byRank) {
+        const n = rc.length;
+        if (n >= 3) {
+            // C(n,3)
+            for (let i = 0; i < n - 2; i++)
+                for (let j = i + 1; j < n - 1; j++)
+                    for (let k = j + 1; k < n; k++)
+                        groups.push([rc[i], rc[j], rc[k]]);
+        }
+        if (n >= 4) {
+            // C(n,4)
+            for (let i = 0; i < n - 3; i++)
+                for (let j = i + 1; j < n - 2; j++)
+                    for (let k = j + 1; k < n - 1; k++)
+                        for (let l = k + 1; l < n; l++)
+                            groups.push([rc[i], rc[j], rc[k], rc[l]]);
+        }
     }
-    return result;
-}
 
-/**
- * 在 remaining 中按花色找出所有连续同花顺序列
- * minLen: 最小长度（5 = SPECIAL，3/4 = VALID）
- * maxLen: 最大长度（用于分阶段提取，Infinity = 不限）
- */
-function findStraights(remaining: number[], minLen: number, maxLen = Infinity): number[][] {
-    // 按花色分组
+    // 2. 同花顺
     const bySuit = new Map<number, number[]>();
-    for (const c of remaining) {
+    for (const c of cards) {
         const s = getSuit(c);
         if (!bySuit.has(s)) bySuit.set(s, []);
         bySuit.get(s)!.push(c);
     }
-
-    const result: number[][] = [];
-
-    for (const [, cards] of bySuit) {
-        // 按点数排序，找连续段
-        const sorted = [...cards].sort((a, b) => getRank(a) - getRank(b));
+    for (const [, sc] of bySuit) {
+        const sorted = [...sc].sort((a, b) => getRank(a) - getRank(b));
         let i = 0;
         while (i < sorted.length) {
             // 找从 i 开始的最长连续段
             let j = i + 1;
-            while (j < sorted.length && getRank(sorted[j]) === getRank(sorted[j - 1]) + 1) {
-                j++;
-            }
-            const runLen = j - i;
-            if (runLen >= minLen) {
-                // 贪心：优先取最长段，但不超过 maxLen
-                const takeLen = Math.min(runLen, maxLen === Infinity ? runLen : maxLen);
-                // 从最长前缀开始取（greedy）
-                let start = i;
-                let remaining2 = takeLen;
-                // 若 takeLen < runLen，从头部开始取连续 takeLen 张
-                result.push(sorted.slice(start, start + remaining2));
-                // 检查剩余部分是否还能形成新的有效段（递归处理剩余）
-                // 这里简单处理：一次性取一个最长段
-                // 若 runLen > takeLen，剩余的在下一个 minLen pass 里处理
+            while (j < sorted.length && getRank(sorted[j]) === getRank(sorted[j - 1]) + 1) j++;
+            const run = sorted.slice(i, j);
+            const runLen = run.length;
+            // 枚举该连续段内所有长度 ≥ 3 的子串
+            for (let len = 3; len <= runLen; len++) {
+                for (let start = 0; start + len <= runLen; start++) {
+                    groups.push(run.slice(start, start + len));
+                }
             }
             i = j;
         }
     }
 
-    return result;
+    return groups;
+}
+
+// ── DFS 回溯 ──────────────────────────────────────────────
+
+interface _Best {
+    point:   number;
+    groups:  number[][];
+    ungroup: number[];
 }
 
 /**
- * 在 remaining 中找出所有三条（3张同点数）
- * 若某点数有4张，四条已在前一步处理，此处最多3张
+ * DFS 回溯：枚举 allGroups 的所有不冲突子集，寻找使 remaining 点数最小的方案。
+ * 用 startIdx 保证每种无序组合只被枚举一次（canonical 顺序）。
  */
-function findTriples(remaining: number[]): number[][] {
-    const byRank = new Map<number, number[]>();
-    for (const c of remaining) {
-        const r = getRank(c);
-        if (!byRank.has(r)) byRank.set(r, []);
-        byRank.get(r)!.push(c);
+function _dfs(
+    remaining: Set<number>,
+    allGroups:  number[][],
+    startIdx:   number,
+    chosen:     number[][],
+    best:       _Best,
+): void {
+    const curPoint = _sumPoint(remaining);
+    if (curPoint < best.point) {
+        best.point  = curPoint;
+        best.groups = chosen.slice();
+        best.ungroup = [...remaining];
     }
-    const result: number[][] = [];
-    for (const [, cards] of byRank) {
-        if (cards.length >= 3) result.push(cards.slice(0, 3));
+    if (curPoint === 0) return; // Tongits，无需继续
+
+    for (let i = startIdx; i < allGroups.length; i++) {
+        const g = allGroups[i];
+        // 检查该组所有牌仍在剩余手牌中
+        if (!g.every(c => remaining.has(c))) continue;
+        // 取走该组
+        for (const c of g) remaining.delete(c);
+        chosen.push(g);
+        _dfs(remaining, allGroups, i + 1, chosen, best);
+        // 回溯
+        chosen.pop();
+        for (const c of g) remaining.add(c);
     }
-    return result;
 }
 
 // ── 核心：自动分组 ────────────────────────────────────────
 
 /**
- * 对给定手牌执行自动分组
- * @param cards    手牌数组
- * @param mode     当前排序模式
- * @returns        groups（自动创建的组）+ ungroup（未能分组的牌）
+ * 对给定手牌执行自动分组，选取使未分组手牌总点数最小的方案。
+ * @param cards  手牌数组
+ * @param mode   当前排序模式（仅影响 ungroup 顺序）
+ * @returns      groups（自动创建的组）+ ungroup（未能分组的牌）
  */
 export function autoGroup(cards: number[], mode: SortMode): AutoGroupResult {
-    const remaining = [...cards];
-    const groups: GroupData[] = [];
+    const allGroups = _generateAllValidGroups(cards);
 
-    // ① 四条 (SPECIAL)
-    for (const g of findQuads(remaining)) {
-        groups.push(makeGroup(g, GroupType.SPECIAL, true));
-        extract(remaining, g);
-    }
+    const best: _Best = {
+        point:   _sumPoint(cards),
+        groups:  [],
+        ungroup: [...cards],
+    };
+    _dfs(new Set(cards), allGroups, 0, [], best);
 
-    // ② 5+张同花顺 (SPECIAL)
-    for (const g of findStraights(remaining, 5)) {
-        groups.push(makeGroup(g, GroupType.SPECIAL, true));
-        extract(remaining, g);
-    }
+    // 将原始卡牌数组转为 GroupData，按 SPECIAL → VALID 排序
+    const typeOrder = {
+        [GroupType.SPECIAL]: 0,
+        [GroupType.VALID]:   1,
+        [GroupType.INVALID]: 2,
+        [GroupType.UNGROUP]: 3,
+    };
+    const groupData: GroupData[] = best.groups.map(g => makeGroup(g, judgeGroupType(g), true));
+    groupData.sort((a, b) => typeOrder[a.type] - typeOrder[b.type]);
 
-    // ③ 三条 (VALID)
-    for (const g of findTriples(remaining)) {
-        groups.push(makeGroup(g, GroupType.VALID, true));
-        extract(remaining, g);
-    }
-
-    // ④ 4张同花顺 (VALID)：此时 remaining 中同花连续段最长为 4
-    for (const g of findStraights(remaining, 4, 4)) {
-        groups.push(makeGroup(g, GroupType.VALID, true));
-        extract(remaining, g);
-    }
-
-    // ⑤ 3张同花顺 (VALID)：此时 remaining 中同花连续段最长为 3
-    for (const g of findStraights(remaining, 3, 3)) {
-        groups.push(makeGroup(g, GroupType.VALID, true));
-        extract(remaining, g);
-    }
-
-    // 剩余 → ungroup（按当前模式排序）
-    const ungroup = sortCards(remaining, mode);
-
-    // 组间排序：SPECIAL 在前，VALID 在后，同类型按首张牌排序
-    groups.sort((a, b) => {
-        const typeOrder = { [GroupType.SPECIAL]: 0, [GroupType.VALID]: 1, [GroupType.INVALID]: 2, [GroupType.UNGROUP]: 3 };
-        const td = typeOrder[a.type] - typeOrder[b.type];
-        if (td !== 0) return td;
-        return 0; // 同类型保持发现顺序
-    });
-
-    return { groups, ungroup };
+    return {
+        groups:  groupData,
+        ungroup: sortCards(best.ungroup, mode),
+    };
 }
 
 // ── 牌型校验（用于手动 Group 后判断类型） ─────────────────
@@ -223,7 +227,7 @@ function isSet(cards: number[]): boolean {
 export function judgeGroupType(cards: number[]): GroupType {
     if (cards.length < 2) return GroupType.INVALID;
 
-    const isFlush = isStraightFlush(cards);
+    const isFlush    = isStraightFlush(cards);
     const isSetGroup = isSet(cards);
 
     if (isSetGroup && cards.length === 4) return GroupType.SPECIAL;   // 四条

@@ -34,11 +34,12 @@ export class TongitsPrompt extends Component {
 
     protected onLoad(): void {
         this.node.active = false;
-        this.node.on(Node.EventType.TOUCH_END, this._onTap, this);
+        // 监听 skeleton 节点而非 this.node，避免父节点无 UITransform 时 TOUCH_END 收不到的问题
+        this.skeleton?.node.on(Node.EventType.TOUCH_END, this._onTap, this);
     }
 
     protected onDestroy(): void {
-        this.node.off(Node.EventType.TOUCH_END, this._onTap, this);
+        this.skeleton?.node.off(Node.EventType.TOUCH_END, this._onTap, this);
     }
 
     // ── 公开 API ──────────────────────────────────────────
@@ -59,8 +60,8 @@ export class TongitsPrompt extends Component {
         if (this.skeleton) {
             this.skeleton.clearTracks();
             this.skeleton.setCompleteListener(null);
+            this.skeleton.node.active = false;
         }
-        this.skeleton.node.active = false;
     }
 
     // ── 私有 ──────────────────────────────────────────────
@@ -71,7 +72,6 @@ export class TongitsPrompt extends Component {
 
         const sk = this.skeleton;
         if (!sk) {
-            this.skeleton.node.active = false;
             this.onClick?.();
             return;
         }

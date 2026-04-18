@@ -102,6 +102,18 @@ export class PlayerSeat extends Component {
     @property({ type: Node, tooltip: '跟随倒计时圆弧终点移动的节点，编辑器中摆放到圆弧外圈位置，运行时自动以该距离为半径' })
     countdownFollower: Node | null = null;
 
+    @property({ type: Node, tooltip: '手牌点数容器（游戏中仅自己显示，结算时全员显示）' })
+    pointNode: Node | null = null;
+
+    @property({ type: Label, tooltip: '手牌点数文本' })
+    pointLabel: Label | null = null;
+
+    @property({ type: Node, tooltip: '点数赢背景节点（结算赢家时显示）' })
+    winPointBg: Node | null = null;
+
+    @property({ type: Node, tooltip: '点数输背景节点（结算输家时显示）' })
+    losePointBg: Node | null = null;
+
     @property({ type: Node, tooltip: "嬴节点"})
     winNode: Node = null!;
 
@@ -110,6 +122,14 @@ export class PlayerSeat extends Component {
 
     @property({ type: sp.Skeleton, tooltip: '赢动画 Skeleton' })
     winAnimation: sp.Skeleton = null!;
+
+    /** 玩家奖杯节点（赢家结算时显示，默认 active=false） */
+    @property({ type: Node, tooltip: '奖杯节点，赢家结算时显示，默认 active=false' })
+    trophyNode: Node | null = null;
+
+    /** 奖杯中间的 winCount 数字 Label */
+    @property({ type: Label, tooltip: '奖杯中间显示的 winCount 数字' })
+    trophyCountLabel: Label | null = null;
 
     // ── 私有状态 ─────────────────────────────────────────
 
@@ -156,6 +176,8 @@ export class PlayerSeat extends Component {
             const p = this.countdownFollower.position;
             this._followerRadius = Math.sqrt(p.x * p.x + p.y * p.y);
         }
+        if (this.pointNode) this.pointNode.active = false;
+        if (this.trophyNode) this.trophyNode.active = false;
         if (this.winNode) {
             this._winOrigin = this.winNode.position.clone();
             this.winNode.active = false;
@@ -191,6 +213,16 @@ export class PlayerSeat extends Component {
             // 游戏开始时显示对手手牌数，自己（perspectiveId）始终隐藏
             if (this.cardCountNode) {
                 this.cardCountNode.active = isGameStarted && !this._isSelf;
+            }
+            // 游戏开始后仅自己显示点数，默认赢背景
+            if (this.pointNode) {
+                const showPoint = isGameStarted && this._isSelf;
+                this.pointNode.active = showPoint;
+                if (showPoint) {
+                    if (this.pointLabel) this.pointLabel.string = String(this._data.cardPoint ?? 0);
+                    if (this.winPointBg)  this.winPointBg.active  = true;
+                    if (this.losePointBg) this.losePointBg.active = false;
+                }
             }
         }
     }
@@ -305,8 +337,56 @@ export class PlayerSeat extends Component {
         }
     }
 
+    /**
+     * 结算时显示手牌点数，并切换赢/输背景。
+     * 使用 _data.cardPoint（BeforeResult/GameResult 已把最新 cardPoint 写入 _data）。
+     * @param isWin 是否为本局赢家
+     */
+    showResultPoint(isWin: boolean): void {
+        if (!this.pointNode || !this._data) return;
+        if (this.pointLabel) this.pointLabel.string = String(this._data.cardPoint ?? 0);
+        if (this.winPointBg)  this.winPointBg.active  = isWin;
+        if (this.losePointBg) this.losePointBg.active = !isWin;
+        this.pointNode.active = true;
+    }
+
+    /**
+     * 游戏进行中更新自己的手牌点数文本（不改变 pointNode 可见性或背景）。
+     * 由 TongitsView 在 onSelectionChange / onDealMergeComplete 中调用。
+     * @param point 当前手牌点数（来自 HandCardPanel.point 本地计算值）
+     */
+    updateGamePoint(point: number): void {
+        if (this.pointLabel) this.pointLabel.string = String(point);
+    }
+
+    /** 隐藏手牌点数节点，并还原至游戏中状态（重置/切换阶段时调用） */
+    hidePoint(): void {
+        if (!this.pointNode) return;
+        if (this.winPointBg)  this.winPointBg.active  = false;
+        if (this.losePointBg) this.losePointBg.active = false;
+        this.pointNode.active = false;
+    }
+
+    /**
+     * 显示玩家奖杯，设置 winCount 数字，并返回奖杯的世界坐标（供飞行动画使用）。
+     * @param winCount 底池已累积的次数（显示在奖杯中间）
+     * @returns 奖杯节点的世界坐标
+     */
+    showTrophy(winCount: number): Vec3 {
+        if (this.trophyCountLabel) this.trophyCountLabel.string = String(winCount);
+        if (this.trophyNode) this.trophyNode.active = true;
+        return this.trophyNode?.getWorldPosition() ?? this.node.getWorldPosition();
+    }
+
+    /** 隐藏玩家奖杯（游戏重置时调用） */
+    hideTrophy(): void {
+        if (this.trophyNode) this.trophyNode.active = false;
+    }
+
     /** 隐藏赢得金额节点与赢动画（游戏重置时调用） */
     resetWin(): void {
+        this.hidePoint();
+        this.hideTrophy();
         if (this.winNode) {
             Tween.stopAllByTarget(this.winNode);
             this.winNode.setPosition(this._winOrigin);
@@ -322,6 +402,17 @@ export class PlayerSeat extends Component {
     /** 获取当前玩家的 userId，空座位返回 0 */
     getUserId(): number {
         return this._data?.playerInfo?.userId ?? 0;
+    }
+
+    /** 获取当前座位的完整玩家数据，空座位返回 null */
+    getPlayerInfo(): TongitsPlayerInfo | null {
+        return this._data;
+    }
+
+    /** 获取头像节点的世界坐标，空座位或节点不存在时返回 null */
+    getAvatarWorldPosition(): Vec3 | null {
+        const node = this.avatarSprite?.node;
+        return node ? node.getWorldPosition() : null;
     }
 
     /** 获取当前服务端座位号（1-based），空座位时返回 Manager 传入的预分配座位号 */
@@ -384,6 +475,7 @@ export class PlayerSeat extends Component {
         // 无人时清除操作高亮及赢动画
         if (isEmpty) {
             this.setActionActive(false);
+            if (this.pointNode) this.pointNode.active = false;
             if (this.winNode) {
                 Tween.stopAllByTarget(this.winNode);
                 this.winNode.setPosition(this._winOrigin);
@@ -443,6 +535,17 @@ export class PlayerSeat extends Component {
         // 离线状态（state === 3）
         if (this.offlineIcon) {
             this.offlineIcon.active = (info?.state ?? 0) === 3;
+        }
+
+        // 手牌点数：游戏中仅视角玩家（自己）显示，默认用赢背景
+        if (this.pointNode) {
+            const showPoint = this._isGameStarted && this._isSelf;
+            this.pointNode.active = showPoint;
+            if (showPoint) {
+                if (this.pointLabel) this.pointLabel.string = String(this._data!.cardPoint ?? 0);
+                if (this.winPointBg)  this.winPointBg.active  = true;
+                if (this.losePointBg) this.losePointBg.active = false;
+            }
         }
     }
 }

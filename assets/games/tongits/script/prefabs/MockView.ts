@@ -98,8 +98,8 @@ function buildPlayerInfo(userId: number, post = 0, seat = 0): PlayerInfo {
     };
 }
 
-function buildPot(): PotInfo {
-    return { base: 3, winCount: 1, useId: 0 };
+function buildPot(winCount: number = 1): PotInfo {
+    return { base: winCount, winCount, useId: 0 };
 }
 
 /** 等待中（游戏未开始）的 gameInfo */
@@ -169,6 +169,13 @@ export class MockView extends UIPanel {
         /** AI 玩家真实手牌（P2 / P3），用于防止牌重复 */
         aiHands:  Map<number, number[]>;
     } | null = null;
+
+    /**
+     * 持久化底池状态（跨局保留，模拟真实 winCount 累加）。
+     * - 每局有人赢但无人连赢领走底池：winCount+1，useId = winnerId
+     * - 连赢玩家领走底池：winCount 重置为 0，useId = 0
+     */
+    private _pot: PotInfo = buildPot(1);
 
     /** roundMsg 等待自己弃牌时设置；_mockDiscard 调用后触发 */
     private _selfDiscardResolver: (() => void) | null = null;
@@ -505,7 +512,7 @@ export class MockView extends UIPanel {
                 { ...buildPlayer(P2_ID, [], false, 0, 2), handCardCount: 12 },
                 { ...buildPlayer(P3_ID, [], true, 0, 3), handCardCount: 13 },
             ],
-            gameInfo: buildGameInfo(P3_ID, remaining.length),
+            gameInfo: { ...buildGameInfo(P3_ID, remaining.length), pot: { ...this._pot } },
             deck:     remaining,
             aiHands:  new Map<number, number[]>([
                 [P2_ID, p2Hand],
@@ -1220,7 +1227,7 @@ export class MockView extends UIPanel {
         }, 4000);
 
         // 场景4：所有人状态已确定，6s 后自动发 BeforeResult（winType=2）
-        setTimeout(() => this.clickShowdownFull(), 6000);
+        setTimeout(() => this.clickShowdownFull(), 8000);
     }
 
     // ── 按钮：结算前 ──────────────────────────────────────────
@@ -1247,10 +1254,11 @@ export class MockView extends UIPanel {
             winType:   1,
             players,
             countdown: 5,
-            pot:       { ...this._gameData.gameInfo.pot! },
+            pot:       { ...this._pot },
             userId:    SELF_ID,
         };
         this._send(MessageType.TONGITS_GAME_WIN_BROADCAST, data);
+        this._scheduleGameResult(SELF_ID, 8000);
     }
 
     /** 模拟结算前广播（winType=3 牌堆摸完，比点数，含所有玩家手牌） */
@@ -1275,10 +1283,11 @@ export class MockView extends UIPanel {
             winType:   3,
             players,
             countdown: 5,
-            pot:       { ...this._gameData.gameInfo.pot! },
+            pot:       { ...this._pot },
             userId:    SELF_ID,
         };
         this._send(MessageType.TONGITS_GAME_WIN_BROADCAST, data);
+        this._scheduleGameResult(winnerId, 8000);
     }
 
     /**
@@ -1308,10 +1317,11 @@ export class MockView extends UIPanel {
             winType:   2,   // 2 = 挑战获胜
             players,
             countdown: 5,
-            pot:       { ...this._gameData.gameInfo.pot! },
+            pot:       { ...this._pot },
             userId:    SELF_ID,
         };
         this._send(MessageType.TONGITS_GAME_WIN_BROADCAST, data);
+        this._scheduleGameResult(winnerId, 8000);
     }
 
     // ── 按钮：游戏结算 ────────────────────────────────────────
@@ -1322,7 +1332,7 @@ export class MockView extends UIPanel {
         const data: GameResultBroadcast = {
             winnerId:      SELF_ID,
             playerResults: this._buildPlayerResults(SELF_ID),
-            countdown:     5,
+            countdown:     Math.floor(Date.now() / 1000) + 30,
             userId:        SELF_ID,
         };
         this._send(MessageType.TONGITS_GAME_RESULT_BROADCAST, data);
@@ -1334,10 +1344,42 @@ export class MockView extends UIPanel {
         const data: GameResultBroadcast = {
             winnerId:      P2_ID,
             playerResults: this._buildPlayerResults(P2_ID),
-            countdown:     5,
+            countdown:     Math.floor(Date.now() / 1000) + 30,
             userId:        SELF_ID,
         };
         this._send(MessageType.TONGITS_GAME_RESULT_BROADCAST, data);
+    }
+
+    // ── 按钮：结算完整流程（BeforeResult → GameResult） ──────────
+
+    /**
+     * 一键模拟完整结算流程：
+     *   t=0   : BeforeResult（winType=1 Tongits，自己获胜）
+     *   t=2.5s: GameResult（含 playerResults，触发 TongitsResultPanel.show）
+     */
+    clickResultFlowWin(): void {
+        if (!this._gameData) this.clickInitGame();
+        this.clickBeforeResult();
+    }
+
+    /**
+     * 一键模拟完整结算流程：
+     *   t=0   : BeforeResult（winType=3 牌堆摸完，P2 获胜）
+     *   t=2.5s: GameResult（含 playerResults，触发 TongitsResultPanel.show）
+     */
+    clickResultFlowLose(): void {
+        if (!this._gameData) this.clickInitGame();
+        this.clickBeforeResultDeckEmpty(P2_ID);
+    }
+
+    /**
+     * 一键模拟挑战结算完整流程：
+     *   t=0   : BeforeResult（winType=2 挑战，自己获胜，含 Showdown 手牌）
+     *   t=4s  : GameResult（含 playerResults，触发 TongitsResultPanel.show）
+     */
+    clickResultFlowChallenge(winnerId: number = SELF_ID): void {
+        if (!this._gameData) this.clickInitGame();
+        this.clickShowdownFull(winnerId);
     }
 
     // ── 按钮：房间重置 ────────────────────────────────────────
@@ -1404,6 +1446,34 @@ export class MockView extends UIPanel {
                 cardPoint:          p.cardPoint,
             } as PlayerResult;
         });
+    }
+
+    /** 延迟发送 GameResultBroadcast（在 BeforeResult 之后自动触发） */
+    private _scheduleGameResult(winnerId: number, delayMs: number): void {
+        // 记录当前 pot 状态，用于结算后更新（closureCapture 时 pot 已是 BeforeResult 时的值）
+        const claimedPot = this._pot.useId === winnerId;
+        setTimeout(() => {
+            if (!this._gameData) return;
+            this._gameData.gameInfo.status = 5;
+            const data: GameResultBroadcast = {
+                winnerId,
+                playerResults: this._buildPlayerResults(winnerId),
+                countdown:     Math.floor(Date.now() / 1000) + 30,
+                userId:        SELF_ID,
+            };
+            this._send(MessageType.TONGITS_GAME_RESULT_BROADCAST, data);
+
+            // 结算后更新持久化 pot：
+            // 连赢玩家领走底池 → 重置；否则 winCount+1，useId 记录本次赢家
+            if (claimedPot) {
+                this._pot = buildPot(0);
+                console.log('[Mock] pot 被领走，重置 winCount=0');
+            } else {
+                const next = this._pot.winCount + 1;
+                this._pot = { base: next, winCount: next, useId: winnerId };
+                console.log(`[Mock] pot 累积 winCount=${next} useId=${winnerId}`);
+            }
+        }, delayMs);
     }
 
     private _send(msgType: number, data: unknown): void {
