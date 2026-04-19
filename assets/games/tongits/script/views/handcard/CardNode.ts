@@ -11,6 +11,8 @@ import {
     _decorator, Component, Node, UITransform, Graphics,
     Color, Vec3, Vec2, tween, Tween, UIOpacity, SpriteAtlas, SpriteFrame, Sprite, EventTouch,
 } from 'cc';
+import { Nexus } from 'db://nexus-framework/index';
+import { CardThemeService, CARD_THEME_CHANGE } from './CardThemeService';
 
 const { ccclass, property } = _decorator;
 
@@ -87,6 +89,7 @@ export class CardNode extends Component {
         this.node.on(Node.EventType.TOUCH_MOVE,   this._onTouchMove,   this);
         this.node.on(Node.EventType.TOUCH_END,    this._onTouchEnd,    this);
         this.node.on(Node.EventType.TOUCH_CANCEL, this._onTouchCancel, this);
+        Nexus.on(CARD_THEME_CHANGE, this._refreshDisplay, this);
     }
 
     onDestroy(): void {
@@ -96,6 +99,7 @@ export class CardNode extends Component {
         this.node.off(Node.EventType.TOUCH_MOVE,   this._onTouchMove,   this);
         this.node.off(Node.EventType.TOUCH_END,    this._onTouchEnd,    this);
         this.node.off(Node.EventType.TOUCH_CANCEL, this._onTouchCancel, this);
+        Nexus.off(CARD_THEME_CHANGE, this._refreshDisplay, this);
     }
 
     // ── 公开 API ──────────────────────────────────────────
@@ -202,8 +206,13 @@ export class CardNode extends Component {
     }
 
     private _updateLift(): void {
-        // 如果 tweenToX 正在运行，它已包含正确的 Y，无需再单独 tween
-        if (this._moveTween) return;
+        // clearSelection → _doLayout → tweenToX 会留下一个未完成的 _moveTween；
+        // 若此时 enterTakeMode 立即进来需要上移，原先直接 return 导致上移被跳过。
+        // 修复：先中止 _moveTween（layout 时长仅 0.14s，X 误差可忽略），再执行上移。
+        if (this._moveTween) {
+            this._moveTween.stop();
+            this._moveTween = null;
+        }
         this._liftTween?.stop();
         const offsetY = this._selected ? LIFT_Y : 0;
         const pos     = this.node.position;
@@ -219,8 +228,10 @@ export class CardNode extends Component {
         if (this._faceDown) {
             if (this.pokerNormalBacks) this.cardSprite.spriteFrame = this.pokerNormalBacks;
         } else {
-            if (this.pokerAtlas && this._cardValue) {
-                const frame = this.pokerAtlas.getSpriteFrame(String(this._cardValue));
+            // 优先使用 CardThemeService 提供的主题图集，回退到 Inspector 绑定的 pokerAtlas
+            const atlas = CardThemeService.instance?.currentAtlas ?? this.pokerAtlas;
+            if (atlas && this._cardValue) {
+                const frame = atlas.getSpriteFrame(String(this._cardValue));
                 if (frame) this.cardSprite.spriteFrame = frame;
             }
         }

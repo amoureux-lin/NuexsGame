@@ -11,6 +11,7 @@
 import { _decorator } from 'cc';
 import { UIPanel } from 'db://nexus-framework/base/UIPanel';
 import { Nexus } from 'db://nexus-framework/core/Nexus';
+import { GameEvents } from 'db://assets/script/config/GameEvents';
 import { MessageType } from '../proto/message_type';
 import { PlayerInfo } from 'db://assets/script/proto/game_common_room';
 import {
@@ -372,7 +373,7 @@ export class MockView extends UIPanel {
             this._gameData.gameInfo.discardPile.push(req.card);
             this._gameData.gameInfo.discardCard = req.card;
         }
-        console.log(`[Mock←RES] DISCARD  card=${req.card}`);
+        console.log(`[Mock←RES] DISCARD  card=`,req.card);
         // 若 roundMsg 正在等待自己弃牌，通知它继续
         if (this._selfDiscardResolver) {
             const resolve = this._selfDiscardResolver;
@@ -1402,6 +1403,16 @@ export class MockView extends UIPanel {
             userId:   SELF_ID,
         };
         this._send(MessageType.TONGITS_ROOM_RESET_BROADCAST, data);
+    }
+
+    // ── 按钮：牌面主题切换 ────────────────────────────────────
+
+    private _cardThemeIndex: number = 0;
+
+    /** 点击切换牌面主题（在 0 / 1 之间轮换） */
+    clickToggleTheme(): void {
+        this._cardThemeIndex = this._cardThemeIndex === 0 ? 1 : 0;
+        Nexus.emit(GameEvents.CMD_SWITCH_CARD_THEME, { index: this._cardThemeIndex });
     }
 
     // ── 私有：广播构建 ────────────────────────────────────────

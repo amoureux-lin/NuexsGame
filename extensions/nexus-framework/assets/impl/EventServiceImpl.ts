@@ -68,7 +68,7 @@ export class EventServiceImpl extends IEventService {
             return;
         }
 
-        for (const record of [...listeners]) {
+        for (const record of Array.from(listeners)) {
             if (typeof record.fn !== 'function') {
                 console.error(`[Nexus][Event] emit: listener fn is not a function for event "${event}", skipping.`, record);
                 listeners.delete(record);

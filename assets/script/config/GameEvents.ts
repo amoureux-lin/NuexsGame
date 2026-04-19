@@ -27,6 +27,8 @@ const GameEventDefines = {
     CMD_OPEN_SETTINGS: 'game:cmd:openSettings',
     /** 返回大厅 */
     CMD_BACK_LOBBY: 'game:cmd:backLobby',
+    /** 切换牌面主题，data: { index: number }（0=默认，1=备用） */
+    CMD_SWITCH_CARD_THEME: 'game:cmd:switchCardTheme',
 } as const;
 
 /**

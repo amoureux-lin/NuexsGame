@@ -47,7 +47,7 @@ export class SettingView extends UIPanel {
         return Promise.all(promises).then(() => {});
     }
 
-    public onSoundSlider(event: Slider): void {
+    public onMusicSlider(event: Slider): void {
         Nexus.audio.setMusicVolume(event.progress);
     }
 

@@ -71,10 +71,14 @@ export class ResultPlayerCard extends Component {
             }
         }
 
-        // 头像标识：三者互斥显示
-        if (this.winBadge)     this.winBadge.active     = isWinner;
-        if (this.loseBadge)    this.loseBadge.active     = !isWinner;
-        if (this.tongitsBadge) this.tongitsBadge.active  = isWinner && winType === 1;
+        // 头像标识：三者互斥
+        //   有 Tongits → 只显示 tongitsBadge
+        //   赢但无 Tongits → 只显示 winBadge
+        //   输 → 只显示 loseBadge
+        const isTongits = isWinner && winType === 1;
+        if (this.tongitsBadge) this.tongitsBadge.active = isTongits;
+        if (this.winBadge)     this.winBadge.active     = isWinner && !isTongits;
+        if (this.loseBadge)    this.loseBadge.active    = !isWinner;
 
         // 输赢金额：赢/输用不同 Label（字体不同）
         if (result) {

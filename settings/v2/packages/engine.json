@@ -54,11 +54,11 @@
             "_value": true
           },
           "particle": {
-            "_value": false
+            "_value": true
           },
           "physics": {
-            "_value": false,
-            "_option": "physics-ammo"
+            "_value": true,
+            "_option": "physics-physx"
           },
           "physics-ammo": {
             "_value": true,
@@ -101,19 +101,19 @@
             "_value": true
           },
           "primitive": {
-            "_value": false
+            "_value": true
           },
           "profiler": {
             "_value": false
           },
           "occlusion-query": {
-            "_value": false
+            "_value": true
           },
           "geometry-renderer": {
-            "_value": false
+            "_value": true
           },
           "debug-renderer": {
-            "_value": false
+            "_value": true
           },
           "particle-2d": {
             "_value": true
@@ -191,7 +191,8 @@
           }
         },
         "flags": {
-          "LOAD_SPINE_MANUALLY": false
+          "LOAD_SPINE_MANUALLY": false,
+          "LOAD_PHYSX_MANUALLY": false
         },
         "includeModules": [
           "2d",
@@ -201,7 +202,9 @@
           "audio",
           "base",
           "custom-pipeline",
+          "debug-renderer",
           "dragon-bones",
+          "geometry-renderer",
           "gfx-webgl2",
           "graphics",
           "intersection-2d",
@@ -209,7 +212,11 @@
           "marionette",
           "mask",
           "meshopt",
+          "occlusion-query",
+          "particle",
           "particle-2d",
+          "physics-physx",
+          "primitive",
           "rich-text",
           "skeletal-animation",
           "spine-3.8",

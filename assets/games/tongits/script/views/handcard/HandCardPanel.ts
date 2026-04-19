@@ -736,6 +736,7 @@ export class HandCardPanel extends Component {
                     this._inTakeMode ? this._onTakeModeCardClick(v) : this._state.toggleUngroupCard(v);
                 };
                 this._bindCardDrag(cn, 'ungroup');
+                cn.setFaceDown(false);       // 加入场景前先设正面，与组牌路径一致（addChild 触发 onLoad 时 _faceDown=false）
                 this._ungroupRoot.addChild(n);
                 // 解散组时从原组位置起飞，而非从左端(0,0,0)
                 if (this._sapawUngroupWorldPos) {
@@ -743,7 +744,6 @@ export class HandCardPanel extends Component {
                 }
                         // 新节点按插入时的数组位置设初始 sibling index
                 n.setSiblingIndex(ungroup.indexOf(val));
-                cn.setFaceDown(false);       // 正常显示时翻到正面
                 this._ungroupNodes.set(val, cn);
             }
             // 更新选中状态
