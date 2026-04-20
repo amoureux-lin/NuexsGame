@@ -21,7 +21,7 @@
 
 import {
     _decorator, Component, Node, Prefab, instantiate,
-    UITransform, Vec2, Vec3, tween, Tween,
+    UITransform, Vec2, Vec3, tween, Tween, Button, Label,
 } from 'cc';
 import { TableAreaView } from '../panel/TableAreaView';
 import { HandCardState, ButtonStates, HandCardSnapshot } from '../../utils/HandCardState';
@@ -109,6 +109,18 @@ export class HandCardPanel extends Component {
 
     @property({ type: Prefab, tooltip: '牌组预制体（CardGroupView Prefab）' })
     cardGroupPrefab: Prefab | null = null;
+
+    @property({ type: Button, tooltip: '自动排序"关闭"状态按钮（autoSort=OFF 时显示）' })
+    autoSortBtn: Button | null = null;
+
+    @property({ type: Button, tooltip: '自动排序"开启"状态按钮（autoSort=ON 时显示）' })
+    autoSortActiveNode: Button | null = null;
+
+    @property({ type: Button, tooltip: '排序规则切换按钮（按点数 ↔ 按花色）' })
+    sortModeBtn: Button | null = null;
+
+    @property({ type: Label, tooltip: '排序规则文字标签（显示当前规则）' })
+    sortModeLabelNode: Label | null = null;
 
     // ── 对外回调 ──────────────────────────────────────────
 
@@ -201,9 +213,19 @@ export class HandCardPanel extends Component {
         this.node.addChild(this._dragLayer);
         this.node.addChild(this._markerOverlayRoot);
         this._unsubscribe = this._state.onChange((snap) => this._onStateChange(snap));
+
+        this.autoSortBtn?.node.on(Button.EventType.CLICK, this._onAutoSortClick, this);
+        this.autoSortActiveNode?.node.on(Button.EventType.CLICK, this._onAutoSortClick, this);
+        this.sortModeBtn?.node.on(Button.EventType.CLICK, this._onSortModeClick, this);
+
+        // 初始化按钮视觉状态
+        this._refreshSortButtons(this._state.snapshot());
     }
 
     onDestroy(): void {
+        this.autoSortBtn?.node.off(Button.EventType.CLICK, this._onAutoSortClick, this);
+        this.autoSortActiveNode?.node.off(Button.EventType.CLICK, this._onAutoSortClick, this);
+        this.sortModeBtn?.node.off(Button.EventType.CLICK, this._onSortModeClick, this);
         this._unsubscribe?.();
         this.clear();
     }
@@ -635,6 +657,7 @@ export class HandCardPanel extends Component {
         this._doLayout(snap.groups, snap.ungroup);
         if (this._layoffTipsSet) this.showLayoffTips(this._layoffTipsSet);
         this._emitSelection(snap);
+        this._refreshSortButtons(snap);
     }
 
     /** 构建 SelectionInfo 并触发回调，同时输出调试日志 */
@@ -655,6 +678,35 @@ export class HandCardPanel extends Component {
             selectedGroups,
             buttons,
         });
+    }
+
+    // ── 排序按钮 ──────────────────────────────────────────
+
+    private async _onAutoSortClick(): Promise<void> {
+        if (this._state.autoGroupEnabled) {
+            // 关闭自动排序：直接切换，无需动画
+            this.onToggleAutoGroup();
+            return;
+        }
+        // 开启自动排序：先收集全部手牌，切换 flag，再执行合并+展开动画重新自动分组
+        const allCards = this.getAllHandCards();
+        this.onToggleAutoGroup();                              // 切 flag → _notify → _doLayout（tween 立即被下方 stop）
+        await this._animateMergeExpand(allCards, true);        // 合并展开，用当前排序规则重新自动分组
+    }
+
+    private _onSortModeClick(): void {
+        this.onToggleSortMode();
+    }
+
+    /** 根据快照刷新排序按钮的视觉状态 */
+    private _refreshSortButtons(snap: HandCardSnapshot): void {
+        // 两个按钮互斥：OFF 状态显示 autoSortBtn，ON 状态显示 autoSortActiveNode
+        if (this.autoSortBtn) this.autoSortBtn.node.active = !snap.autoGroupEnabled;
+        if (this.autoSortActiveNode) this.autoSortActiveNode.node.active = snap.autoGroupEnabled;
+
+        if (this.sortModeLabelNode) {
+            this.sortModeLabelNode.string = snap.sortMode === SortMode.BY_RANK ? 'Rank' : 'Suit';
+        }
     }
 
     // ── 视图同步 ──────────────────────────────────────────
@@ -995,7 +1047,11 @@ export class HandCardPanel extends Component {
      * 3. 清理旧节点和状态映射
      * 4. _state.setCards(newCards) → _onStateChange → _doLayout 展开动画
      */
-    private async _animateMergeExpand(newCards: number[]): Promise<void> {
+    /**
+     * @param preserveSortMode true 时使用 state 当前排序规则展开（autoSort 触发）；
+     *                         false（默认）时强制 BY_RANK（发牌 / 摸牌 autoGroup 触发）。
+     */
+    private async _animateMergeExpand(newCards: number[], preserveSortMode = false): Promise<void> {
         const MERGE_DUR = 0.14;
         console.log("【展开动画】:newCards",newCards)
         console.log(typeof newCards)
@@ -1088,9 +1144,10 @@ export class HandCardPanel extends Component {
 
 
         // 触发展开（_doLayout 使用较长时长产生仪式感）
-        // 发牌合并展开固定用 BY_RANK，不受玩家当前排序设置影响
+        // preserveSortMode=false（发牌/摸牌）固定用 BY_RANK；
+        // preserveSortMode=true（autoSort 切换）沿用玩家当前排序规则
         this._dealReorderDur = DEAL_REORDER_DUR;
-        this._state.setCards(newCards, SortMode.BY_RANK);
+        this._state.setCards(newCards, preserveSortMode ? undefined : SortMode.BY_RANK);
 
         // setCards 触发 _syncGroupViews 会立即挂回 groupMarker，需在展开动画结束后才显示
         for (const gv of this._groupViews.values()) {

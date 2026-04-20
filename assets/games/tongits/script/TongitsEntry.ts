@@ -99,6 +99,19 @@ export class TongitsEntry extends BaseGameEntry {
         Nexus.emit(BaseGameEvents.MODEL_READY, this._model);
     }
 
+    /**
+     * 覆写 resyncRoom：在拉取快照前冻结广播消息，防止后台积压的旧消息污染同步结果。
+     * 快照 apply 完成（joinRoom 返回）后解冻，新消息正常处理。
+     */
+    protected override async resyncRoom(): Promise<void> {
+        this._model?.freeze();
+        try {
+            await this.joinRoom();
+        } finally {
+            this._model?.unfreeze();
+        }
+    }
+
     async onComplete(){
         await Nexus.audio.playMusic('res/audios/Tongits_bg', true);
     }

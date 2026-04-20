@@ -13,7 +13,7 @@ import {
     autoGroup as runAutoGroup,
     GroupData, GroupType, judgeGroupType,
 } from './GroupAlgorithm';
-import { SortMode, sortCards, calcPoint } from './CardDef';
+import { SortMode, sortCards, compareCards, calcPoint } from './CardDef';
 
 export type { GroupData, GroupType };
 export { SortMode };
@@ -371,9 +371,7 @@ export class HandCardState {
         this._sortMode = this._sortMode === SortMode.BY_RANK
             ? SortMode.BY_SUIT
             : SortMode.BY_RANK;
-
-        // 排序模式只影响散牌区；组内牌固定 BY_RANK，不随模式切换重排
-        this._ungroup = sortCards(this._ungroup, this._sortMode);
+        // 只切换规则，不重排牌；实际排序由 autoSort 触发时执行
         this._notify();
     }
 
@@ -448,12 +446,24 @@ export class HandCardState {
 
     /**
      * 假设 _groups=[] 且 _ungroup 包含所有牌，
-     * 对全量牌执行 autoGroup
+     * 对全量牌执行 autoGroup，并按当前排序规则对结果组排序。
      */
     private _runAutoGroupAll(overrideMode?: SortMode): void {
         const mode = overrideMode ?? this._sortMode;
         const { groups, ungroup } = runAutoGroup(this._ungroup, mode);
         this._groups.push(...groups);
         this._ungroup = ungroup;
+        // 按当前排序规则对牌组排序（以组内第一张牌为比较基准）
+        this._sortGroups(mode);
+    }
+
+    /** 按指定排序规则对 _groups 重排（以每组第一张牌为比较基准） */
+    private _sortGroups(mode: SortMode): void {
+        this._groups.sort((a, b) => {
+            const ca = a.cards[0];
+            const cb = b.cards[0];
+            if (ca == null || cb == null) return 0;
+            return compareCards(ca, cb, mode);
+        });
     }
 }

@@ -55,13 +55,17 @@ export abstract class BaseGameEntry extends NexusBaseEntry {
 
     // ── 模板流程 ─────────────────────────────────────────────
 
+    /** 后台时长超过此值才触发 resync（ms） */
+    protected static readonly BACKGROUND_REFRESH_THRESHOLD = 5000;
+
     async onEnter(params?: Record<string, unknown>): Promise<void> {
         await super.onEnter(params);
         await this.onGameInit(params);
         await this.loadResources(params);
-        // 首次进房完成，开始监听重连
+        // 首次进房完成，开始监听重连与前台恢复
         this._enteredRoom = true;
         Nexus.on(NexusEvents.NET_CONNECTED, this._onReconnected, this);
+        Nexus.on<number>(NexusEvents.APP_SHOW, this._onAppForeground, this);
     }
 
     /**
@@ -122,6 +126,7 @@ export abstract class BaseGameEntry extends NexusBaseEntry {
         this._waitDisplayResolve = null;
         this._enteredRoom = false;
         Nexus.off(NexusEvents.NET_CONNECTED, this._onReconnected, this);
+        Nexus.off<number>(NexusEvents.APP_SHOW, this._onAppForeground, this);
         super.onDestroy();
     }
 
@@ -163,14 +168,30 @@ export abstract class BaseGameEntry extends NexusBaseEntry {
     // ── 重连同步 ───────────────────────────────────────────────
 
     /**
-     * WS 重连成功回调。首次进房完成后才生效。
-     * 自动调用 resyncRoom() 拉全量状态。
+     * WS 重连成功回调 → 触发 resync。
      */
     private async _onReconnected(): Promise<void> {
+        console.log('[BaseGameEntry] reconnected, triggering resync...');
+        await this._triggerResync();
+    }
+
+    /**
+     * 回到前台回调。后台时长超过阈值时触发 resync，防止积压的旧消息覆盖同步后状态。
+     */
+    private async _onAppForeground(backgroundDuration: number): Promise<void> {
+        if (backgroundDuration < (this.constructor as typeof BaseGameEntry).BACKGROUND_REFRESH_THRESHOLD) return;
+        console.log(`[BaseGameEntry] foreground after ${backgroundDuration}ms, triggering resync...`);
+        await this._triggerResync();
+    }
+
+    /**
+     * 统一 resync 入口：并发锁保证同一时刻只有一个 resync 在执行，
+     * 防止断线重连与回前台同时触发导致双重同步。
+     */
+    private async _triggerResync(): Promise<void> {
         if (!this._enteredRoom || this._resyncing) return;
         this._resyncing = true;
         try {
-            console.log('[BaseGameEntry] reconnected, resyncing room...');
             await this.resyncRoom();
         } catch (err) {
             console.error('[BaseGameEntry] resync failed:', err);
@@ -181,7 +202,7 @@ export abstract class BaseGameEntry extends NexusBaseEntry {
 
     /**
      * 子类覆写：发同步请求拉全量房间状态，用返回数据重置 Model 并通知 View。
-     * 默认复用 joinRoom()，子类可覆写为更轻量的同步接口。
+     * 子类应在此执行 model.freeze() → joinRoom() → model.unfreeze()。
      */
     protected async resyncRoom(): Promise<void> {
         await this.joinRoom();

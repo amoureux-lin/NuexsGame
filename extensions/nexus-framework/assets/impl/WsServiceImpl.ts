@@ -116,6 +116,7 @@ export class WsServiceImpl extends ServiceBase {
                 console.log('【ws】onclose');
                 this._connected = false;
                 this.clearTimers();
+                this.cancelAllWsRequests('WS disconnected');
                 Nexus.emit(NexusEvents.NET_DISCONNECTED);
                 this.tryReconnect();
             };
@@ -423,6 +424,7 @@ export class WsServiceImpl extends ServiceBase {
 
         this._connected = false;
         this.clearTimers();
+        this.cancelAllWsRequests('WS disconnected');
         Nexus.emit(NexusEvents.NET_DISCONNECTED);
         this.tryReconnect();
     }

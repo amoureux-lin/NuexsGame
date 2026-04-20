@@ -103,6 +103,12 @@ export abstract class BaseGameModel<
     private _gameInfo: G | null = null;
     private _isMidwayEnter = false;
 
+    /**
+     * 冻结标志：true 时所有广播消息被丢弃，等待快照同步完成后解冻。
+     * 用于回前台/断线重连的「冻结-快照-解冻」流程，防止积压的旧消息污染同步后的状态。
+     */
+    private _frozen = false;
+
     // ── Getters ──────────────────────────────────────────
 
     get roomInfo(): RoomInfoLike | null { return this._roomInfo; }
@@ -116,6 +122,32 @@ export abstract class BaseGameModel<
     get mySeat(): number { return this._self?.playerInfo?.seat ?? 0; }
     get isMidwayEnter(): boolean { return this._isMidwayEnter; }
     set isMidwayEnter(v: boolean) { this._isMidwayEnter = v; }
+
+    // ── 冻结 / 解冻 ──────────────────────────────────────
+
+    /**
+     * 冻结广播处理。回前台/重连发出 joinRoom 请求之前调用。
+     * 冻结期间所有 WS 广播消息均被丢弃（通过 handleBroadcast 守卫）。
+     */
+    freeze(): void {
+        this._frozen = true;
+    }
+
+    /**
+     * 解冻广播处理。joinRoom 快照 apply 完成后调用。
+     * 快照已是服务端权威状态，积压的旧消息无需重放，直接丢弃。
+     */
+    unfreeze(): void {
+        this._frozen = false;
+    }
+
+    /**
+     * 广播消息守卫。子类每个 _on* 处理函数的入口调用此方法。
+     * 冻结期间直接返回 false，调用方应立即 return。
+     */
+    protected handleBroadcast(): boolean {
+        return !this._frozen;
+    }
 
     // ── JoinRoom ─────────────────────────────────────────
 

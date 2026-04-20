@@ -226,18 +226,23 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
     // ── WS 广播注册 ──────────────────────────────────────
 
     protected override registerGameHandlers(): void {
-        Nexus.net.onWsMsg(MessageType.TONGITS_START_GAME_BROADCAST, this._onGameStart.bind(this), this);
-        Nexus.net.onWsMsg(MessageType.TONGITS_ACTION_CHANGE_BROADCAST, this._onActionChange.bind(this), this);
-        Nexus.net.onWsMsg(MessageType.TONGITS_DRAW_BROADCAST, this._onDrawBroadcast.bind(this), this);
-        Nexus.net.onWsMsg(MessageType.TONGITS_MELD_BROADCAST, this._onMeldBroadcast.bind(this), this);
-        Nexus.net.onWsMsg(MessageType.TONGITS_LAYOFF_BROADCAST, this._onLayOffBroadcast.bind(this), this);
-        Nexus.net.onWsMsg(MessageType.TONGITS_DISCARD_BROADCAST, this._onDiscardBroadcast.bind(this), this);
-        Nexus.net.onWsMsg(MessageType.TONGITS_TAKE_BROADCAST, this._onTakeBroadcast.bind(this), this);
-        Nexus.net.onWsMsg(MessageType.TONGITS_CHALLENGE_BROADCAST, this._onChallenge.bind(this), this);
-        Nexus.net.onWsMsg(MessageType.TONGITS_PK_BROADCAST, this._onPK.bind(this), this);
-        Nexus.net.onWsMsg(MessageType.TONGITS_GAME_WIN_BROADCAST, this._onBeforeResult.bind(this), this);
-        Nexus.net.onWsMsg(MessageType.TONGITS_GAME_RESULT_BROADCAST, this._onGameResult.bind(this), this);
-        Nexus.net.onWsMsg(MessageType.TONGITS_ROOM_RESET_BROADCAST, this._onRoomReset.bind(this), this);
+        // guard 包装：冻结期间所有广播直接丢弃，防止积压旧消息污染快照同步后的状态
+        const guard = <T>(fn: (msg: T) => void) => (msg: T) => {
+            if (!this.handleBroadcast()) return;
+            fn(msg);
+        };
+        Nexus.net.onWsMsg(MessageType.TONGITS_START_GAME_BROADCAST,    guard(this._onGameStart.bind(this)),      this);
+        Nexus.net.onWsMsg(MessageType.TONGITS_ACTION_CHANGE_BROADCAST,  guard(this._onActionChange.bind(this)),   this);
+        Nexus.net.onWsMsg(MessageType.TONGITS_DRAW_BROADCAST,           guard(this._onDrawBroadcast.bind(this)),  this);
+        Nexus.net.onWsMsg(MessageType.TONGITS_MELD_BROADCAST,           guard(this._onMeldBroadcast.bind(this)),  this);
+        Nexus.net.onWsMsg(MessageType.TONGITS_LAYOFF_BROADCAST,         guard(this._onLayOffBroadcast.bind(this)), this);
+        Nexus.net.onWsMsg(MessageType.TONGITS_DISCARD_BROADCAST,        guard(this._onDiscardBroadcast.bind(this)), this);
+        Nexus.net.onWsMsg(MessageType.TONGITS_TAKE_BROADCAST,           guard(this._onTakeBroadcast.bind(this)),  this);
+        Nexus.net.onWsMsg(MessageType.TONGITS_CHALLENGE_BROADCAST,      guard(this._onChallenge.bind(this)),      this);
+        Nexus.net.onWsMsg(MessageType.TONGITS_PK_BROADCAST,             guard(this._onPK.bind(this)),             this);
+        Nexus.net.onWsMsg(MessageType.TONGITS_GAME_WIN_BROADCAST,       guard(this._onBeforeResult.bind(this)),   this);
+        Nexus.net.onWsMsg(MessageType.TONGITS_GAME_RESULT_BROADCAST,    guard(this._onGameResult.bind(this)),     this);
+        Nexus.net.onWsMsg(MessageType.TONGITS_ROOM_RESET_BROADCAST,     guard(this._onRoomReset.bind(this)),      this);
     }
 
     // ── 广播处理（更新 Model 数据 + notify View） ────────

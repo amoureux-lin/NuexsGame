@@ -2,7 +2,7 @@ import { _decorator, Vec3, tween, Node } from 'cc';
 import { BaseGameView } from 'db://assets/script/base/BaseGameView';
 import { TongitsModel } from './TongitsModel';
 import type { LayoffHints, ActionChangePayload, DrawResPayload, MeldResPayload, TakeResPayload, LayOffResPayload } from './TongitsModel';
-import { Nexus, NexusEvents } from 'db://nexus-framework/index';
+import { Nexus } from 'db://nexus-framework/index';
 import { TongitsEvents } from '../config/TongitsEvents';
 import { PlayerSeatManager } from '../views/player/PlayerSeatManager';
 import { WaitingPanel } from '../views/panel/WaitingPanel';
@@ -166,13 +166,10 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     private _lastLayoffHints: LayoffHints | null = null;
     /** 本局被补牌的玩家 id 集合（下次轮到该玩家操作时清除） */
     private _layoffBannedIds: Set<number> = new Set();
-    /** 触发刷新所需的最短后台时长（ms）：低于此值认为无需同步 */
-    private static readonly BACKGROUND_REFRESH_THRESHOLD = 5000;
 
     protected onLoad() {
         super.onLoad();
         this.init();
-        Nexus.on<number>(NexusEvents.APP_SHOW, this._onAppForeground, this);
     }
 
     init(){
@@ -303,9 +300,25 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
             // status=1 等待中：正常显示 WaitingPanel
             this.waitingPanel?.refresh(data.self ?? null, this._isLocalOwner);
         } else {
-            // status=2/3 游戏进行中：还原游戏 UI
+            // status=2/3 游戏进行中：先清理 UI 瞬态，再从快照还原
+            this._resetUITransientState();
             this._restoreGameInProgress();
         }
+    }
+
+    /**
+     * 清理 View 层纯 UI 瞬态，在快照同步前调用。
+     * Layer 4 状态（动画/交互模式/临时标记）直接丢弃，不尝试恢复。
+     */
+    private _resetUITransientState(): void {
+        this._isDealing = false;
+        this._canTake = false;
+        this._handButtons = null;
+        this._lastLayoffHints = null;
+        this._layoffBannedIds.clear();
+        this._pendingTakeCards = [];
+        this.handCardPanel?.exitTakeMode();
+        this.gameStartEffect?.node && (this.gameStartEffect.node.active = false);
     }
 
     /**
@@ -1097,7 +1110,6 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     // ── 生命周期 ─────────────────────────────────────────
 
     protected onDestroy(): void {
-        Nexus.off<number>(NexusEvents.APP_SHOW, this._onAppForeground, this);
         Nexus.off(TongitsEvents.CMD_GROUP,    this._onCmdGroup,   this);
         Nexus.off(TongitsEvents.CMD_UNGROUP,  this._onCmdUngroup, this);
         Nexus.off(TongitsEvents.CMD_DUMP_BTN,  this._onCmdDiscard, this);
@@ -1271,17 +1283,6 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         this.seatManager?.refreshFromPlayers(this._players, this._perspectiveId);
     }
 
-
-    /**
-     * 回到前台时由框架层调用，携带实际后台时长（ms）。
-     * 后台时长 < BACKGROUND_REFRESH_THRESHOLD（5s）：短暂切换，无需同步。
-     * 后台时长 >= 阈值且游戏进行中：可能已超时出牌，触发 3001 拉取最新状态。
-     */
-    private _onAppForeground(backgroundDuration: number): void {
-        if (!this._isGameStarted) return;
-        if (backgroundDuration < TongitsView.BACKGROUND_REFRESH_THRESHOLD) return;
-        this.dispatch(TongitsEvents.CMD_REFRESH_ROOM);
-    }
 
     private _syncPlayerField(playerId: number, _patch: Partial<TongitsPlayerInfo>): void {
         // model 在 notify 前已通过 updatePlayerById 原地更新，直接从 getter 读取最新数据
