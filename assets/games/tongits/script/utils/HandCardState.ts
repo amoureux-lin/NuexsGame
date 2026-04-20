@@ -145,13 +145,16 @@ export class HandCardState {
      * 发牌后调用：设置初始手牌并触发 autoGroup（若开启）
      */
     /**
+     * @param cards
      * @param sortModeOverride 强制使用指定排序（发牌动画传 SortMode.BY_RANK，忽略玩家当前设置）
      */
     setCards(cards: number[], sortModeOverride?: SortMode): void {
+        console.log("【展开动画】:cards",cards)
         this._clearSelSilent();
         this._groups  = [];
         const mode    = sortModeOverride ?? this._sortMode;
         this._ungroup = sortCards(cards, mode);
+        console.log("【展开动画】:this._ungroup",this._ungroup)
         if (this._autoGroupEnabled) this._runAutoGroupAll(mode);
         this._notify();
     }

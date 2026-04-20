@@ -48,13 +48,20 @@ const LIFT_DURATION = 0.1;
 @ccclass('CardNode')
 export class CardNode extends Component {
 
-    @property({ type: Sprite,      tooltip: '牌面/牌背显示 Sprite'  }) cardSprite:       Sprite      | null = null;
-    @property({ type: SpriteAtlas, tooltip: '牌面图集'               }) pokerAtlas:       SpriteAtlas | null = null;
-    @property({ type: SpriteFrame, tooltip: '牌背 SpriteFrame'       }) pokerNormalBacks: SpriteFrame | null = null;
-    @property({ type: Node,        tooltip: '遮罩节点'           }) maskNode:   Node        | null = null;
-    @property({ type: Node,        tooltip: '提示节点'           }) tipNode:   Node        | null = null;
-    @property({ type: Node,        tooltip: '选中高亮节点'           }) selectedBorder:   Node        | null = null;
-    @property({ type: Node,        tooltip: 'Meld 提示高亮节点'     }) hintOverlay:      Node        | null = null;
+    @property({ type: Sprite,      tooltip: '牌面/牌背显示 Sprite'  })
+    cardSprite:       Sprite      | null = null;
+    @property({ type: SpriteAtlas, tooltip: '牌面图集'               })
+    pokerAtlas:       SpriteAtlas | null = null;
+    @property({ type: SpriteFrame, tooltip: '牌背 SpriteFrame'       })
+    pokerNormalBacks: SpriteFrame | null = null;
+    @property({ type: Node,        tooltip: '遮罩节点'           })
+    maskNode:   Node        | null = null;
+    @property({ type: Node,        tooltip: '提示节点'           })
+    tipNode:   Node        | null = null;
+    @property({ type: Node,        tooltip: '选中高亮节点'           })
+    selectedBorder:   Node        | null = null;
+    @property({ type: Node,        tooltip: 'Meld 提示高亮节点'     })
+    hintOverlay:      Node        | null = null;
 
     // ── 运行时状态 ────────────────────────────────────────
 
@@ -232,7 +239,11 @@ export class CardNode extends Component {
             const atlas = CardThemeService.instance?.currentAtlas ?? this.pokerAtlas;
             if (atlas && this._cardValue) {
                 const frame = atlas.getSpriteFrame(String(this._cardValue));
-                if (frame) this.cardSprite.spriteFrame = frame;
+                if (frame) {
+                    this.cardSprite.spriteFrame = frame;
+                } else {
+                    console.error("cardSprite spriteFrame 获取失败：",this._cardValue)
+                }
             }
         }
         this._syncNodeSizeFromCurrentFrame();

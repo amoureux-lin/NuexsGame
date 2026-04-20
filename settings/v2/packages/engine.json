@@ -24,10 +24,10 @@
             "_value": true
           },
           "3d": {
-            "_value": true
+            "_value": false
           },
           "meshopt": {
-            "_value": true
+            "_value": false
           },
           "2d": {
             "_value": true
@@ -54,10 +54,10 @@
             "_value": true
           },
           "particle": {
-            "_value": true
+            "_value": false
           },
           "physics": {
-            "_value": true,
+            "_value": false,
             "_option": "physics-physx"
           },
           "physics-ammo": {
@@ -101,19 +101,19 @@
             "_value": true
           },
           "primitive": {
-            "_value": true
+            "_value": false
           },
           "profiler": {
             "_value": false
           },
           "occlusion-query": {
-            "_value": true
+            "_value": false
           },
           "geometry-renderer": {
-            "_value": true
+            "_value": false
           },
           "debug-renderer": {
-            "_value": true
+            "_value": false
           },
           "particle-2d": {
             "_value": true
@@ -140,7 +140,7 @@
             "_value": false
           },
           "light-probe": {
-            "_value": true
+            "_value": false
           },
           "tiled-map": {
             "_value": false
@@ -191,32 +191,22 @@
           }
         },
         "flags": {
-          "LOAD_SPINE_MANUALLY": false,
-          "LOAD_PHYSX_MANUALLY": false
+          "LOAD_SPINE_MANUALLY": false
         },
         "includeModules": [
           "2d",
-          "3d",
           "affine-transform",
           "animation",
           "audio",
           "base",
           "custom-pipeline",
-          "debug-renderer",
           "dragon-bones",
-          "geometry-renderer",
           "gfx-webgl2",
           "graphics",
           "intersection-2d",
-          "light-probe",
           "marionette",
           "mask",
-          "meshopt",
-          "occlusion-query",
-          "particle",
           "particle-2d",
-          "physics-physx",
-          "primitive",
           "rich-text",
           "skeletal-animation",
           "spine-3.8",

@@ -727,7 +727,7 @@ export class HandCardPanel extends Component {
         }
 
         // 新增牌
-        for (const val of ungroup) {
+        ungroup.forEach((val, i) => {
             if (!this._ungroupNodes.has(val)) {
                 const n  = this._createCardNode(val);
                 const cn = n.getComponent(CardNode) ?? n.addComponent(CardNode);
@@ -748,7 +748,7 @@ export class HandCardPanel extends Component {
             }
             // 更新选中状态
             this._ungroupNodes.get(val)?.setSelected(selectedCards.has(val));
-        }
+        });
         // 按当前数组顺序统一更新 sibling index，保证排序切换后叠牌 Z-order 正确
         for (let i = 0; i < ungroup.length; i++) {
             const cn = this._ungroupNodes.get(ungroup[i]);
@@ -997,7 +997,8 @@ export class HandCardPanel extends Component {
      */
     private async _animateMergeExpand(newCards: number[]): Promise<void> {
         const MERGE_DUR = 0.14;
-
+        console.log("【展开动画】:newCards",newCards)
+        console.log(typeof newCards)
         // ── 根容器归零，保持子节点世界坐标不变 ────────────────────────────
         // 无论 _doLayout 将根节点偏移到何处，合并动画始终收敛到 panel 中心（local 0,0）。
         // 发牌路径：根节点本就在原点，此处为无操作。

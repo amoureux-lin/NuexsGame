@@ -147,7 +147,7 @@ function _dfs(
     if (curPoint < best.point) {
         best.point  = curPoint;
         best.groups = chosen.slice();
-        best.ungroup = [...remaining];
+        best.ungroup = Array.from(remaining);
     }
     if (curPoint === 0) return; // Tongits，无需继续
 
