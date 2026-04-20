@@ -1118,6 +1118,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     private _onCmdDiscard(): void {
         // 从手牌状态取出选中的散牌，立即从手牌区移除（乐观更新），再发送请求
         const card = this.handCardPanel?.onDumpBtn();
+        console.log("打牌：",card)
         if (card == null) return;
         this.discard(card);
     }

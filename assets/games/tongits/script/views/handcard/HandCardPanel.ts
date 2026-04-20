@@ -514,7 +514,7 @@ export class HandCardPanel extends Component {
     onUngroupBtn(): void {
         // 捕获被解散组的世界坐标，作为散牌节点的起飞点
         const snap = this._state.snapshot();
-        const [gId] = [...snap.selectedGroupIds];
+        const [gId] = Array.from(snap.selectedGroupIds);
         if (gId) {
             const gv = this._groupViews.get(gId);
             if (gv) this._sapawUngroupWorldPos = gv.node.getWorldPosition().clone();
@@ -639,7 +639,7 @@ export class HandCardPanel extends Component {
 
     /** 构建 SelectionInfo 并触发回调，同时输出调试日志 */
     private _emitSelection(snap: HandCardSnapshot): void {
-        const selectedCards  = [...snap.selectedUngroupCards];
+        const selectedCards  = Array.from(snap.selectedUngroupCards);
         const selectedGroups = snap.groups.filter(g => snap.selectedGroupIds.has(g.id));
 
         // canSapaw：仅当选中的单张散牌在当前补牌提示集合中才为 true

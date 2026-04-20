@@ -116,7 +116,7 @@ export class HandCardState {
         const totalSel = selGroupCardTotal + selCards.size;
 
         // 选中内容中有 VALID/SPECIAL 组时不允许再"组合"
-        const hasValidGroup = selGIds.size > 0 && [...selGIds].some(id => {
+        const hasValidGroup = selGIds.size > 0 && Array.from(selGIds).some(id => {
             const g = this._groups.find(x => x.id === id);
             return g?.type === GroupType.VALID || g?.type === GroupType.SPECIAL;
         });
@@ -126,7 +126,7 @@ export class HandCardState {
                         && (selGroupType === GroupType.VALID || selGroupType === GroupType.SPECIAL);
         const canDump    = selCards.size === 1 && selGIds.size === 0;
         const canSapaw    = selCards.size === 1 && selGIds.size === 0;
-        const selectedSingleCard = canDump ? [...selCards][0] : null;
+        const selectedSingleCard = canDump ? Array.from(selCards)[0] : null;
 
         return { canGroup, canUngroup, canDrop, canDump, canSapaw, selectedSingleCard };
     }
@@ -263,7 +263,7 @@ export class HandCardState {
      */
     dissolveGroup(): void {
         if (this._selectedGroupIds.size !== 1) return;
-        const id    = [...this._selectedGroupIds][0];
+        const id    = Array.from(this._selectedGroupIds)[0];
         const group = this._groups.find(g => g.id === id);
         if (!group) return;
 
@@ -281,7 +281,7 @@ export class HandCardState {
      */
     dropGroup(): GroupData | null {
         if (this._selectedGroupIds.size !== 1) return null;
-        const id    = [...this._selectedGroupIds][0];
+        const id    = Array.from(this._selectedGroupIds)[0];
         const group = this._groups.find(g => g.id === id);
         if (!group) return null;
         if (group.type !== GroupType.VALID && group.type !== GroupType.SPECIAL) return null;
@@ -423,7 +423,7 @@ export class HandCardState {
 
     /** 获取当前所有选中的牌 */
     private _getSelectedCards(): number[] {
-        const cards: number[] = [...this._selectedUngroupCards];
+        const cards: number[] = Array.from(this._selectedUngroupCards);
         for (const id of this._selectedGroupIds) {
             const g = this._groups.find(x => x.id === id);
             if (g) cards.push(...g.cards);
