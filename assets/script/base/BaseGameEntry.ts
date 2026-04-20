@@ -87,6 +87,8 @@ export abstract class BaseGameEntry extends NexusBaseEntry {
         await Nexus.bundle.runScene();
         // runScene 完成后框架会隐藏 Entry 节点（含 loadingRoot），重新激活保持进度条可见
         this.node.active = true;
+        // 场景已就绪，通知子类向 View 注入 model 只读引用
+        this.onSceneReady();
 
         const isMock = Nexus.data.get<boolean>('mock_mode') ?? false;
 
@@ -265,6 +267,12 @@ export abstract class BaseGameEntry extends NexusBaseEntry {
             this._waitDisplayResolve = resolve;
         });
     }
+
+    /**
+     * 场景加载完成后的钩子（runScene 返回后立即调用，View 的 onLoad/registerEvents 已执行）。
+     * 子类覆写此方法向 View 注入 model 只读引用（emit MODEL_READY 事件）。
+     */
+    protected onSceneReady(): void {}
 
     /**
      * loading 100事件

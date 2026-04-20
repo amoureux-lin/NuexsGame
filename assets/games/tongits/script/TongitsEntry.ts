@@ -1,6 +1,7 @@
 import { _decorator, AudioClip, Font, SpriteFrame } from 'cc';
 import { Nexus } from 'db://nexus-framework/index';
 import { BaseGameEntry, PROGRESS_COMMON_END, PROGRESS_BUNDLE_END } from 'db://assets/script/base/BaseGameEntry';
+import { BaseGameEvents } from 'db://assets/script/base/BaseGameModel';
 import {TongitsUI, TongitsUIPanelConfig} from './config/TongitsUIConfig';
 import { TongitsController } from './game/TongitsController';
 import { TongitsModel } from './game/TongitsModel';
@@ -92,6 +93,10 @@ export class TongitsEntry extends BaseGameEntry {
 
         this._model!.joinRoom(res);
         console.log('[TongitsEntry] mock join room complete');
+    }
+
+    protected override onSceneReady(): void {
+        Nexus.emit(BaseGameEvents.MODEL_READY, this._model);
     }
 
     async onComplete(){

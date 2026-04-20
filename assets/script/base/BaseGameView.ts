@@ -1,6 +1,6 @@
 import { _decorator } from 'cc';
 import { MvcView } from 'db://nexus-framework/index';
-import { BaseGameEvents, type JoinRoomData } from './BaseGameModel';
+import { BaseGameEvents, type BaseGameModel, type JoinRoomData } from './BaseGameModel';
 import { GameEvents } from '../config/GameEvents';
 
 const { ccclass } = _decorator;
@@ -28,10 +28,17 @@ const { ccclass } = _decorator;
 @ccclass('BaseGameView')
 export abstract class BaseGameView<P = unknown, G = unknown> extends MvcView {
 
+    /** Model 只读引用，由 Entry 在场景就绪后通过 MODEL_READY 事件注入。 */
+    protected _model: BaseGameModel<P, G> | null = null;
+
     // ── 事件注册模板 ─────────────────────────────────────
 
     /** 注册公共事件，由 registerEvents() 自动调用，子类无需手动调用。 */
     protected registerCommonEvents(): void {
+        this.listen<BaseGameModel<P, G>>(
+            BaseGameEvents.MODEL_READY,
+            (m) => { this._model = m; },
+        );
         this.listen<JoinRoomData<P, G>>(
             BaseGameEvents.ROOM_JOINED,
             (d) => this.onRoomJoined(d),

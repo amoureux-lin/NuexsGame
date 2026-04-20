@@ -70,6 +70,8 @@ export const BaseGameEvents = {
     SELF_UPDATED: 'base:self:updated',
     WATCHERS_UPDATED: 'base:watchers:updated',
     SPEAKERS_UPDATED: 'base:speakers:updated',
+    /** Entry 在场景加载完成后 emit，携带 model 实例，供 View 保存只读引用 */
+    MODEL_READY: 'base:model:ready',
 } as const;
 
 /** 房间状态枚举 */

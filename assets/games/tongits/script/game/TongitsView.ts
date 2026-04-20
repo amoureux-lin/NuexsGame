@@ -1,5 +1,6 @@
 import { _decorator, Vec3, tween, Node } from 'cc';
 import { BaseGameView } from 'db://assets/script/base/BaseGameView';
+import { TongitsModel } from './TongitsModel';
 import type { LayoffHints, ActionChangePayload, DrawResPayload, MeldResPayload, TakeResPayload, LayOffResPayload } from './TongitsModel';
 import { Nexus, NexusEvents } from 'db://nexus-framework/index';
 import { TongitsEvents } from '../config/TongitsEvents';
@@ -102,28 +103,61 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     @property({ type: DiscardHistoryPanel, tooltip: '弃牌历史记录面板' })
     discardHistoryPanel: DiscardHistoryPanel | null = null;
 
+    // ── Model 只读引用快捷方式 ────────────────────────────
+
+    private get tongitsModel(): TongitsModel | null {
+        return this._model as TongitsModel | null;
+    }
+
+    // ── 从 Model 派生的只读属性（取代冗余缓存字段） ────────
+
+    /** 自己的 userId（进房后固定不变） */
+    private get _selfUserId(): number {
+        return this.tongitsModel?.myUserId ?? 0;
+    }
+
+    /** 当前可操作玩家（来自 ActionChangeBroadcast） */
+    private get _actionPlayerId(): number {
+        return this.tongitsModel?.getActionPlayerId() ?? 0;
+    }
+
+    /** 游戏是否已开始（status >= 2） */
+    private get _isGameStarted(): boolean {
+        return ((this.tongitsModel?.gameInfo as GameInfo | null)?.status ?? 1) >= 2;
+    }
+
+    /** 自己是否是房主 */
+    private get _isLocalOwner(): boolean {
+        return (this.tongitsModel?.self?.playerInfo?.post ?? 0) === 1;
+    }
+
+    // ── 从 Model 派生（直接读，无需缓存） ────────────────
+
+    private get _players(): TongitsPlayerInfo[] {
+        return (this.tongitsModel?.players ?? []) as TongitsPlayerInfo[];
+    }
+
+    private get _gameInfo(): GameInfo | null {
+        return this.tongitsModel?.gameInfo as GameInfo | null;
+    }
+
     // ── 缓存本地状态 ─────────────────────────────────────
 
-    private _selfUserId: number = 0;
     /**
      * 视角玩家 userId：
-     *   - 普通玩家：与 _selfUserId 相同
+     *   - 普通玩家：与 _selfUserId 相同（getPerspectiveId() 返回 0，回退到 myUserId）
      *   - 观战者：gameInfo.perspectiveId（被观战玩家的 id）
      * 所有座位排列、手牌显示、操作按钮等 view 逻辑均以此为基准。
      */
-    private _perspectiveId: number = 0;
-    private _players: TongitsPlayerInfo[] = [];
-    private _gameInfo: GameInfo | null = null;
-    private _isLocalOwner: boolean = false;
-    private _isGameStarted: boolean = false;
+    private get _perspectiveId(): number {
+        return this.tongitsModel?.getPerspectiveId() || this._selfUserId;
+    }
     /** 缓存 BeforeResult 的胜利类型，供 onGameResult 传给结算面板 */
     private _lastWinType: number = 0;
     /** 发牌动画进行中，此期间拦截操作按钮刷新 */
     private _isDealing: boolean = false;
     /** 手牌状态机最新的按钮可用状态 */
     private _handButtons: ButtonStates | null = null;
-    /** 当前可操作玩家（来自 ActionChangeBroadcast） */
-    private _actionPlayerId: number = 0;
     /** 当前是否处于可吃牌状态 */
     private _canTake: boolean = false;
     /** 已发出 CMD_TAKE 时使用的手牌（等待 TakeRes 后移除） */
@@ -163,7 +197,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         }
         if (this.tableAreaView) {
             this.tableAreaView.onHistoryClick = () => {
-                this.discardHistoryPanel?.show(this.tableAreaView.discardPile);
+                this.discardHistoryPanel?.show((this.tongitsModel?.gameInfo as GameInfo | null)?.discardPile ?? []);
             };
         }
     }
@@ -256,17 +290,11 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     // ── Model → View 事件回调 ─────────────────────────────
 
     protected onRoomJoined(data: JoinRoomRes): void {
-        this._selfUserId    = data.self?.playerInfo?.userId ?? 0;
-        this._players       = data.players ?? [];
-        this._gameInfo      = (data.gameInfo as GameInfo) ?? null;
-        this._perspectiveId = this._gameInfo?.perspectiveId || this._selfUserId;
-        this._isLocalOwner  = (data.self?.playerInfo?.post ?? 0) === 1;
 
         const status = this._gameInfo?.status ?? 1;
         // status 2=游戏中 / 3=挑战中 视为游戏已开始
         const inGame = status >= 2 && status <= 3;
 
-        this._isGameStarted = inGame;
         this.seatManager?.setContext(this._isLocalOwner, this._isGameStarted);
         this._refreshAllSeats();
         this._refreshPanelVisibility();
@@ -318,7 +346,6 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         // 5. 当前操作玩家高亮 + 倒计时
         const actionId     = gi.actionPlayerId;
         const actionPlayer = this._players.find(p => p.playerInfo?.userId === actionId);
-        this._actionPlayerId = actionId;
         this.seatManager?.updateActionPlayer(actionId);
         if (actionPlayer && (actionPlayer.countdown ?? 0) > 0) {
             // JoinRoomRes 中 countdown 为服务端 Unix 秒时间戳，转换为毫秒
@@ -368,10 +395,10 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
             }
         }
 
-        // 若自己尚未响应（changeStatus=1 且不是发起方），弹出响应面板
-        const selfPlayer = this._players.find(p => p.playerInfo?.userId === this._perspectiveId);
+        // 若自己尚未响应（changeStatus=1 且不是发起方 且非观战），弹出响应面板
+        const selfPlayer = this._players.find(p => p.playerInfo?.userId === this._selfUserId);
         const selfCs     = selfPlayer?.changeStatus ?? 0;
-        if (selfCs === 1 && challengerId !== this._perspectiveId) {
+        if (selfCs === 1 && challengerId !== this._selfUserId && !this.tongitsModel?.isSpectator()) {
             const cd = (selfPlayer?.countdown ?? 0) > 0
                 ? selfPlayer!.countdown * 1000
                 : Date.now() + 10000;
@@ -379,29 +406,16 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         }
     }
 
-    protected onPlayersUpdated(players: TongitsPlayerInfo[]): void {
-        this._players = players;
+    protected onPlayersUpdated(_players: TongitsPlayerInfo[]): void {
         this._refreshAllSeats();
     }
 
-    protected onGameInfoUpdated(gameInfo: GameInfo): void {
-        this._gameInfo = gameInfo;
+    protected onGameInfoUpdated(_gameInfo: GameInfo): void {
+        // model 已原地更新 gameInfo，getter 直接读取，无需缓存
     }
 
     protected onSelfUpdated(self: TongitsPlayerInfo): void {
-        const newIsOwner = (self.playerInfo?.post ?? 0) === 1;
-        if (newIsOwner !== this._isLocalOwner) {
-            this._isLocalOwner = newIsOwner;
-            this.seatManager?.setContext(this._isLocalOwner, this._isGameStarted);
-        }
-        const idx = this._players.findIndex(p => p.playerInfo?.userId === self.playerInfo?.userId);
-        if (idx >= 0) {
-            this._players = [
-                ...this._players.slice(0, idx),
-                self,
-                ...this._players.slice(idx + 1),
-            ];
-        }
+        this.seatManager?.setContext(this._isLocalOwner, this._isGameStarted);
         this._refreshAllSeats();
         // 准备状态变化时刷新 WaitingPanel
         if (!this._isGameStarted) {
@@ -412,19 +426,14 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     protected onGameStart(data: GameStartBroadcast): void {
         console.log('onGameStart', data);
         this._resetToPreGame();
-        this._isGameStarted = true;
         // 游戏开始立即隐藏所有座位的 kickBtn（不等发牌动画完成）
         this.seatManager?.setContext(this._isLocalOwner, true);
         // waitingPanel 立即隐藏，actionPanel 等动画回调时与 cardCountNode 同步显示
         this._refreshPanelVisibility();
 
         if (data.players) {
-            this._players = data.players;
             this._refreshAllSeats();
         }
-
-        // GameStart 带的 gameInfo 包含初始 actionPlayerId，缓存备用
-        if (data.gameInfo) this._gameInfo = data.gameInfo as GameInfo;
 
         // 初始化顶部奖杯数字（pot.winCount = 底池已累积局数）
         this.potTrophyPanel?.setWinCount(data.gameInfo?.pot?.winCount ?? 0);
@@ -463,7 +472,6 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         this.seatManager?.updateActionPlayer(data.actionPlayerId);
         this.seatManager?.updateCountdown(data.actionPlayerId, data.countdown);
 
-        this._actionPlayerId = data.actionPlayerId;
         // 同步自身/对手的操作阶段字段，保证按钮启用条件使用的是最新状态
         this._syncPlayerField(data.actionPlayerId, {
             status: data.status,
@@ -746,12 +754,12 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
             this.fightPanel.reset();
             this.fightPanel.onPlayerChallenge(data.playerId);
 
-            // 自己不是发起方 → 弹出 Challenge/Fold 响应面板
-            if (data.playerId !== this._perspectiveId) {
+            // 自己不是发起方且是玩家（非观战）→ 弹出 Challenge/Fold 响应面板
+            if (data.playerId !== this._selfUserId && !this.tongitsModel?.isSpectator()) {
                 console.log("弹出 Challenge/Fold 响应面板")
                 const selfBp    = data.basePlayers?.find(bp => bp.playerId === this._selfUserId);
                 const countdown = selfBp?.countdown ?? Date.now() + 10000;
-                const selfInfo  = this._players.find(p => p.playerInfo?.userId === this._perspectiveId);
+                const selfInfo  = this._players.find(p => p.playerInfo?.userId === this._selfUserId);
                 const points    = selfInfo?.cardPoint ?? 0;
                 this.fightPanel.showResponsePanel(points, countdown);
             }
@@ -762,7 +770,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
 
     protected onDrawRes(data: DrawResPayload): void {
         // 摸牌完成 → 进入出牌阶段（status 3:Action），主动更新 model，无需等 ActionChangeBroadcast
-        this._syncPlayerField(this._perspectiveId, {
+        this._syncPlayerField(this._selfUserId, {
             handCardCount: data.handCardCount,
             status: 3,
         } as Partial<TongitsPlayerInfo>);
@@ -776,9 +784,9 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     }
 
     protected onMeldRes(data: MeldResPayload): void {
-        this._syncPlayerField(this._perspectiveId, { handCardCount: data.handCardCount });
+        this._syncPlayerField(this._selfUserId, { handCardCount: data.handCardCount });
         if (data.newMeld) {
-            const selfSeat = this.seatManager?.getSeatByUserId(this._perspectiveId);
+            const selfSeat = this.seatManager?.getSeatByUserId(this._selfUserId);
             selfSeat?.meldField?.addMeld(data.newMeld);
         }
         this._refreshActionPanel();
@@ -787,7 +795,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
 
     protected onDiscardRes(data: DiscardCardRes): void {
         // 弃牌完成 → 不可操作（status 1），等待下一个 ActionChangeBroadcast
-        this._syncPlayerField(this._perspectiveId, {
+        this._syncPlayerField(this._selfUserId, {
             handCardCount: data.handCardCount,
             status: 1,
         } as Partial<TongitsPlayerInfo>);
@@ -796,16 +804,16 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         // 更新弃牌堆
         if (data.discardPile?.length) this.tableAreaView?.syncDiscard(data.discardPile);
         // 弃牌完成才解除 ban（含清遮罩），让挑战禁止标记持续到打完牌
-        if (this._layoffBannedIds.has(this._perspectiveId)) {
-            this._layoffBannedIds.delete(this._perspectiveId);
-            this.seatManager?.getSeatByUserId(this._perspectiveId)?.meldField?.clearAllMasks();
+        if (this._layoffBannedIds.has(this._selfUserId)) {
+            this._layoffBannedIds.delete(this._selfUserId);
+            this.seatManager?.getSeatByUserId(this._selfUserId)?.meldField?.clearAllMasks();
             this._refreshActionPanel();
         }
     }
 
     protected onTakeRes(data: TakeResPayload): void {
         // 吃牌成功 → 进入出牌阶段（status 3:Action），禁用摸牌/吃牌/挑战
-        this._syncPlayerField(this._perspectiveId, {
+        this._syncPlayerField(this._selfUserId, {
             handCardCount: data.handCardCount,
             status: 3,
         } as Partial<TongitsPlayerInfo>);
@@ -818,7 +826,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         // 刷新弃牌区视图（Model 已过滤被吃走的牌）
         this.tableAreaView?.syncDiscard(data.discardPile);
         if (data.newMeld) {
-            const selfSeat = this.seatManager?.getSeatByUserId(this._perspectiveId);
+            const selfSeat = this.seatManager?.getSeatByUserId(this._selfUserId);
             selfSeat?.meldField?.addMeld(data.newMeld);
         }
         this._refreshActionPanel();
@@ -826,7 +834,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     }
     
     protected onLayOffRes(data: LayOffResPayload): void {
-        this._syncPlayerField(this._perspectiveId, { handCardCount: data.handCardCount });
+        this._syncPlayerField(this._selfUserId, { handCardCount: data.handCardCount });
         // 目标玩家被补牌，记入 ban 集合（含自己补自己的情形）
         this._layoffBannedIds.add(data.targetPlayerId);
         // removeCard 之前拿到那张牌的实际世界坐标作为飞行起点
@@ -859,17 +867,17 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
 
         // 自己选择后播放对应动画（2=发起挑战 / 3=接受 / 4=拒绝）
         if (this.fightPanel) {
-            const selfBp = data.basePlayers?.find(bp => bp.playerId === this._perspectiveId);
+            const selfBp = data.basePlayers?.find(bp => bp.playerId === this._selfUserId);
             if (selfBp) {
                 switch (selfBp.changeStatus) {
                     case 2:
                         // 自己是挑战发起方：ChallengeBroadcast 被 model 拦截不透传，
                         // 在此补齐面板激活与挑战动画
                         this.fightPanel.reset();
-                        this.fightPanel.onPlayerChallenge(this._perspectiveId);
+                        this.fightPanel.onPlayerChallenge(this._selfUserId);
                         break;
-                    case 3: this.fightPanel.onPlayerAccept(this._perspectiveId); break;
-                    case 4: this.fightPanel.onPlayerFold(this._perspectiveId);   break;
+                    case 3: this.fightPanel.onPlayerAccept(this._selfUserId); break;
+                    case 4: this.fightPanel.onPlayerFold(this._selfUserId);   break;
                 }
             }
         }
@@ -913,7 +921,6 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         this.handCardPanel?.setDragEnabled(false);
         this._clearGameplayState();
         if (data.players) {
-            this._players = data.players;
             this._refreshAllSeats();
         }
         /** 胜利类型  1 tongits 2 挑战 3 时间结束比大小: */
@@ -1022,7 +1029,6 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     }
 
     protected onRoomReset(data: RoomResetBroadcast): void {
-        if (data.players) this._players = data.players;
         this._resetToPreGame();
         const self = this._players.find(p => p.playerInfo?.userId === this._perspectiveId) ?? null;
         this.waitingPanel?.refresh(self, this._isLocalOwner);
@@ -1032,8 +1038,6 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     private _resetToPreGame(): void {
         this.handCardPanel?.setDragEnabled(true);
         this._isDealing = false;
-        this._isGameStarted = false;
-        this._actionPlayerId = 0;
         this._handButtons = null;
         this.seatManager?.resetZoneMap();
         this._layoffBannedIds.clear();
@@ -1146,6 +1150,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     }
 
     private _onDiscardAreaClick(): void {
+        if (this.tongitsModel?.isSpectator()) return;
         if (!this._canTake) return;
         const cards = this.handCardPanel?.getSelectedTakeCards() ?? [];
         if (cards.length === 0) return;
@@ -1243,7 +1248,8 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     }
 
     private _onDeckDrawClick(): void {
-        // 额外保护：只在轮到自己且 status===2(select) 时允许抽牌
+        // 额外保护：只在轮到自己且 status===2(select) 时允许抽牌，观战者不可操作
+        if (this.tongitsModel?.isSpectator()) return;
         if (this._actionPlayerId !== this._perspectiveId) return;
         const self = this._players.find(p => p.playerInfo?.userId === this._perspectiveId) ?? null;
         if ((self?.status ?? 0) !== 2) return;
@@ -1277,17 +1283,13 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         this.dispatch(TongitsEvents.CMD_REFRESH_ROOM);
     }
 
-    private _syncPlayerField(playerId: number, patch: Partial<TongitsPlayerInfo>): void {
-        const idx = this._players.findIndex(p => p.playerInfo?.userId === playerId);
-        if (idx < 0) return;
-        this._players = [
-            ...this._players.slice(0, idx),
-            { ...this._players[idx], ...patch },
-            ...this._players.slice(idx + 1),
-        ];
+    private _syncPlayerField(playerId: number, _patch: Partial<TongitsPlayerInfo>): void {
+        // model 在 notify 前已通过 updatePlayerById 原地更新，直接从 getter 读取最新数据
+        const player = this._players.find(p => p.playerInfo?.userId === playerId);
+        if (!player) return;
         this.seatManager?.getSeatByUserId(playerId)?.setData(
-            this._players[idx],
-            this._players[idx].playerInfo?.userId === this._perspectiveId,
+            player,
+            player.playerInfo?.userId === this._perspectiveId,
         );
         // setData 内部 _refresh() 会用 _data.cardPoint（服务端字段，游戏中始终为 0）覆盖 pointLabel。
         // 若更新的是视角玩家且游戏进行中，立即用本地手牌计算值覆盖，保持点数显示准确。
