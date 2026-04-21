@@ -483,13 +483,44 @@ export abstract class IConfigService extends ServiceBase {
 
 export type ToastType = 'info' | 'success' | 'error' | 'warn';
 
+/** Toast 显示位置。 */
+export type ToastPosition = 'top' | 'center' | 'bottom';
+
+/** 单次 show 调用的可选参数。 */
+export interface ToastShowOptions {
+    /** 显示时长（ms）；省略时按类型使用默认值（info/success: 2000，warn: 2500，error: 3000）。 */
+    duration?: number;
+    /** 显示位置，默认 'top'（居中偏上）。 */
+    position?: ToastPosition;
+    /** 图标 SpriteFrame；省略或 null 时不显示图标。 */
+    icon?: import('cc').SpriteFrame;
+}
+
+/** Toast 全局配置，通过 configure() 设置。 */
+export interface ToastConfig {
+    /** 最大并发显示数量；超出后立即加速淡出最旧的一条，默认 5。 */
+    maxCount?: number;
+    /**
+     * 各位置的基准 Y 坐标（相对于 TOP 层容器中心，单位 px）。
+     * 默认：{ top: 380, center: 0, bottom: -380 }。
+     */
+    positionY?: Partial<Record<ToastPosition, number>>;
+}
+
 export abstract class IToastService extends ServiceBase {
-    /** 普通提示（蓝灰色背景）。 */
-    abstract show(msg: string, duration?: number): void;
-    /** 成功提示（绿色背景）。 */
-    abstract success(msg: string, duration?: number): void;
-    /** 错误提示（红色背景，默认 3s）。 */
-    abstract error(msg: string, duration?: number): void;
-    /** 警告提示（橙色背景）。 */
-    abstract warn(msg: string, duration?: number): void;
+    /**
+     * 设置 Toast 使用的 Prefab（首次 show 前调用）。
+     * Prefab 根节点需挂载继承自 ToastItem 的组件。
+     */
+    abstract setPrefab(prefab: import('cc').Prefab): void;
+    /** 全局配置（可随时调用，增量合并）。 */
+    abstract configure(config: ToastConfig): void;
+    /** 普通提示。 */
+    abstract show(msg: string, options?: ToastShowOptions): void;
+    /** 成功提示。 */
+    abstract success(msg: string, options?: ToastShowOptions): void;
+    /** 错误提示（默认 3s）。 */
+    abstract error(msg: string, options?: ToastShowOptions): void;
+    /** 警告提示。 */
+    abstract warn(msg: string, options?: ToastShowOptions): void;
 }
