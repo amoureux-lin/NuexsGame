@@ -1088,8 +1088,11 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         if (this.waitingPanel) this.waitingPanel.node.active = !this._isGameStarted;
     }
 
-    protected onResultDetails(_data: GameResultDetailsRes): void {
-        // 留给结算详情面板处理
+    protected onResultDetails(data: GameResultDetailsRes): void {
+        // 用服务端最新数据刷新详情面板（与 onGameResult 缓存的数据一致，但以服务端为准）
+        if (data.playerResults?.length) {
+            this.tongitsResultPanel?.showDetails(data.playerResults);
+        }
     }
 
     // ── View → Controller 命令（由 UI 事件调用） ─────────

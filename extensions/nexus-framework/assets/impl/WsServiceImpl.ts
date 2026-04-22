@@ -27,7 +27,7 @@ export class WsServiceImpl extends ServiceBase {
 
     private _config: WsConfig = {
         autoReconnect: 3,
-        reconnectDelayMs: 1000,
+        reconnectDelayMs: 2000,
         requestTimeoutMs: 5000,
         heartbeatIntervalMs: 5000,
         receiveTimeoutMs: 5000,
@@ -48,6 +48,20 @@ export class WsServiceImpl extends ServiceBase {
     private _connectingPromise: Promise<void> | null = null;
     /** 切后台时间戳，用于判断后台时长 */
     private _backgroundAt = 0;
+
+    // ── 重连质量追踪 ──────────────────────────────────────
+    /** 当次连接建立的时间戳（ms），断开时用来判断是否"快速断连" */
+    private _connectedAt = 0;
+    /**
+     * 连续"快速断连"次数。
+     * 连接建立后存活时间 < _stableMs 则视为快速断连 +1；
+     * 存活时间 >= _stableMs 则重置为 0（认为本次连接质量正常）。
+     */
+    private _quickDisconnects = 0;
+    /** 存活超过此时长（ms）才算"稳定连接"，低于此值视为快速断连 */
+    private readonly _stableMs = 5000;
+    /** 连续快速断连次数上限，超过后停止重连并触发 onUnstable */
+    private readonly _maxQuickDisconnects = 10;
 
     async onBoot(_config: NexusConfig): Promise<void> {
         Nexus.on(NexusEvents.APP_HIDE, this._onAppHide, this);
@@ -95,7 +109,8 @@ export class WsServiceImpl extends ServiceBase {
             this._ws.onopen = () => {
                 this._connectingPromise = null;
                 this._connected = true;
-                this._autoReconnect = this._autoReconnectInitial; // 重置重连次数
+                this._connectedAt = Date.now();
+                // 注意：_quickDisconnects 不在此处重置，需等连接稳定（onclose 中存活 >= _stableMs 时才重置）
                 this._delegate?.onConnected?.();
                 // 统一抛出框架事件，供 Loading/业务按”已建立连接”推进流程
                 Nexus.emit(NexusEvents.NET_CONNECTED);
@@ -114,10 +129,32 @@ export class WsServiceImpl extends ServiceBase {
             this._ws.onclose = () => {
                 this._connectingPromise = null;
                 console.log('【ws】onclose');
+
+                // 计算本次连接存活时长，判断是否为"快速断连"
+                const connectedDuration = this._connectedAt > 0 ? Date.now() - this._connectedAt : 0;
+                this._connectedAt = 0;
+                if (connectedDuration > 0 && connectedDuration < this._stableMs) {
+                    this._quickDisconnects++;
+                    console.warn(`[Nexus] WS quick disconnect #${this._quickDisconnects} (lived ${connectedDuration}ms)`);
+                } else if (connectedDuration >= this._stableMs) {
+                    // 连接质量正常，重置计数
+                    this._quickDisconnects = 0;
+                }
+
                 this._connected = false;
                 this.clearTimers();
                 this.cancelAllWsRequests('WS disconnected');
                 Nexus.emit(NexusEvents.NET_DISCONNECTED);
+
+                // 熔断检测：连续快速断连次数超限，停止重连
+                if (this._quickDisconnects >= this._maxQuickDisconnects) {
+                    console.error(`[Nexus] WS circuit breaker triggered after ${this._quickDisconnects} quick disconnects, stop reconnecting`);
+                    this._quickDisconnects = 0;
+                    Nexus.emit(NexusEvents.NET_UNSTABLE);
+                    this._delegate?.onDisconnected?.();
+                    return;
+                }
+
                 this.tryReconnect();
             };
 
@@ -131,21 +168,37 @@ export class WsServiceImpl extends ServiceBase {
         return this._connectingPromise;
     }
 
+    /**
+     * 动态设置重连次数上限。
+     *   n > 0  — 最多重连 n 次（连上后重置）
+     *   n = 0  — 禁止重连
+     *   n = -1 — 无限重连（游戏中推荐）
+     */
+    setReconnectLimit(n: number=-1): void {
+        this._autoReconnectInitial = n;
+        this._autoReconnect = n;
+    }
+
     private tryReconnect(): void {
         const mode = this._autoReconnect;
+        // 0 = 已禁止重连
         if (mode === 0) {
             this._delegate?.onDisconnected?.();
             return;
         }
-        this._delegate?.onReconnecting?.(mode);
+        // -1 = 无限重连，不显示剩余次数
+        this._delegate?.onReconnecting?.(mode > 0 ? mode : -1);
+
         const delay = this._config.reconnectDelayMs ?? 2000;
+        console.log(`[Nexus] WS reconnect in ${delay}ms`);
+
         this._reconnectTimer = setTimeout(() => {
-            if (this._lastUrl) {
-                if (this._autoReconnect > 0) this._autoReconnect--;
-                this.connectWs(this._lastUrl).catch((err) => {
-                    console.warn('[Nexus] WS reconnect failed', err);
-                });
-            }
+            if (!this._lastUrl) return;
+            // 有限次数时才递减；-1 永不递减
+            if (this._autoReconnect > 0) this._autoReconnect--;
+            this.connectWs(this._lastUrl).catch((err) => {
+                console.warn('[Nexus] WS reconnect failed', err);
+            });
         }, delay);
     }
 
@@ -461,9 +514,11 @@ export class WsServiceImpl extends ServiceBase {
             const hb = this._delegate?.heartbeat();
             if (hb) this._ws.send(hb);
         } else {
-            // 连接已断 → 触发重连
+            // 连接已断 → 触发重连（-1 无限模式保持不变；有限模式重置为初始值）
             this._connected = false;
-            this._autoReconnect = this._autoReconnectInitial;
+            if (this._autoReconnectInitial !== -1) {
+                this._autoReconnect = this._autoReconnectInitial;
+            }
             this.tryReconnect();
         }
     }

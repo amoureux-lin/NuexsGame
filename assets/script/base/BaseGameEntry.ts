@@ -66,6 +66,7 @@ export abstract class BaseGameEntry extends NexusBaseEntry {
         this._enteredRoom = true;
         Nexus.on(NexusEvents.NET_CONNECTED, this._onReconnected, this);
         Nexus.on<number>(NexusEvents.APP_SHOW, this._onAppForeground, this);
+        Nexus.on(NexusEvents.NET_UNSTABLE, this._onNetUnstable, this);
     }
 
     /**
@@ -127,6 +128,7 @@ export abstract class BaseGameEntry extends NexusBaseEntry {
         this._enteredRoom = false;
         Nexus.off(NexusEvents.NET_CONNECTED, this._onReconnected, this);
         Nexus.off<number>(NexusEvents.APP_SHOW, this._onAppForeground, this);
+        Nexus.off(NexusEvents.NET_UNSTABLE, this._onNetUnstable, this);
         super.onDestroy();
     }
 
@@ -165,7 +167,24 @@ export abstract class BaseGameEntry extends NexusBaseEntry {
      */
     protected abstract onGameExit(): Promise<void>;
 
-    // ── 重连同步 ───────────────────────────────────────────────
+    // ── 网络事件 ───────────────────────────────────────────────
+
+    /**
+     * 熔断回调：60s 内频繁断连超过阈值时触发，此时重连已停止。
+     * 转发给子类的 onNetUnstable() 处理（弹窗提示、退房等）。
+     */
+    private _onNetUnstable(): void {
+        console.warn('[BaseGameEntry] NET_UNSTABLE triggered');
+        this.onNetUnstable();
+    }
+
+    /**
+     * 子类覆写：网络频繁断连熔断后的处理。
+     * 默认空实现，子类可弹"网络不稳定"弹窗或强制退回大厅。
+     */
+    protected onNetUnstable(): void {
+        //Nexus.ui.show('NetworkUnstableDialog');
+    }
 
     /**
      * WS 重连成功回调 → 触发 resync。

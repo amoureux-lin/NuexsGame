@@ -3,6 +3,7 @@ import type { PlayerResult } from '../../proto/tongits';
 import type { SeatSnapshot } from '../player/PlayerSeatManager';
 import { PlayerResultItem } from './PlayerResultItem';
 import { ResultPlayerCard } from './ResultPlayerCard';
+import { ResultDetailPanel } from './ResultDetailPanel';
 
 const { ccclass, property } = _decorator;
 
@@ -76,6 +77,9 @@ export class TongitsResultPanel extends Component {
     @property({ type: Button, tooltip: '详情按钮（details_btn.png）' })
     detailsBtn: Button = null!;
 
+    @property({ type: ResultDetailPanel, tooltip: '结算详情子面板（默认 active=false）' })
+    detailPanel: ResultDetailPanel | null = null;
+
     @property({ type: Sprite, tooltip: '倒计时filled图'})
     countdownSprite: Sprite | null = null;
 
@@ -88,6 +92,9 @@ export class TongitsResultPanel extends Component {
     private _snapshotUserIds: number[] = [];
     /** 缓存自己输赢，供 _onContinue 播放对应 out 动画 */
     private _selfIsWinner: boolean = false;
+    /** 缓存本局结算数据，供详情面板使用 */
+    private _cachedResults: PlayerResult[] = [];
+    private _cachedWinnerId: number = 0;
 
     /** 倒计时结束的 Unix 时间戳（ms） */
     private _endTimestamp: number = 0;
@@ -109,6 +116,9 @@ export class TongitsResultPanel extends Component {
     protected onLoad(): void {
         this.continueBtn?.node.on(Button.EventType.CLICK, this._onContinue, this);
         this.detailsBtn?.node.on(Button.EventType.CLICK, this._onDetails, this);
+        if (this.detailPanel) {
+            this.detailPanel.onClose = () => { /* 返回主结算视图，无需额外操作 */ };
+        }
     }
 
     protected onDestroy(): void {
@@ -152,6 +162,10 @@ export class TongitsResultPanel extends Component {
         endTimestamp: number = 0,
     ): void {
         this.node.active = true;
+
+        // 缓存本局数据，供详情面板使用
+        this._cachedResults   = results;
+        this._cachedWinnerId  = winnerId;
 
         // 倒计时
         this._startCountdown(endTimestamp);
@@ -227,6 +241,7 @@ export class TongitsResultPanel extends Component {
      * 立即隐藏面板（不触发 onHide，不播放出场动画，供 _resetToPreGame 调用）。
      */
     hide(): void {
+        this.detailPanel?.hide();
         if (this.bgAnimation) {
             this.bgAnimation.setCompleteListener(null);
             this.bgAnimation.clearTracks();
@@ -253,6 +268,15 @@ export class TongitsResultPanel extends Component {
     showPlayerMessage(userId: number, text: string): void {
         const idx = this._snapshotUserIds.indexOf(userId);
         if (idx >= 0) this.playerItems[idx]?.showMessage(text);
+    }
+
+    /**
+     * 用服务端返回的最新 playerResults 刷新详情面板（CMD_RESULT_DETAILS 响应到达时调用）。
+     * 若详情面板未打开则只更新缓存，不强制显示。
+     */
+    showDetails(results: PlayerResult[]): void {
+        this._cachedResults = results;
+        this.detailPanel?.refresh(results, this._cachedWinnerId);
     }
 
     // ── 私有：动画 ───────────────────────────────────────
@@ -364,6 +388,11 @@ export class TongitsResultPanel extends Component {
     }
 
     private _onDetails(): void {
+        // 立即用已缓存数据展示明细（无需等待服务端响应）
+        if (this.detailPanel && this._cachedResults.length) {
+            this.detailPanel.show(this._cachedResults, this._cachedWinnerId);
+        }
+        // 同时通知外部发送 CMD_RESULT_DETAILS，服务端响应后可通过 showDetails() 刷新
         this.onDetails?.();
     }
 
