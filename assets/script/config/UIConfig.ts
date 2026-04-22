@@ -1,5 +1,10 @@
 import {UILayer, UIPanelOptions} from 'db://nexus-framework/index';
 
+/** 服务层使用的 Prefab 路径（需手动 load 后传给对应服务） */
+export const ServicePrefabs = {
+    NOTIFY: 'prefabs/notify',
+} as const;
+
 /** 公共 UI 面板 ID：仅公共弹窗，如 CommonUI.ALERT */
 export const CommonUI = {
     MASK:"mask",

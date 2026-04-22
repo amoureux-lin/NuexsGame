@@ -7,6 +7,7 @@ export enum UILayer {
     PANEL = 200,
     POPUP = 300,
     TIPS = 400,
+    TOAST = 450,
     TOP = 500,
 }
 
