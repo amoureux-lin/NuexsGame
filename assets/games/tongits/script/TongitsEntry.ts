@@ -1,8 +1,8 @@
 import { _decorator, AudioClip, Font, SpriteFrame } from 'cc';
 import { Nexus } from 'db://nexus-framework/index';
-import { BaseGameEntry, PROGRESS_COMMON_END, PROGRESS_BUNDLE_END } from 'db://assets/script/base/BaseGameEntry';
+import { BaseGameEntry } from 'db://assets/script/base/BaseGameEntry';
 import { BaseGameEvents } from 'db://assets/script/base/BaseGameModel';
-import {TongitsUI, TongitsUIPanelConfig} from './config/TongitsUIConfig';
+import { TongitsUI, TongitsUIPanelConfig } from './config/TongitsUIConfig';
 import { TongitsController } from './game/TongitsController';
 import { TongitsModel } from './game/TongitsModel';
 import { TONGITS_MSG_REGISTRY } from './proto/msg_registry_tongits';
@@ -31,14 +31,13 @@ export class TongitsEntry extends BaseGameEntry {
         const bundleName = 'tongits';
         const dirs = [
             { dir: 'res/audios', type: AudioClip },
-            { dir: 'res/font', type: Font },
-            { dir: 'res/image', type: SpriteFrame },
+            { dir: 'res/font',   type: Font },
+            { dir: 'res/image',  type: SpriteFrame },
         ];
         for (let i = 0; i < dirs.length; i++) {
-            const item = dirs[i];
-            const segStart = PROGRESS_COMMON_END + (i / dirs.length) * (PROGRESS_BUNDLE_END - PROGRESS_COMMON_END);
-            const segEnd = PROGRESS_COMMON_END + ((i + 1) / dirs.length) * (PROGRESS_BUNDLE_END - PROGRESS_COMMON_END);
-            await Nexus.asset.loadDir(bundleName, item.dir, item.type as any, (finished, total) => {
+            const segStart = (i / dirs.length) * 100;
+            const segEnd   = ((i + 1) / dirs.length) * 100;
+            await Nexus.asset.loadDir(bundleName, dirs[i].dir, dirs[i].type as any, (finished, total) => {
                 const ratio = total > 0 ? finished / total : 1;
                 this.setProgress(segStart + ratio * (segEnd - segStart), '加载游戏资源...');
             });
@@ -48,17 +47,12 @@ export class TongitsEntry extends BaseGameEntry {
     protected async joinRoom(params?: Record<string, unknown>): Promise<void> {
         const roomId = Number(params?.room_id ?? Nexus.data.get<number>('room_id') ?? 0);
         Nexus.data.set('room_id', roomId);
-        try {
-            const res = await Nexus.net.wsRequest<JoinRoomRes>(
-                MessageType.TONGITS_JOIN_ROOM_REQ,
-                { roomId },
-            );
-            console.log('joinRoomRes:', res);
-            this._model!.joinRoom(res);
-        } catch (err) {
-            console.error('[TongitsEntry] joinRoom failed:', err);
-            throw err;
-        }
+        const res = await Nexus.net.wsRequest<JoinRoomRes>(
+            MessageType.TONGITS_JOIN_ROOM_REQ,
+            { roomId },
+        );
+        console.log('joinRoomRes:', res);
+        this._model!.joinRoom(res);
     }
 
     protected async mockJoinRoom(): Promise<void> {
@@ -99,10 +93,10 @@ export class TongitsEntry extends BaseGameEntry {
         Nexus.emit(BaseGameEvents.MODEL_READY, this._model);
     }
 
-    /**
-     * 覆写 resyncRoom：在拉取快照前冻结广播消息，防止后台积压的旧消息污染同步结果。
-     * 快照 apply 完成（joinRoom 返回）后解冻，新消息正常处理。
-     */
+    protected override async onLoadingComplete(): Promise<void> {
+        await Nexus.audio.playMusic('res/audios/Tongits_bg', true);
+    }
+
     protected override async resyncRoom(): Promise<void> {
         this._model?.freeze();
         try {
@@ -110,10 +104,6 @@ export class TongitsEntry extends BaseGameEntry {
         } finally {
             this._model?.unfreeze();
         }
-    }
-
-    async onComplete(){
-        await Nexus.audio.playMusic('res/audios/Tongits_bg', true);
     }
 
     protected async onGameExit(): Promise<void> {

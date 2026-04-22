@@ -25,17 +25,17 @@
     "_active": true,
     "_components": [
       {
-        "__id__": 52
-      },
-      {
         "__id__": 54
       },
       {
         "__id__": 56
+      },
+      {
+        "__id__": 58
       }
     ],
     "_prefab": {
-      "__id__": 58
+      "__id__": 60
     },
     "_lpos": {
       "__type__": "cc.Vec3",
@@ -101,10 +101,13 @@
       },
       {
         "__id__": 49
+      },
+      {
+        "__id__": 51
       }
     ],
     "_prefab": {
-      "__id__": 51
+      "__id__": 53
     },
     "_lpos": {
       "__type__": "cc.Vec3",
@@ -280,7 +283,7 @@
       "__id__": 2
     },
     "_children": [],
-    "_active": false,
+    "_active": true,
     "_components": [
       {
         "__id__": 10
@@ -1253,6 +1256,34 @@
     "fileId": "33R0LPOxFOAq+J8GXQlvCw"
   },
   {
+    "__type__": "fe3c5KUvtRFM7mVk9UH5c7B",
+    "_name": "",
+    "_objFlags": 0,
+    "__editorExtras__": {},
+    "node": {
+      "__id__": 2
+    },
+    "_enabled": true,
+    "__prefab": {
+      "__id__": 52
+    },
+    "progressBar": {
+      "__id__": 32
+    },
+    "tipLabel": {
+      "__id__": 38
+    },
+    "percentLabel": {
+      "__id__": 44
+    },
+    "progressSpeed": 3,
+    "_id": ""
+  },
+  {
+    "__type__": "cc.CompPrefabInfo",
+    "fileId": "11j3DbHzVNJbaVHbfvxufY"
+  },
+  {
     "__type__": "cc.PrefabInfo",
     "root": {
       "__id__": 1
@@ -1275,7 +1306,7 @@
     },
     "_enabled": true,
     "__prefab": {
-      "__id__": 53
+      "__id__": 55
     },
     "_contentSize": {
       "__type__": "cc.Size",
@@ -1303,7 +1334,7 @@
     },
     "_enabled": true,
     "__prefab": {
-      "__id__": 55
+      "__id__": 57
     },
     "_alignFlags": 45,
     "_target": null,
@@ -1339,21 +1370,8 @@
     },
     "_enabled": true,
     "__prefab": {
-      "__id__": 57
+      "__id__": 59
     },
-    "loadingRoot": {
-      "__id__": 2
-    },
-    "progressBar": {
-      "__id__": 32
-    },
-    "progressLabel": {
-      "__id__": 38
-    },
-    "progressNumber": {
-      "__id__": 44
-    },
-    "progressSpeed": 3,
     "_id": ""
   },
   {

@@ -1,121 +1,75 @@
-import { _decorator, AudioClip, Font, Node, Prefab, ProgressBar, Label, sp, SpriteFrame } from 'cc';
+import { _decorator, AudioClip, Font, Prefab, sp, SpriteFrame } from 'cc';
 import { Nexus, NexusBaseEntry, NexusEvents } from 'db://nexus-framework/index';
+import { ConnectManager } from 'db://assets/script/net/ConnectManager';
+import { ServicePrefabs } from 'db://assets/script/config/UIConfig';
+import { LoadingEvents, LoadingStage } from './LoadingEvents';
+import { BaseLoadingView } from './BaseLoadingView';
 
-const { ccclass, property } = _decorator;
+const { ccclass } = _decorator;
 
-/** 进度分段常量 */
-export const PROGRESS_COMMON_END = 30;
-export const PROGRESS_BUNDLE_END = 60;
-export const PROGRESS_CONNECT_END = 80;
-export const PROGRESS_JOIN_END = 100;
-/** 显示进度追赶到该比例（0~1）后再切场景，避免进度条还没满就跳转 */
-const DISPLAY_PROGRESS_COMPLETE = 0.998;
-
-/** common 资源按目录加载的配置 */
+/** common bundle 按目录加载的配置项 */
 export interface CommonLoadDirItem {
     dir: string;
     type?: any;
 }
 
+/** VIEW_DONE 超时兜底时长（ms）：LoadingView 缺失或动画异常时防止 Entry 永久挂起 */
+const VIEW_DONE_TIMEOUT_MS = 5000;
+
+/** joinRoom 最大重试次数（首次 + N 次重试） */
+const JOIN_ROOM_MAX_RETRY = 2;
+
 /**
  * 子游戏 Entry 基类（模板方法模式）。
  *
- * 通用流程：
- *   onEnter → onGameInit（子类注册 proto/面板、创建 MVC）
- *           → loadResources（公共资源 → bundle 资源 → 等 WS 连接 → joinRoom）
- *           → 进度条跑满 → runScene → 隐藏 Loading UI
+ * 与 Loading UI 完全解耦：进度通过 LoadingEvents.PROGRESS 事件广播，
+ * BaseLoadingView（挂在同一 Prefab 的 UI 子节点上）负责订阅并渲染进度条。
  *
- * 子类只需覆写差异部分：onGameInit / loadBundleResources / joinRoom / onGameExit。
+ * 加载流程：
+ *   onEnter
+ *     → onGameInit()            子类：注册 proto/面板、创建 MVC
+ *     → loadCommonResources()   公共资源 + toast + 配置（COMMON 阶段 0-30%）
+ *     → loadBundleResources()   子包资源（BUNDLE 阶段 30-70%）
+ *     → Nexus.bundle.runScene() 场景切换
+ *     → onSceneReady()          子类：向 View 注入 model 引用
+ *     → waitWsConnected()       等待 WS（CONNECTING 阶段 70-85%）
+ *     → joinRoomWithRetry()     进房（JOINING 阶段 85-100%）
+ *     → onLoadingComplete()     子类：播放音乐等收尾
+ *     → waitViewDone()          等 LoadingView 动画跑满（5s 超时兜底）
+ *     → 隐藏 Entry 节点
+ *   首次进房完成后监听 重连/前台恢复/网络熔断
+ *
+ * 子类只需覆写：onGameInit / loadBundleResources / joinRoom / onGameExit。
+ * 可选覆写：mockJoinRoom / onSceneReady / onLoadingComplete / resyncRoom / onNetUnstable。
  */
 @ccclass('BaseGameEntry')
 export abstract class BaseGameEntry extends NexusBaseEntry {
 
-    @property({ type: Node, tooltip: 'Loading 根节点，跳转场景后销毁' })
-    loadingRoot: Node | null = null;
+    // ── 内部状态 ──────────────────────────────────────────────
 
-    @property({ type: ProgressBar, tooltip: '进度条' })
-    progressBar: ProgressBar | null = null;
-
-    @property({ type: Label, tooltip: '进度文字' })
-    progressLabel: Label | null = null;
-
-    @property({ type: Label, tooltip: '进度数字' })
-    progressNumber: Label | null = null;
-
-    @property({ tooltip: '进度条动画速度，越大越快' })
-    progressSpeed = 3;
-
-    private _targetPercent = 0;
-    private _displayProgress = 0;
-    private _waitDisplayResolve: (() => void) | null = null;
+    /** 当前正在进行的加载阶段，供 setProgress 自动绑定 */
+    private _currentStage: LoadingStage = LoadingStage.COMMON_RESOURCES;
     /** 首次进房是否已完成（区分首次进房和重连） */
     private _enteredRoom = false;
-    /** 是否正在 resync 中（防止并发） */
+    /** 是否正在 resync 中（并发锁） */
     private _resyncing = false;
+    /** Loading UI 组件直接引用，避免经事件系统造成 @ccclass 原型链断裂 */
+    private _loadingView: BaseLoadingView | null = null;
 
-    // ── 模板流程 ─────────────────────────────────────────────
-
-    /** 后台时长超过此值才触发 resync（ms） */
+    /** 回到前台触发 resync 的最小后台时长（ms） */
     protected static readonly BACKGROUND_REFRESH_THRESHOLD = 5000;
+
+    // ── 主流程 ────────────────────────────────────────────────
 
     async onEnter(params?: Record<string, unknown>): Promise<void> {
         await super.onEnter(params);
+        this._loadingView = this.getComponentInChildren(BaseLoadingView);
         await this.onGameInit(params);
         await this.loadResources(params);
-        // 首次进房完成，开始监听重连与前台恢复
         this._enteredRoom = true;
         Nexus.on(NexusEvents.NET_CONNECTED, this._onReconnected, this);
         Nexus.on<number>(NexusEvents.APP_SHOW, this._onAppForeground, this);
         Nexus.on(NexusEvents.NET_UNSTABLE, this._onNetUnstable, this);
-    }
-
-    /**
-     * 加载资源完整流程：
-     * 1. 加载公共资源 (0-30%)
-     * 2. 加载游戏 bundle 资源 (30-60%)  ← 子类覆写
-     * 3. 等待 WS 连接 (60-80%)
-     * 4. 进房请求 (80-100%)             ← 子类覆写
-     * 5. 进度条跑满 → runScene → 清理 Loading UI
-     */
-    protected async loadResources(params?: Record<string, unknown>): Promise<void> {
-        // 1. 公共资源 0-30%
-        this.setProgress(0, '加载公共资源...');
-        await this.loadCommonResources();
-
-        // 2. Bundle 资源 30-60%
-        this.setProgress(PROGRESS_COMMON_END, '加载游戏资源...');
-        await this.loadBundleResources(params);
-        this.setProgress(PROGRESS_BUNDLE_END, '连接服务器...');
-
-        // 3. 提前打开场景（Loading UI 仍覆盖在上层）
-        //    此时 View 完成 onLoad → registerEvents，后续事件可正常接收
-        await Nexus.bundle.runScene();
-        // runScene 完成后框架会隐藏 Entry 节点（含 loadingRoot），重新激活保持进度条可见
-        this.node.active = true;
-        // 场景已就绪，通知子类向 View 注入 model 只读引用
-        this.onSceneReady();
-
-        const isMock = Nexus.data.get<boolean>('mock_mode') ?? false;
-
-        // 4. 等待 WS 连接 60-80%（mock 模式跳过）
-        if (!isMock) {
-            await this.waitWsConnected();
-        }
-        this.setProgress(PROGRESS_CONNECT_END, '加入房间...');
-
-        // 5. 进房 80-100%（mock 模式使用本地数据）
-        if (isMock) {
-            await this.mockJoinRoom(params);
-        } else {
-            await this.joinRoom(params);
-        }
-        this.setProgress(PROGRESS_JOIN_END, '进入游戏...');
-
-        // 6. 等进度条动画跑满 → 隐藏 Entry 节点 → 清理
-        await this.waitUntilDisplayComplete();
-        this.node.active = false;
-        this.loadingRoot?.destroy();
-        this.enabled = false;
     }
 
     async onExit(): Promise<void> {
@@ -124,7 +78,6 @@ export abstract class BaseGameEntry extends NexusBaseEntry {
     }
 
     protected onDestroy(): void {
-        this._waitDisplayResolve = null;
         this._enteredRoom = false;
         Nexus.off(NexusEvents.NET_CONNECTED, this._onReconnected, this);
         Nexus.off<number>(NexusEvents.APP_SHOW, this._onAppForeground, this);
@@ -132,81 +85,242 @@ export abstract class BaseGameEntry extends NexusBaseEntry {
         super.onDestroy();
     }
 
-    // ── 子类覆写 ─────────────────────────────────────────────
+    // ── 加载流程 ──────────────────────────────────────────────
+
+    private async loadResources(params?: Record<string, unknown>): Promise<void> {
+        const isMock = Nexus.data.get<boolean>('mock_mode') ?? false;
+
+        // 1. 公共资源
+        this._setStage(LoadingStage.COMMON_RESOURCES, 0, '加载公共资源...');
+        await this.loadCommonResources();
+
+        // 2. 子包资源
+        this._setStage(LoadingStage.BUNDLE_RESOURCES, 0, '加载游戏资源...');
+        await this.loadBundleResources(params);
+
+        // 3. 提前切场景，让 View 完成 onLoad + registerEvents
+        //    Entry 节点在 runScene 后被框架隐藏，重新激活以保持 LoadingView 可见
+        await Nexus.bundle.runScene();
+        this.node.active = true;
+        this.onSceneReady();
+
+        // 4. 等待 WS 连接
+        this._setStage(LoadingStage.CONNECTING, 0, '连接服务器...');
+        if (!isMock) {
+            ConnectManager.init();
+            await this.waitWsConnected();
+        }
+
+        // 5. 进房
+        this._setStage(LoadingStage.JOINING, 0, '加入房间...');
+        if (isMock) {
+            await this.mockJoinRoom(params);
+        } else {
+            await this.joinRoomWithRetry(params);
+        }
+
+        // 6. 子类收尾（播音乐等）
+        await this.onLoadingComplete();
+
+        // 7. 通知 LoadingView 已到终点，等其动画跑满后再隐藏
+        this._setStage(LoadingStage.DONE, 100, '进入游戏...');
+        await this.waitViewDone();
+
+        this.node.active = false;
+        this.enabled = false;
+    }
+
+    // ── 进度通知 ──────────────────────────────────────────────
 
     /**
-     * 游戏初始化：注册 proto、注册 UI 面板、创建 MVC 等。
+     * 在 loadBundleResources / joinRoom 内调用，更新当前阶段内的进度（0-100）。
+     * 不需要知道全局进度区间，全局映射由 BaseLoadingView.stageRanges 决定。
+     */
+    protected setProgress(stagePercent: number, tip?: string): void {
+        this._loadingView?.handleProgress({
+            stage: this._currentStage,
+            percent: Math.min(100, Math.max(0, stagePercent)),
+            tip,
+        });
+    }
+
+    private _setStage(stage: LoadingStage, percent: number, tip?: string): void {
+        this._currentStage = stage;
+        this.setProgress(percent, tip);
+    }
+
+    // ── 等待 ViewDone ─────────────────────────────────────────
+
+    private waitViewDone(): Promise<void> {
+        return new Promise<void>((resolve) => {
+            const timer = setTimeout(() => {
+                Nexus.off(LoadingEvents.VIEW_DONE, onDone, this);
+                console.warn('[BaseGameEntry] waitViewDone timeout, proceeding without animation');
+                resolve();
+            }, VIEW_DONE_TIMEOUT_MS);
+
+            const onDone = () => {
+                clearTimeout(timer);
+                Nexus.off(LoadingEvents.VIEW_DONE, onDone, this);
+                resolve();
+            };
+            Nexus.on(LoadingEvents.VIEW_DONE, onDone, this);
+        });
+    }
+
+    // ── 等待 WS 连接 ──────────────────────────────────────────
+
+    private waitWsConnected(): Promise<void> {
+        if (Nexus.net.isConnected()) return Promise.resolve();
+        return new Promise<void>((resolve) => {
+            const onConnected = () => {
+                Nexus.off(NexusEvents.NET_CONNECTED, onConnected, this);
+                resolve();
+            };
+            Nexus.on(NexusEvents.NET_CONNECTED, onConnected, this);
+        });
+    }
+
+    // ── joinRoom 重试 ─────────────────────────────────────────
+
+    private async joinRoomWithRetry(params?: Record<string, unknown>): Promise<void> {
+        let lastErr: unknown;
+        for (let attempt = 0; attempt <= JOIN_ROOM_MAX_RETRY; attempt++) {
+            try {
+                await this.joinRoom(params);
+                return;
+            } catch (err) {
+                lastErr = err;
+                console.warn(`[BaseGameEntry] joinRoom failed (attempt ${attempt + 1}/${JOIN_ROOM_MAX_RETRY + 1})`, err);
+                if (attempt < JOIN_ROOM_MAX_RETRY) {
+                    await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+                }
+            }
+        }
+        throw lastErr;
+    }
+
+    // ── 公共资源加载 ──────────────────────────────────────────
+
+    /**
+     * 返回 common bundle 需要按目录加载的资源列表。
+     * 子类可覆写以增减目录。
+     */
+    protected getCommonPreloadDirs(): CommonLoadDirItem[] {
+        return [
+            { dir: 'prefabs',  type: Prefab },
+            { dir: 'emojis',   type: sp.SkeletonData },
+            { dir: 'fonts',    type: Font },
+            { dir: 'audios',   type: AudioClip },
+            { dir: 'images',   type: SpriteFrame },
+        ];
+    }
+
+    private async loadCommonResources(): Promise<void> {
+        const dirs = this.getCommonPreloadDirs();
+        // 预留 10% 给配置文件加载；目录均分前 90%
+        const dirRatio = 0.9;
+        for (let i = 0; i < dirs.length; i++) {
+            const segStart = (i / dirs.length) * 100 * dirRatio;
+            const segEnd   = ((i + 1) / dirs.length) * 100 * dirRatio;
+            await Nexus.asset.loadDir('common', dirs[i].dir, dirs[i].type as any, (finished, total) => {
+                const ratio = total > 0 ? finished / total : 1;
+                this.setProgress(segStart + ratio * (segEnd - segStart), '加载公共资源...');
+            });
+        }
+        this.setProgress(90, '加载配置文件...');
+        await this.loadCommonConfigs();
+        this.setProgress(100);
+    }
+
+    /**
+     * 加载公共配置（toast prefab、错误码 CSV 等）。
+     * 子类可覆写以追加游戏内公共配置，调用 super 保留基类行为。
+     */
+    protected async loadCommonConfigs(): Promise<void> {
+        const notifyPrefab = await Nexus.asset.load('common', ServicePrefabs.NOTIFY, Prefab);
+        Nexus.toast.setPrefab(notifyPrefab);
+        try {
+            await Nexus.configs.loadCSV('errorCodes', 'common', 'configs/error_codes');
+        } catch (e) {
+            console.warn('[BaseGameEntry] 加载 error_codes.csv 失败：', e);
+        }
+    }
+
+    // ── 子类覆写（必须） ─────────────────────────────────────
+
+    /**
+     * 游戏初始化：注册 proto/面板、创建 MVC。
      * 在 loadResources 之前调用。
      */
     protected abstract onGameInit(params?: Record<string, unknown>): Promise<void>;
 
     /**
-     * 加载本游戏 bundle 资源（进度 30-60%）。
-     * 子类可在此 loadDir / preload，通过 setProgress 更新进度。
-     * 默认空实现，无额外资源时可不覆写。
+     * 游戏退出清理：销毁 MVC、反注册面板。
+     * 由 onExit 调用。
+     */
+    protected abstract onGameExit(): Promise<void>;
+
+    // ── 子类覆写（可选） ─────────────────────────────────────
+
+    /**
+     * 加载本游戏 bundle 资源（BUNDLE 阶段，0-100%）。
+     * 子类在此 loadDir，通过 setProgress(stagePercent) 更新进度。
+     * 默认空实现。
      */
     protected async loadBundleResources(_params?: Record<string, unknown>): Promise<void> {}
 
     /**
-     * 发送进房请求并等待响应（进度 80-100%）。
-     * 子类在此发 wsRequest、处理返回数据。
-     * 默认空实现，无进房需求时可不覆写。
+     * 发送进房请求并等待响应（JOINING 阶段）。
+     * 失败时抛异常，基类会自动重试 JOIN_ROOM_MAX_RETRY 次。
+     * 默认空实现。
      */
     protected async joinRoom(_params?: Record<string, unknown>): Promise<void> {}
 
     /**
-     * mock 模式下的进房（?mock=true）。
-     * 子类覆写以注入本地 mock 数据，跳过所有网络请求。
+     * mock 模式下的进房（?mock=true），跳过所有网络请求。
      * 默认空实现。
      */
     protected async mockJoinRoom(_params?: Record<string, unknown>): Promise<void> {}
 
     /**
-     * 游戏退出清理：销毁 MVC、反注册面板等。
-     * 由 onExit 调用。
+     * 进房完成、进度到 100% 之前的收尾钩子。
+     * 子类在此播放背景音乐等。
+     * 默认空实现。
      */
-    protected abstract onGameExit(): Promise<void>;
-
-    // ── 网络事件 ───────────────────────────────────────────────
+    protected async onLoadingComplete(): Promise<void> {}
 
     /**
-     * 熔断回调：60s 内频繁断连超过阈值时触发，此时重连已停止。
-     * 转发给子类的 onNetUnstable() 处理（弹窗提示、退房等）。
+     * runScene 完成后调用，View 的 onLoad/registerEvents 已执行。
+     * 子类在此向 View 注入 model 只读引用（emit MODEL_READY）。
+     * 默认空实现。
      */
+    protected onSceneReady(): void {}
+
+    // ── 网络事件 ──────────────────────────────────────────────
+
     private _onNetUnstable(): void {
         console.warn('[BaseGameEntry] NET_UNSTABLE triggered');
         this.onNetUnstable();
     }
 
     /**
-     * 子类覆写：网络频繁断连熔断后的处理。
-     * 默认空实现，子类可弹"网络不稳定"弹窗或强制退回大厅。
+     * 网络频繁断连熔断后的处理。
+     * 默认空实现，子类可弹"网络不稳定"提示或强制退回大厅。
      */
-    protected onNetUnstable(): void {
-        //Nexus.ui.show('NetworkUnstableDialog');
-    }
+    protected onNetUnstable(): void {}
 
-    /**
-     * WS 重连成功回调 → 触发 resync。
-     */
     private async _onReconnected(): Promise<void> {
         console.log('[BaseGameEntry] reconnected, triggering resync...');
         await this._triggerResync();
     }
 
-    /**
-     * 回到前台回调。后台时长超过阈值时触发 resync，防止积压的旧消息覆盖同步后状态。
-     */
     private async _onAppForeground(backgroundDuration: number): Promise<void> {
         if (backgroundDuration < (this.constructor as typeof BaseGameEntry).BACKGROUND_REFRESH_THRESHOLD) return;
         console.log(`[BaseGameEntry] foreground after ${backgroundDuration}ms, triggering resync...`);
         await this._triggerResync();
     }
 
-    /**
-     * 统一 resync 入口：并发锁保证同一时刻只有一个 resync 在执行，
-     * 防止断线重连与回前台同时触发导致双重同步。
-     */
     private async _triggerResync(): Promise<void> {
         if (!this._enteredRoom || this._resyncing) return;
         this._resyncing = true;
@@ -220,105 +334,11 @@ export abstract class BaseGameEntry extends NexusBaseEntry {
     }
 
     /**
-     * 子类覆写：发同步请求拉全量房间状态，用返回数据重置 Model 并通知 View。
+     * 发同步请求拉全量房间状态，重置 Model 并通知 View。
      * 子类应在此执行 model.freeze() → joinRoom() → model.unfreeze()。
+     * 默认直接调用 joinRoom()。
      */
     protected async resyncRoom(): Promise<void> {
         await this.joinRoom();
-    }
-
-    // ── 公共资源加载 ─────────────────────────────────────────
-
-    /**
-     * 返回 common bundle 需要按目录加载的资源列表。
-     * 子类可覆写以增减目录。
-     */
-    protected getCommonPreloadDirs(): CommonLoadDirItem[] {
-        return [
-            { dir: 'prefabs', type: Prefab },
-            { dir: 'emojis', type: sp.SkeletonData },
-            { dir: 'fonts', type: Font },
-            { dir: 'audios', type: AudioClip },
-            { dir: 'images', type: SpriteFrame },
-        ];
-    }
-
-    private async loadCommonResources(): Promise<void> {
-        const dirs = this.getCommonPreloadDirs();
-        if (dirs.length === 0) {
-            this.setProgress(PROGRESS_COMMON_END);
-            return;
-        }
-        for (let i = 0; i < dirs.length; i++) {
-            const item = dirs[i];
-            const start = (i / dirs.length) * PROGRESS_COMMON_END;
-            const end = ((i + 1) / dirs.length) * PROGRESS_COMMON_END;
-            await Nexus.asset.loadDir('common', item.dir, item.type as any, (finished, total) => {
-                const ratio = total > 0 ? finished / total : 1;
-                this.setProgress(start + ratio * (end - start), '加载公共资源...');
-            });
-        }
-        this.setProgress(PROGRESS_COMMON_END);
-    }
-
-    // ── 等待 WS 连接 ────────────────────────────────────────
-
-    private async waitWsConnected(): Promise<void> {
-        if (Nexus.net.isConnected()) return;
-        return new Promise<void>((resolve) => {
-            const onConnected = () => {
-                Nexus.off(NexusEvents.NET_CONNECTED, onConnected, this);
-                resolve();
-            };
-            Nexus.on(NexusEvents.NET_CONNECTED, onConnected, this);
-        });
-    }
-
-    // ── 进度条 ───────────────────────────────────────────────
-
-    /** 设置目标进度（0-100）和提示文字。子类可在 loadBundleResources / joinRoom 中调用。 */
-    protected setProgress(percent: number, tip?: string): void {
-        this._targetPercent = Math.min(100, Math.max(0, percent));
-        if (tip !== undefined && this.progressLabel?.isValid) {
-            this.progressLabel.string = tip;
-        }
-    }
-
-    protected update(dt: number): void {
-        const target = this._targetPercent / 100;
-        this._displayProgress += (target - this._displayProgress) * Math.min(1, this.progressSpeed * dt);
-        const clamped = Math.min(1, Math.max(0, this._displayProgress));
-        if (this.progressBar?.isValid) this.progressBar.progress = clamped;
-        if (this.progressNumber?.isValid) this.progressNumber.string = Math.round(clamped * 100) + '%';
-
-        if (this._waitDisplayResolve && this._targetPercent >= PROGRESS_JOIN_END && clamped >= DISPLAY_PROGRESS_COMPLETE) {
-            const resolve = this._waitDisplayResolve;
-            this._waitDisplayResolve = null;
-            this.onComplete();
-            resolve();
-        }
-    }
-
-    private waitUntilDisplayComplete(): Promise<void> {
-        if (this._targetPercent >= PROGRESS_JOIN_END && this._displayProgress >= DISPLAY_PROGRESS_COMPLETE) {
-            return Promise.resolve();
-        }
-        return new Promise((resolve) => {
-            this._waitDisplayResolve = resolve;
-        });
-    }
-
-    /**
-     * 场景加载完成后的钩子（runScene 返回后立即调用，View 的 onLoad/registerEvents 已执行）。
-     * 子类覆写此方法向 View 注入 model 只读引用（emit MODEL_READY 事件）。
-     */
-    protected onSceneReady(): void {}
-
-    /**
-     * loading 100事件
-     * @protected
-     */
-    protected onComplete(){
-        console.log('[BaseGameEntry] complete');
     }
 }

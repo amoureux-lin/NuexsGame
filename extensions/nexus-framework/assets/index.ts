@@ -10,7 +10,6 @@ export { PacketHelper } from './impl/PacketHelper';
 export type { WsSendContext, IWsDelegate } from './services/contracts';
 export * from './NexusEvents';
 export * from './base/NexusBaseEntry';
-export * from './base/NexusBaseLoading';
 export * from './base/UIPanel';
 export * from './base/ToastItem';
 export * from './patterns/mvc/MvcModel';

@@ -109,7 +109,7 @@ export class ToastServiceImpl extends IToastService {
             this._fastOut(this._active[0]);
         }
 
-        // 获取 TOP 层容器
+        // 获取 TOAST 层容器
         let container: Node | null = null;
         try {
             container = Nexus.ui.getLayerNode(UILayer.TOAST);

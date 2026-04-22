@@ -65,10 +65,6 @@ export class GameLauncher extends Component {
         if (getQueryParams()['mock'] === 'true') {
             Nexus.data.set('mock_mode', true);
             console.log('[GameLauncher] mock mode — skipping ConnectManager');
-            return;
         }
-
-        // 框架初始化完成后，启动网络连接
-        ConnectManager.init();
     }
 }

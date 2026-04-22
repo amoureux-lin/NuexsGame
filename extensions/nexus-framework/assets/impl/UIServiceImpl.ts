@@ -25,6 +25,7 @@ const LAYER_DEFS: UILayer[] = [
     UILayer.PANEL,   // 200
     UILayer.POPUP,   // 300
     UILayer.TIPS,    // 400
+    UILayer.TOAST,   // 450
     UILayer.TOP,     // 500
 ];
 

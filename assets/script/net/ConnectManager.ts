@@ -100,6 +100,9 @@ export class ConnectManager {
         const url = `${gate_addr}?token=${token}&game_id=${game_id}&user_id=${user_id}&room_id=${room_id}&voice_channel=${voice_channel}`;
         Nexus.net.connectWs(url).then(() => {
             console.log('ws连接成功');
+            Nexus.toast.show('ws连接成功');
+            // Nexus.toast.error('网络异常，请重试');
+            // Nexus.toast.success('任务完成', { position: 'bottom' });
         }).catch((err) => {
             console.log('ws连接失败', err);
         });
