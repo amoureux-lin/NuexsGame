@@ -50,6 +50,7 @@ export class BaseLoadingView extends Component {
     private _waitingDone = false;
 
     onLoad(): void {
+        console.log("BaseLoadingView")
         if (this.progressBar) this.progressBar.progress = 0;
         if (this.tipLabel) this.tipLabel.string = '';
         if (this.percentLabel) this.percentLabel.string = '0%';
@@ -100,10 +101,5 @@ export class BaseLoadingView extends Component {
         if (stage === LoadingStage.DONE) this._waitingDone = true;
         if (tip && this.tipLabel?.isValid) this.tipLabel.string = tip;
         this.onStageChange(stage, tip);
-        this.test(stage, tip)
-    }
-
-    protected test(stage, tip){
-        console.log(stage, tip)
     }
 }

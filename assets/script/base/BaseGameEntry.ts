@@ -3,7 +3,7 @@ import { Nexus, NexusBaseEntry, NexusEvents } from 'db://nexus-framework/index';
 import { ConnectManager } from 'db://assets/script/net/ConnectManager';
 import { ServicePrefabs } from 'db://assets/script/config/UIConfig';
 import { LoadingEvents, LoadingStage } from './LoadingEvents';
-import { BaseLoadingView } from './BaseLoadingView';
+import { BaseLoadingView } from 'db://assets/script/base/BaseLoadingView';
 
 const { ccclass } = _decorator;
 
@@ -11,6 +11,8 @@ const { ccclass } = _decorator;
 export interface CommonLoadDirItem {
     dir: string;
     type?: any;
+    /** 进度权重，数值越大占用进度条比例越大（默认 1） */
+    weight?: number;
 }
 
 /** VIEW_DONE 超时兜底时长（ms）：LoadingView 缺失或动画异常时防止 Entry 永久挂起 */
@@ -264,11 +266,41 @@ export abstract class BaseGameEntry extends NexusBaseEntry {
     // ── 子类覆写（可选） ─────────────────────────────────────
 
     /**
-     * 加载本游戏 bundle 资源（BUNDLE 阶段，0-100%）。
-     * 子类在此 loadDir，通过 setProgress(stagePercent) 更新进度。
-     * 默认空实现。
+     * 子游戏 bundle 名称，直接从框架读取当前激活的 bundle，无需子类覆写。
      */
-    protected async loadBundleResources(_params?: Record<string, unknown>): Promise<void> {}
+    protected getBundleName(): string { return Nexus.bundle.current; }
+
+    /**
+     * 返回子游戏 bundle 需要按目录加载的资源列表。
+     * 子类覆写以声明目录，加载进度由基类统一处理。
+     */
+    protected getBundlePreloadDirs(): CommonLoadDirItem[] { return []; }
+
+    /**
+     * 加载本游戏 bundle 资源（BUNDLE 阶段，0-100%）。
+     * 各目录按 weight 分配进度区间（默认 1），资源多的目录可设更大权重使进度更平滑。
+     * 子类一般不需要覆写此方法，只需覆写 getBundlePreloadDirs 即可。
+     */
+    protected async loadBundleResources(_params?: Record<string, unknown>): Promise<void> {
+        const bundleName = this.getBundleName();
+        const dirs = this.getBundlePreloadDirs();
+        if (dirs.length === 0) return;
+
+        const weights = dirs.map(d => d.weight ?? 1);
+        const totalWeight = weights.reduce((a, b) => a + b, 0);
+
+        let segStart = 0;
+        for (let i = 0; i < dirs.length; i++) {
+            const segEnd = segStart + (weights[i] / totalWeight) * 100;
+            await Nexus.asset.loadDir(bundleName, dirs[i].dir, dirs[i].type as any, (finished, total) => {
+                const ratio = total > 0 ? finished / total : 1;
+                console.log("===:",segStart + ratio * (segEnd - segStart))
+                this.setProgress(segStart + ratio * (segEnd - segStart), '加载游戏资源...');
+            });
+            segStart = segEnd;
+        }
+        this.setProgress(100, '加载游戏资源...');
+    }
 
     /**
      * 发送进房请求并等待响应（JOINING 阶段）。

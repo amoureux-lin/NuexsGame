@@ -1,6 +1,6 @@
-import { _decorator, AudioClip, Font, SpriteFrame } from 'cc';
-import { Nexus } from 'db://nexus-framework/index';
-import { BaseGameEntry } from 'db://assets/script/base/BaseGameEntry';
+import { _decorator, AudioClip, Font, Prefab, sp, SpriteFrame } from 'cc';
+import {logger, Nexus} from 'db://nexus-framework/index';
+import { BaseGameEntry, CommonLoadDirItem } from 'db://assets/script/base/BaseGameEntry';
 import { BaseGameEvents } from 'db://assets/script/base/BaseGameModel';
 import { TongitsUI, TongitsUIPanelConfig } from './config/TongitsUIConfig';
 import { TongitsController } from './game/TongitsController';
@@ -27,21 +27,15 @@ export class TongitsEntry extends BaseGameEntry {
         await this._controller.start(params);
     }
 
-    protected async loadBundleResources(): Promise<void> {
-        const bundleName = 'tongits';
-        const dirs = [
-            { dir: 'res/audios', type: AudioClip },
-            { dir: 'res/font',   type: Font },
-            { dir: 'res/image',  type: SpriteFrame },
+    protected override getBundlePreloadDirs(): CommonLoadDirItem[] {
+        return [
+            { dir: 'res/prefabs',  type: Prefab,          weight: 20  },
+            { dir: 'res/sekleton', type: sp.SkeletonData, weight: 20 },
+            { dir: 'res/images',   type: SpriteFrame,     weight: 20 },
+            { dir: 'res/fonts',    type: Font,            weight: 20  },
+            { dir: 'res/audios',   type: AudioClip,       weight: 20 },
+
         ];
-        for (let i = 0; i < dirs.length; i++) {
-            const segStart = (i / dirs.length) * 100;
-            const segEnd   = ((i + 1) / dirs.length) * 100;
-            await Nexus.asset.loadDir(bundleName, dirs[i].dir, dirs[i].type as any, (finished, total) => {
-                const ratio = total > 0 ? finished / total : 1;
-                this.setProgress(segStart + ratio * (segEnd - segStart), '加载游戏资源...');
-            });
-        }
     }
 
     protected async joinRoom(params?: Record<string, unknown>): Promise<void> {

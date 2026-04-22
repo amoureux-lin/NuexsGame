@@ -1,6 +1,6 @@
-import { _decorator } from 'cc';
+import { _decorator, AudioClip, Font, Prefab, sp, SpriteFrame } from 'cc';
 import { Nexus } from 'db://nexus-framework/index';
-import { BaseGameEntry } from 'db://assets/script/base/BaseGameEntry';
+import {BaseGameEntry, CommonLoadDirItem} from 'db://assets/script/base/BaseGameEntry';
 import { slotGameUI, SlotGameUIPanelConfig } from './config/SlotGameUIConfig';
 import { SlotGameController } from './game/SlotGameController';
 import { SlotGameModel } from './game/SlotGameModel';

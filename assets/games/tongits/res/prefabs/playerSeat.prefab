@@ -1805,7 +1805,7 @@
       "a": 255
     },
     "_spriteFrame": {
-      "__uuid__": "777d1b71-e71b-45be-89d1-dedf11ecc7fd@f9941",
+      "__uuid__": "13330853-1cd8-472a-a4b8-c99c75d6df34@f9941",
       "__expectedType__": "cc.SpriteFrame"
     },
     "_type": 3,
@@ -2112,7 +2112,7 @@
     },
     "_type": 0,
     "_fillType": 0,
-    "_sizeMode": 1,
+    "_sizeMode": 0,
     "_fillCenter": {
       "__type__": "cc.Vec2",
       "x": 0,
@@ -2348,10 +2348,21 @@
     },
     "offlineIcon": null,
     "actionNode": null,
+    "meldField": null,
     "countdownNode": {
       "__id__": 72
     },
     "countdownLabel": null,
+    "countdownFollower": null,
+    "pointNode": null,
+    "pointLabel": null,
+    "winPointBg": null,
+    "losePointBg": null,
+    "winNode": null,
+    "winLab": null,
+    "winAnimation": null,
+    "trophyNode": null,
+    "trophyCountLabel": null,
     "_id": ""
   },
   {

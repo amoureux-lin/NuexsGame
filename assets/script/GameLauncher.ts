@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, sys } from 'cc';
+import { _decorator, Component, Node, sys ,view,screen,Size, macro, ResolutionPolicy} from 'cc';
 import { bootstrapNexus, getQueryParams, Nexus } from 'db://nexus-framework/index';
 import type { NexusConfig } from 'db://nexus-framework/index';
 import { bundles } from './config/BundleConfig';
