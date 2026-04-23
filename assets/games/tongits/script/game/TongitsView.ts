@@ -4,10 +4,10 @@ import { TongitsModel } from './TongitsModel';
 import type { LayoffHints, ActionChangePayload, DrawResPayload, MeldResPayload, TakeResPayload, LayOffResPayload } from './TongitsModel';
 import { Nexus } from 'db://nexus-framework/index';
 import { TongitsEvents } from '../config/TongitsEvents';
-import { PlayerSeatManager } from '../views/player/PlayerSeatManager';
-import { WaitingPanel } from '../views/panel/WaitingPanel';
-import { ActionPanel } from '../views/panel/ActionPanel';
-import { HandCardPanel } from '../views/handcard/HandCardPanel';
+import { PlayerSeatManager } from './views/player/PlayerSeatManager';
+import { WaitingPanel } from './views/panel/WaitingPanel';
+import { ActionPanel } from './views/panel/ActionPanel';
+import { HandCardPanel } from './views/handcard/HandCardPanel';
 import type { ButtonStates } from '../utils/HandCardState';
 import type {
     TongitsPlayerInfo,
@@ -33,16 +33,16 @@ import type {
     LayOffCardRes,
     ChallengeRes,
 } from '../proto/tongits';
-import {GameStartEffect} from "db://assets/games/tongits/script/views/effect/GameStartEffect";
+import {GameStartEffect} from "./views/effect/GameStartEffect";
 import { FlyUtil } from '../utils/FlyUtil';
-import { CardNode, DEFAULT_CARD_W, CARD_SPACING } from '../views/handcard/CardNode';
-import { TableAreaView } from '../views/panel/TableAreaView';
-import { FightPanel }         from '../views/panel/FightPanel';
-import { TongitsPrompt }      from '../views/panel/TongitsPrompt';
-import { TongitsResultPanel } from '../views/panel/TongitsResultPanel';
-import {TongitsPanel} from "db://assets/games/tongits/script/views/panel/TongitsPanel";
-import { PotTrophyPanel } from '../views/panel/PotTrophyPanel';
-import { DiscardHistoryPanel } from '../views/panel/DiscardHistoryPanel';
+import { CardNode, DEFAULT_CARD_W, CARD_SPACING } from './views/handcard/CardNode';
+import { TableAreaView } from './views/panel/TableAreaView';
+import { FightPanel }         from './views/panel/FightPanel';
+import { TongitsPrompt }      from './views/panel/TongitsPrompt';
+import { TongitsResultPanel } from './views/panel/TongitsResultPanel';
+import {TongitsPanel} from "./views/panel/TongitsPanel";
+import { PotTrophyPanel } from './views/panel/PotTrophyPanel';
+import { DiscardHistoryPanel } from './views/panel/DiscardHistoryPanel';
 import type { PotInfo } from '../proto/tongits';
 
 const { ccclass, property } = _decorator;
@@ -123,6 +123,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
 
     /** 游戏是否已开始（status >= 2） */
     private get _isGameStarted(): boolean {
+        console.log("this.tongitsModel?.gameInfo:",this.tongitsModel?.gameInfo.status)
         return ((this.tongitsModel?.gameInfo as GameInfo | null)?.status ?? 1) >= 2;
     }
 
@@ -276,7 +277,6 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         this.listen<GameResultBroadcast>(TongitsEvents.GAME_RESULT,     (d) => this.onGameResult(d));
         this.listen<RoomResetBroadcast>(TongitsEvents.ROOM_RESET,       (d) => this.onRoomReset(d));
         this.listen<GameResultDetailsRes>(TongitsEvents.RESULT_DETAILS, (d) => this.onResultDetails(d));
-
     }
 
 
@@ -1027,7 +1027,6 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         // 收到结算数据后打开结算面板
         if (this.tongitsResultPanel && data.playerResults?.length) {
             const snapshots = this.seatManager?.getSeatSnapshots() ?? [];
-            this.tongitsResultPanel.onDetails = () => this.dispatch(TongitsEvents.CMD_RESULT_DETAILS);
             // countdown 为服务端 Unix 秒时间戳，转换为毫秒传给结算面板倒计时
             const endTimestamp = (data.countdown ?? 0) > 0 ? data.countdown * 1000 : 0;
             this.tongitsResultPanel.show(
@@ -1074,8 +1073,7 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         this.tongitsPrompt?.hide();
         this.tongitsPrompt?.node && (this.tongitsPrompt.node.active = false);
         if (this.tongitsResultPanel) {
-            this.tongitsResultPanel.onHide    = null;
-            this.tongitsResultPanel.onDetails = null;
+            this.tongitsResultPanel.onHide = null;
             this.tongitsResultPanel.hide();
         }
     }
@@ -1085,7 +1083,12 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
      * actionPanel 由动画回调（与 cardCountNode 同步）单独控制。
      */
     private _refreshPanelVisibility(): void {
-        if (this.waitingPanel) this.waitingPanel.node.active = !this._isGameStarted;
+        console.log('_refreshPanelVisibility:',this._isGameStarted)
+        if (this.waitingPanel) {
+            const visible = !this._isGameStarted;
+            this.waitingPanel.node.active = visible;
+            if (!visible) this.waitingPanel.hide();
+        }
     }
 
     protected onResultDetails(data: GameResultDetailsRes): void {

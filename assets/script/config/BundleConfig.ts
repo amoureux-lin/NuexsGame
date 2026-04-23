@@ -4,6 +4,5 @@ import type { BundleConfig } from 'db://nexus-framework/index';
 export const bundles: BundleConfig[] = [
     { name: 'common', type: 'common', preload: true },
     { name: 'lobby', type: 'lobby' },
-    { name: 'slotGame', type: 'subgame', gameId: 1 },  // ?game_id=1 时直接进此子游戏
     { name: 'tongits', type: 'subgame', gameId: 5 },  // ?game_id=5 时直接进此子游戏
 ];

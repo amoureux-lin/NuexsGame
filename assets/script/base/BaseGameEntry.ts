@@ -294,7 +294,6 @@ export abstract class BaseGameEntry extends NexusBaseEntry {
             const segEnd = segStart + (weights[i] / totalWeight) * 100;
             await Nexus.asset.loadDir(bundleName, dirs[i].dir, dirs[i].type as any, (finished, total) => {
                 const ratio = total > 0 ? finished / total : 1;
-                console.log("===:",segStart + ratio * (segEnd - segStart))
                 this.setProgress(segStart + ratio * (segEnd - segStart), '加载游戏资源...');
             });
             segStart = segEnd;

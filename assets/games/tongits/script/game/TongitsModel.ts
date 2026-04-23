@@ -251,6 +251,10 @@ export class TongitsModel extends BaseGameModel<TongitsPlayerInfo, GameInfo> {
         const data = msg as GameStartBroadcast;
         this.updateRoomInfo({ roomStatus: ROOM_STATE.GAME });
         if (data.gameInfo) this.updateGameInfo(data.gameInfo);
+        // 服务端 GameStartBroadcast.gameInfo 可能不携带 status 字段（protobuf 默认值省略）；
+        // 游戏开始后 status 固定为 2，在此补齐，确保 View 层 _isGameStarted 正确返回 true。
+        const gi = this.gameInfo as GameInfo | null;
+        if (gi) gi.status = 2;
         if (data.players) {
             this.updatePlayers(data.players);
             // 同步 self

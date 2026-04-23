@@ -30,8 +30,7 @@ export function getQueryParams(searchOrUrl?: string): Record<string, string> {
             continue;
         }
         const key = decodeURIComponent(part.slice(0, eq));
-        const value = decodeURIComponent(part.slice(eq + 1));
-        params[key] = value;
+        params[key] = decodeURIComponent(part.slice(eq + 1));
     }
     return params;
 }
@@ -41,7 +40,7 @@ export function getQueryParams(searchOrUrl?: string): Record<string, string> {
  * @param name 参数名
  * @param searchOrUrl 不传则使用当前页 location.search（H5）
  */
-export function getQueryParam(name: string, searchOrUrl?: string): string | undefined {
+export function getQueryParam(name: string | number, searchOrUrl?: string): string | undefined {
     const params = getQueryParams(searchOrUrl);
     return params[name];
 }

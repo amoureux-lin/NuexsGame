@@ -1,0 +1,551 @@
+import { _decorator, Component, Node, sp ,Label, Sprite, SpriteFrame, EventTouch, Button, Vec3, tween, Tween } from 'cc';
+import { Nexus } from 'db://nexus-framework/index';
+import {TongitsPlayerInfo} from "db://assets/games/tongits/script/proto/tongits";
+import { PlayerMeldField } from './PlayerMeldField';
+
+const { ccclass, property } = _decorator;
+
+/**
+ * PlayerSeat — 单个玩家座位组件
+ *
+ * 职责：
+ *   - 纯展示层，接收 TongitsPlayerInfo 数据后刷新 UI
+ *   - 不持有业务逻辑，状态全由外部 (PlayerSeatManager) 驱动
+ *
+ * 节点结构建议（Prefab）：
+ *   PlayerSeat
+ *   ├── emptyNode          空座位占位（无人时显示）
+ *   └── occupiedNode       有玩家时的根节点
+ *       ├── avatarSprite   头像
+ *       ├── nameLabel      昵称
+ *       ├── coinLabel      金币
+ *       ├── cardCountNode  手牌数区域（对手可见）
+ *       │   └── cardCountLabel
+ *       ├── ownerIcon      房主标志
+ *       ├── readyIcon      已准备标志
+ *       ├── offlineIcon    离线标志
+ *       ├── actionNode     当前操作高亮框
+ *       └── countdownNode  倒计时容器
+ *           └── countdownLabel
+ */
+@ccclass('PlayerSeat')
+export class PlayerSeat extends Component {
+
+    // ── 节点引用 ─────────────────────────────────────────
+
+    /** 空座位节点（无人时显示） */
+    @property({ type: Node, tooltip: '空座位占位节点，无人时显示' })
+    emptyNode: Node = null!;
+
+    /** 有玩家时的根容器 */
+    @property({ type: Node, tooltip: '有玩家时的根容器，无人时隐藏' })
+    occupiedNode: Node = null!;
+
+    /** 头像 Sprite */
+    @property({ type: Sprite, tooltip: '玩家头像 Sprite 组件' })
+    avatarSprite: Sprite = null!;
+
+    /** 昵称 Label */
+    @property({ type: Label, tooltip: '玩家昵称文本' })
+    nameLabel: Label = null!;
+
+    /** 金币 Label */
+    @property({ type: Label, tooltip: '玩家金币数量文本' })
+    coinLabel: Label = null!;
+
+    /** 房主图标 */
+    @property({ type: Node, tooltip: '房主标志节点，玩家 post === 1 时显示' })
+    ownerIcon: Node = null!;
+
+    /** 自己图标 */
+    @property({ type: Node, tooltip: '自己标志节点' })
+    meIcon: Node = null!;
+
+    /** 踢人按钮 */
+    @property({ type: Button, tooltip: '踢人按钮节点' })
+    kickBtn: Button = null!;
+
+
+    /** 已准备图标 */
+    @property({ type: Node, tooltip: '已准备标志节点，玩家 state === 1 时显示' })
+    readyIcon: Node = null!;
+
+    /** 手牌数量节点（对手用，显示牌背数） */
+    @property({ type: Node, tooltip: '手牌数量区域，对手可见，自己隐藏（由 HandCardPanel 接管）' })
+    cardCountNode: Node = null!;
+
+    /** 手牌数量 Label */
+    @property({ type: Label, tooltip: '对手手牌数量文本（显示牌背数）' })
+    cardCountLabel: Label = null!;
+
+    /** 离线图标 */
+    @property({ type: Node, tooltip: '离线标志节点，玩家 state === 3 时显示' })
+    offlineIcon: Node = null!;
+
+    /** 当前操作高亮（轮到此玩家时显示） */
+    @property({ type: sp.Skeleton, tooltip: '当前操作高亮框，轮到此玩家操作时显示' })
+    actionNode: sp.Skeleton = null!;
+
+    /** 牌组展示区（独立节点，在 Inspector 中拖入，不要求是本节点的子节点） */
+    @property({ type: PlayerMeldField, tooltip: '已打出牌组展示区' })
+    meldField: PlayerMeldField | null = null;
+
+    /** 倒计时容器节点 */
+    @property({ type: Sprite, tooltip: '倒计时容器节点，操作高亮时与 actionNode 同步显隐' })
+    countdownNode: Sprite = null!;
+
+    /** 倒计时数字 Label */
+    @property({ type: Label, tooltip: '倒计时剩余秒数文本' })
+    countdownLabel: Label = null!;
+
+    /** 跟随圆弧终点的节点（如小圆点指示器） */
+    @property({ type: Node, tooltip: '跟随倒计时圆弧终点移动的节点，编辑器中摆放到圆弧外圈位置，运行时自动以该距离为半径' })
+    countdownFollower: Node | null = null;
+
+    @property({ type: Node, tooltip: '手牌点数容器（游戏中仅自己显示，结算时全员显示）' })
+    pointNode: Node | null = null;
+
+    @property({ type: Label, tooltip: '手牌点数文本' })
+    pointLabel: Label | null = null;
+
+    @property({ type: Node, tooltip: '点数赢背景节点（结算赢家时显示）' })
+    winPointBg: Node | null = null;
+
+    @property({ type: Node, tooltip: '点数输背景节点（结算输家时显示）' })
+    losePointBg: Node | null = null;
+
+    @property({ type: Node, tooltip: "嬴节点"})
+    winNode: Node = null!;
+
+    @property({ type: Label, tooltip: "嬴金额"})
+    winLab: Label = null!;
+
+    @property({ type: sp.Skeleton, tooltip: '赢动画 Skeleton' })
+    winAnimation: sp.Skeleton = null!;
+
+    /** 玩家奖杯节点（赢家结算时显示，默认 active=false） */
+    @property({ type: Node, tooltip: '奖杯节点，赢家结算时显示，默认 active=false' })
+    trophyNode: Node | null = null;
+
+    /** 奖杯中间的 winCount 数字 Label */
+    @property({ type: Label, tooltip: '奖杯中间显示的 winCount 数字' })
+    trophyCountLabel: Label | null = null;
+
+    // ── 私有状态 ─────────────────────────────────────────
+
+    private _data: TongitsPlayerInfo | null = null;
+    private _isSelf: boolean = false;
+    /** 在屏幕上的位置索引：0=下方(自己), 1=左, 2=右 */
+    private _seatIndex: number = 0;
+    /** 服务端座位号（1-based），空座位时由 Manager 直接传入，不依赖 playerInfo */
+    private _serverSeat: number = 0;
+    /** 已加载的头像 URL，避免重复请求同一张图 */
+    private _loadedAvatarUrl: string = '';
+    /** 本地玩家是否为房主，由 PlayerSeatManager 注入 */
+    private _isLocalOwner: boolean = false;
+    /** 游戏是否已开始，由 PlayerSeatManager 注入 */
+    private _isGameStarted: boolean = false;
+
+    /** 倒计时结束的 Unix 时间戳（ms） */
+    private _countdownEndTime: number = 0;
+    /** 倒计时总时长（秒），首次设置时记录，用于 fillRange 比例计算 */
+    private _countdownTotal: number = 0;
+    /** 倒计时是否运行中 */
+    private _countdownRunning: boolean = false;
+    /** follower 距圆心的半径，由 onLoad 时初始位置自动计算 */
+    private _followerRadius: number = 0;
+    /** winNode 的初始位置，onLoad 时缓存，每次 showWin 从此处开始上移 */
+    private _winOrigin: Vec3 = new Vec3();
+
+    /** 点击空座位回调（坐下），由 PlayerSeatManager 注入 */
+    public onEmptySeatClick: ((seat: PlayerSeat) => void) | null = null;
+    /** 点击有玩家座位回调（查看个人信息），由 PlayerSeatManager 注入 */
+    public onPlayerInfoClick: ((seat: PlayerSeat) => void) | null = null;
+    /** 点击踢人按钮回调，由 PlayerSeatManager 注入 */
+    public onKickBtnClick: ((seat: PlayerSeat) => void) | null = null;
+
+    // ── 生命周期 ─────────────────────────────────────────
+
+    protected onLoad(): void {
+        this.emptyNode?.on(Node.EventType.TOUCH_END, this._onEmptyClick, this);
+        this.occupiedNode?.on(Node.EventType.TOUCH_END, this._onOccupiedClick, this);
+        this.kickBtn?.node.on(Node.EventType.TOUCH_END, this._onKickBtnClick, this);
+        if (this.countdownNode) this.countdownNode.node.active = false;
+        // 以 follower 编辑器摆放位置到 (0,0) 的距离作为圆弧半径
+        if (this.countdownFollower) {
+            const p = this.countdownFollower.position;
+            this._followerRadius = Math.sqrt(p.x * p.x + p.y * p.y);
+        }
+        if (this.pointNode) this.pointNode.active = false;
+        if (this.trophyNode) this.trophyNode.active = false;
+        if (this.winNode) {
+            this._winOrigin = this.winNode.position.clone();
+            this.winNode.active = false;
+        }
+        if (this.winAnimation) this.winAnimation.node.active = false;
+    }
+
+    protected onDestroy(): void {
+        this.emptyNode?.off(Node.EventType.TOUCH_END, this._onEmptyClick, this);
+        this.occupiedNode?.off(Node.EventType.TOUCH_END, this._onOccupiedClick, this);
+        this.kickBtn?.node.off(Node.EventType.TOUCH_END, this._onKickBtnClick, this);
+    }
+
+    // ── 公开方法 ─────────────────────────────────────────
+
+    /** 设置屏幕位置索引，供 PlayerSeatManager 调用 */
+    setSeatIndex(index: number): void {
+        this._seatIndex = index;
+    }
+
+    /**
+     * 设置踢人按钮的显示上下文（房主身份 + 游戏状态）。
+     * 在 setData 之前调用，_refresh() 会读取这些值。
+     * 独立调用时（如游戏开始/结束）会直接更新 kickBtn 可见性。
+     */
+    setContext(isLocalOwner: boolean, isGameStarted: boolean): void {
+        this._isLocalOwner = isLocalOwner;
+        this._isGameStarted = isGameStarted;
+        if (this._data !== null) {
+            if (this.kickBtn) {
+                this.kickBtn.node.active = !isGameStarted && (this._isSelf || isLocalOwner);
+            }
+            // 游戏开始时显示对手手牌数，自己（perspectiveId）始终隐藏
+            if (this.cardCountNode) {
+                this.cardCountNode.active = isGameStarted && !this._isSelf;
+            }
+            // 游戏开始后仅自己显示点数，默认赢背景
+            if (this.pointNode) {
+                const showPoint = isGameStarted && this._isSelf;
+                this.pointNode.active = showPoint;
+                if (showPoint) {
+                    if (this.pointLabel) this.pointLabel.string = String(this._data.cardPoint ?? 0);
+                    if (this.winPointBg)  this.winPointBg.active  = true;
+                    if (this.losePointBg) this.losePointBg.active = false;
+                }
+            }
+        }
+    }
+
+    /**
+     * 刷新座位数据
+     * @param player     玩家数据，null 表示空座位
+     * @param isSelf     是否为本地玩家自己
+     * @param serverSeat 服务端座位号（1-based），空座位时必传，有玩家时可由 playerInfo.seat 推导
+     */
+    setData(player: TongitsPlayerInfo | null, isSelf: boolean, serverSeat: number = 0): void {
+        this._data = player;
+        this._isSelf = isSelf;
+        this._serverSeat = player?.playerInfo?.seat ?? serverSeat;
+        this._refresh();
+    }
+
+    /**
+     * 设置当前操作高亮状态
+     * @param active 是否为当前操作玩家
+     */
+    setActionActive(active: boolean): void {
+        if (this.actionNode) {
+            if (active) {
+                this.actionNode.node.active = true;
+                this.actionNode.setCompleteListener(null);
+                this.actionNode.setAnimation(0, 'avatar_glow', false);
+                this.actionNode.setCompleteListener(() => {
+                    if (this.actionNode?.isValid) {
+                        this.actionNode.node.active = false;
+                        this.actionNode.setCompleteListener(null);
+                    }
+                });
+            } else {
+                this.actionNode.clearTracks();
+                this.actionNode.setCompleteListener(null);
+                this.actionNode.node.active = false;
+            }
+        }
+        if (this.countdownNode) this.countdownNode.node.active = active;
+        if (this.countdownFollower) this.countdownFollower.active = active;
+        if (!active) this._stopCountdown();
+    }
+
+    /**
+     * 启动倒计时（收到 ActionChange 时调用）
+     * @param endTimestamp 倒计时结束的 Unix 时间戳（ms）
+     */
+    setCountdown(endTimestamp: number): void {
+        const remainingMs = endTimestamp - Date.now();
+        this._countdownEndTime = endTimestamp;
+        this._countdownTotal   = Math.max(0, remainingMs) / 1000;
+        this._countdownRunning = remainingMs > 0;
+        this._refreshCountdownUI();
+    }
+
+    protected update(_dt: number): void {
+        if (!this._countdownRunning) return;
+        if (Date.now() >= this._countdownEndTime) this._stopCountdown();
+        this._refreshCountdownUI();
+    }
+
+    private _stopCountdown(): void {
+        this._countdownRunning = false;
+    }
+
+    private _refreshCountdownUI(): void {
+        const remainingSec = Math.max(0, (this._countdownEndTime - Date.now()) / 1000);
+        if (this.countdownLabel) {
+            this.countdownLabel.string = String(Math.ceil(remainingSec));
+        }
+        if (this.countdownNode && this._countdownTotal > 0) {
+            this.countdownNode.fillRange = remainingSec / this._countdownTotal;
+            this._refreshFollower();
+        }
+    }
+
+    private _refreshFollower(): void {
+        if (!this.countdownFollower || !this.countdownNode || this._followerRadius === 0) return;
+        // 与参考实现对齐：(1 - fillRange) 表示已消耗比例，对应顺时针旋转角度
+        // progress=1(满) → angle=0 → 12 点钟 (0, r)
+        // progress 递减 → angle 增大 → 顺时针移动
+        const angle  = (1 - this.countdownNode.fillRange) * Math.PI * 2;
+        const lx     = this._followerRadius * Math.sin(angle);
+        const ly     = this._followerRadius * Math.cos(angle);
+        const center = this.countdownNode.node.getWorldPosition();
+        this.countdownFollower.setWorldPosition(center.x + lx, center.y + ly, center.z);
+    }
+
+    /**
+     * 显示赢得金额并播放上移动画。
+     * @param amount 赢得金额（正数）
+     */
+    showWin(amount: number): void {
+        if (!this.winNode) return;
+        if (this.winLab) this.winLab.string = `+${amount}`;
+
+        Tween.stopAllByTarget(this.winNode);
+        this.winNode.setPosition(this._winOrigin);
+        this.winNode.active = true;
+
+        tween(this.winNode)
+            .to(0.8, { position: new Vec3(this._winOrigin.x, this._winOrigin.y + 80, this._winOrigin.z) }, { easing: 'quadOut' })
+            .start();
+
+        if (this.winAnimation) {
+            const sk = this.winAnimation;
+            sk.node.active = true;
+            sk.setCompleteListener(null);
+            sk.setAnimation(0, 'appear', false);
+            sk.addAnimation(0, 'idle', true, 0);
+        }
+    }
+
+    /**
+     * 结算时显示手牌点数，并切换赢/输背景。
+     * 使用 _data.cardPoint（BeforeResult/GameResult 已把最新 cardPoint 写入 _data）。
+     * @param isWin 是否为本局赢家
+     */
+    showResultPoint(isWin: boolean): void {
+        if (!this.pointNode || !this._data) return;
+        if (this.pointLabel) this.pointLabel.string = String(this._data.cardPoint ?? 0);
+        if (this.winPointBg)  this.winPointBg.active  = isWin;
+        if (this.losePointBg) this.losePointBg.active = !isWin;
+        this.pointNode.active = true;
+    }
+
+    /**
+     * 游戏进行中更新自己的手牌点数文本（不改变 pointNode 可见性或背景）。
+     * 由 TongitsView 在 onSelectionChange / onDealMergeComplete 中调用。
+     * @param point 当前手牌点数（来自 HandCardPanel.point 本地计算值）
+     */
+    updateGamePoint(point: number): void {
+        if (this.pointLabel) this.pointLabel.string = String(point);
+    }
+
+    /** 隐藏手牌点数节点，并还原至游戏中状态（重置/切换阶段时调用） */
+    hidePoint(): void {
+        if (!this.pointNode) return;
+        if (this.winPointBg)  this.winPointBg.active  = false;
+        if (this.losePointBg) this.losePointBg.active = false;
+        this.pointNode.active = false;
+    }
+
+    /**
+     * 显示玩家奖杯，设置 winCount 数字，并返回奖杯的世界坐标（供飞行动画使用）。
+     * @param winCount 底池已累积的次数（显示在奖杯中间）
+     * @returns 奖杯节点的世界坐标
+     */
+    showTrophy(winCount: number): Vec3 {
+        if (this.trophyCountLabel) this.trophyCountLabel.string = String(winCount);
+        if (this.trophyNode) this.trophyNode.active = true;
+        return this.trophyNode?.getWorldPosition() ?? this.node.getWorldPosition();
+    }
+
+    /** 隐藏玩家奖杯（游戏重置时调用） */
+    hideTrophy(): void {
+        if (this.trophyNode) this.trophyNode.active = false;
+    }
+
+    /** 隐藏赢得金额节点与赢动画（游戏重置时调用） */
+    resetWin(): void {
+        this.hidePoint();
+        this.hideTrophy();
+        if (this.winNode) {
+            Tween.stopAllByTarget(this.winNode);
+            this.winNode.setPosition(this._winOrigin);
+            this.winNode.active = false;
+        }
+        if (this.winAnimation) {
+            this.winAnimation.clearTracks();
+            this.winAnimation.setCompleteListener(null);
+            this.winAnimation.node.active = false;
+        }
+    }
+
+    /** 获取当前玩家的 userId，空座位返回 0 */
+    getUserId(): number {
+        return this._data?.playerInfo?.userId ?? 0;
+    }
+
+    /** 获取当前座位的完整玩家数据，空座位返回 null */
+    getPlayerInfo(): TongitsPlayerInfo | null {
+        return this._data;
+    }
+
+    /** 获取头像节点的世界坐标，空座位或节点不存在时返回 null */
+    getAvatarWorldPosition(): Vec3 | null {
+        const node = this.avatarSprite?.node;
+        return node ? node.getWorldPosition() : null;
+    }
+
+    /** 获取当前服务端座位号（1-based），空座位时返回 Manager 传入的预分配座位号 */
+    getServerSeat(): number {
+        return this._serverSeat;
+    }
+
+    /** 当前是否为空座位 */
+    isEmpty(): boolean {
+        return this._data === null;
+    }
+
+    /** 当前是否为自己 */
+    isSelf(): boolean {
+        return this._isSelf;
+    }
+
+    // ── 私有：点击事件 ────────────────────────────────────
+
+    private _onEmptyClick(_e: EventTouch): void {
+        this.onEmptySeatClick?.(this);
+    }
+
+    private _onOccupiedClick(_e: EventTouch): void {
+        this.onPlayerInfoClick?.(this);
+    }
+
+    private _onKickBtnClick(e: EventTouch): void {
+        e.propagationStopped = true; // 阻止冒泡到 occupiedNode
+        this.onKickBtnClick?.(this);
+    }
+
+    // ── 私有刷新 ─────────────────────────────────────────
+
+    private _loadAvatar(url: string): void {
+        if (!this.avatarSprite) return;
+        // URL 相同时跳过，避免重复请求
+        if (url === this._loadedAvatarUrl) return;
+        this._loadedAvatarUrl = url;
+
+        if (!url) {
+            this.avatarSprite.spriteFrame = null;
+            return;
+        }
+
+        Nexus.asset.loadRemote<SpriteFrame>(url).then((sf) => {
+            if (!this.isValid || !this.avatarSprite) return;
+            this.avatarSprite.spriteFrame = sf;
+        }).catch((err) => {
+            console.warn('[PlayerSeat] 头像加载失败:', url, err);
+        });
+    }
+
+    private _refresh(): void {
+        const isEmpty = this._data === null;
+
+        if (this.emptyNode) this.emptyNode.active = isEmpty;
+        if (this.occupiedNode) this.occupiedNode.active = !isEmpty;
+
+        // 无人时清除操作高亮及赢动画
+        if (isEmpty) {
+            this.setActionActive(false);
+            if (this.pointNode) this.pointNode.active = false;
+            if (this.winNode) {
+                Tween.stopAllByTarget(this.winNode);
+                this.winNode.setPosition(this._winOrigin);
+                this.winNode.active = false;
+            }
+            if (this.winAnimation) {
+                this.winAnimation.clearTracks();
+                this.winAnimation.setCompleteListener(null);
+                this.winAnimation.node.active = false;
+            }
+            return;
+        }
+
+        const info = this._data!.playerInfo;
+
+        // 头像
+        // this._loadAvatar(info?.avatar ?? '');
+
+        // 昵称
+        if (this.nameLabel) {
+            this.nameLabel.string = info?.nickname ?? '';
+        }
+
+        // 金币
+        if (this.coinLabel) {
+            this.coinLabel.string = String(info?.coin ?? 0);
+        }
+
+        // 手牌数：游戏开始后对手可见，自己始终隐藏
+        if (this.cardCountNode) {
+            this.cardCountNode.active = this._isGameStarted && !this._isSelf;
+        }
+        if (this.cardCountLabel) {
+            this.cardCountLabel.string = String(this._data!.handCardCount);
+        }
+
+        // 自己标志
+        if (this.meIcon) {
+            this.meIcon.active = this._isSelf;
+        }
+
+        // 房主（post === 1）
+        if (this.ownerIcon) {
+            this.ownerIcon.active = (info?.post ?? 0) === 1;
+        }
+
+        // 踢人按钮：游戏未开始时，自己始终显示（=下座），他人仅房主可见（=踢人）
+        if (this.kickBtn) {
+            this.kickBtn.node.active = !this._isGameStarted && (this._isSelf || this._isLocalOwner);
+        }
+
+        // 准备状态（state === 1）
+        if (this.readyIcon) {
+            this.readyIcon.active = (info?.state ?? 0) === 1;
+        }
+
+        // 离线状态（state === 3）
+        if (this.offlineIcon) {
+            this.offlineIcon.active = (info?.state ?? 0) === 3;
+        }
+
+        // 手牌点数：游戏中仅视角玩家（自己）显示，默认用赢背景
+        if (this.pointNode) {
+            const showPoint = this._isGameStarted && this._isSelf;
+            this.pointNode.active = showPoint;
+            if (showPoint) {
+                if (this.pointLabel) this.pointLabel.string = String(this._data!.cardPoint ?? 0);
+                if (this.winPointBg)  this.winPointBg.active  = true;
+                if (this.losePointBg) this.losePointBg.active = false;
+            }
+        }
+    }
+}

@@ -18,8 +18,6 @@ import type {
     ChallengeRes,
     JoinRoomRes,
 } from '../proto/tongits';
-import {SlotGameEvents} from "db://assets/games/slotGame/script/config/SlotGameEvents";
-import {CommonUI} from "db://assets/script/config/UIConfig";
 import {TongitsUI} from "db://assets/games/tongits/script/config/TongitsUIConfig";
 
 /**

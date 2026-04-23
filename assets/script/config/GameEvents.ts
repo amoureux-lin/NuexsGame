@@ -2,7 +2,7 @@ import { NexusEvents } from 'db://nexus-framework/index';
 
 /** 游戏业务事件名定义（与框架 NexusEvents 合并为统一配置） */
 const GameEventDefines = {
-    HTTP_GENERATE_TOKEN: "/debug/enter_game", // test get token
+    HTTP_GENERATE_TOKEN: "/auth/v1/game/get-token-dev", // test get token
     HTTP_GAME_CONFIG: "/api/v1/get_game_config", //获取
 
     /** 进房成功（正常进入与断线重连共用） */

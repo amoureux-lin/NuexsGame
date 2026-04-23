@@ -5,7 +5,7 @@ import { GameEvents } from '../config/GameEvents';
 const BASE_URL_DEBUG = 'https://gwm.herondev.xin';
 const BASE_URL_PROD  = 'https://gwm.herondev.xin'; // TODO: 替换为生产地址
 
-const CONFIG_MAX_RETRY = 3;
+const CONFIG_MAX_RETRY = 5;
 const CONFIG_RETRY_DELAY = 2000;
 
 /**
@@ -40,22 +40,29 @@ export class ConnectManager {
 
     private static generateToken(callback: (token: string) => void): void {
         const DEFAULT_LOCAL_TOKEN_PARAMS = {
-            room_id: getQueryParam('room_id') || 88,
-            room_name: '新手房-1',
+            room_id: getQueryParam('room_id') || "",
             game_id: getQueryParam('game_id') || 6,
-            score: 10,
-            user_id: getQueryParam('user_id') || '123456',
-            nick_name: 'Alice'+getQueryParam('user_id') || '123456',
+            user_id: getQueryParam('user_id') || '',
+            nick_name: 'Alice',
             user_avatar: 'https://p-web.herontest.xin/img/avatar/7.png',
             coin: 10000,
+            score: 2000,
             is_guest: false,
+            is_robot: false,
+            camp_id: 0,
+            inviter_user_id: 0,
+            invite_code: "",
+            is_kol: false,
+            is_in_white_list: false,
+            register_time: 0,
+            app_id : "1001",
         };
-        Nexus.net.post<{ code: number, data: { token: string } }>(
+        Nexus.net.post<{ code: number, data: { game_token: string } }>(
             GameEvents.HTTP_GENERATE_TOKEN as string,
             DEFAULT_LOCAL_TOKEN_PARAMS,
         ).then((res) => {
             console.log('generateToken success', res);
-            callback(res?.data?.token ?? '');
+            callback(res?.data?.game_token ?? '');
         }).catch((err) => {
             console.warn('[ConnectManager] generateToken 失败', err);
             callback('');
@@ -65,23 +72,22 @@ export class ConnectManager {
     private static requestConfig(retryCount = 0): void {
         Nexus.net.get<{
             code: number,
-            data: {
-                gate_addr: string,
-                game_id: number,
-                user_id: string,
-                room_id: string,
-                voice_channel: string
-            }
+            data: {gate_addr: string}
         }>(GameEvents.HTTP_GAME_CONFIG as string).then((res) => {
             console.log('config', res);
-            const gate_addr = res?.data?.gate_addr ?? '';
-            const token = Nexus.data.get<string>('token') ?? '';
-            const game_id = Number(res?.data?.game_id) ?? 0;
-            const user_id = Number(res?.data?.user_id) ?? 0;
-            const room_id = Number(res?.data?.room_id) ?? 0;
-            const voice_channel = res?.data?.voice_channel ?? '';
+            const gate_addr       = res?.data?.gate_addr        ?? '';
+            const token           = Nexus.data.get<string>('token') ?? '';
+            const game_id= getQueryParam('game_id') || "";
+            const user_id= getQueryParam('user_id') || "";
+            const room_id= getQueryParam('room_id') || "";
+            const sign= getQueryParam('sign') ?? '';
+            const base_score= getQueryParam('base_score') ?? '2000';
+            const is_create_party= getQueryParam('is_create_party') ?? 'false';
+            const room_auth= getQueryParam('room_auth') ?? '';
+            const party_name= getQueryParam('party_name') ?? '';
+
             Nexus.data.set('user_id', user_id);
-            ConnectManager.connectWs(gate_addr, token, game_id, user_id, room_id, voice_channel);
+            ConnectManager.connectWs(gate_addr, token, game_id, user_id, room_id, sign, base_score, is_create_party, room_auth, party_name);
         }).catch((err) => {
             console.error('[ConnectManager] config请求失败', err);
             if (retryCount < CONFIG_MAX_RETRY) {
@@ -95,9 +101,17 @@ export class ConnectManager {
 
     private static connectWs(
         gate_addr: string, token: string,
-        game_id: number, user_id: number, room_id: number, voice_channel: string,
+        game_id: string,
+        user_id: string,
+        room_id: string,
+        sign: string,
+        base_score: string,
+        is_create_party: string,
+        room_auth: string,
+        party_name: string,
     ): void {
-        const url = `${gate_addr}?token=${token}&game_id=${game_id}&user_id=${user_id}&room_id=${room_id}&voice_channel=${voice_channel}`;
+        const qs = `?token=${token}&game_id=${game_id}&user_id=${user_id}&room_id=${room_id}&sign=${sign}&base_score=${base_score}&is_create_party=${is_create_party}&room_auth=${room_auth}&party_name=${party_name}`;
+        const url = `${gate_addr}${qs}`;
         Nexus.net.connectWs(url).then(() => {
             console.log('ws连接成功');
             Nexus.toast.show('ws连接成功');
