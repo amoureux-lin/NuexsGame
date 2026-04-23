@@ -132,7 +132,6 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
 
     /** 游戏是否已开始（status >= 2） */
     private get _isGameStarted(): boolean {
-        console.log("this.tongitsModel?.gameInfo:",this.tongitsModel?.gameInfo.status)
         return ((this.tongitsModel?.gameInfo as GameInfo | null)?.status ?? 1) >= 2;
     }
 
