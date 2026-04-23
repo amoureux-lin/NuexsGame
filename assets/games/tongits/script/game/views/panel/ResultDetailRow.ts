@@ -7,17 +7,20 @@ const { ccclass, property } = _decorator;
 @ccclass('ResultDetailRow')
 export class ResultDetailRow extends Component {
 
-    @property({ type: Label })
-    nickName: Label = null!;
-
     @property({ type: Sprite })
     avatar: Sprite = null!;
 
-    @property({ type: Node })
-    tongitsSprite: Node = null!;
+    @property({ type: Node,tooltip:"嬴玩家的头像框" })
+    winBox: Node = null!;
+
+    @property({ type: Node ,tooltip:"输玩家的头像框"})
+    loseBox: Node = null!;
+
+    @property({ type: Label })
+    nickName: Label = null!;
 
     @property({ type: Node })
-    winBg: Node = null!;
+    tongitsSprite: Node = null!;
 
     @property({ type: Label })
     score: Label = null!;
@@ -97,8 +100,7 @@ export class ResultDetailRow extends Component {
     /** 根据胜负状态更新 UI（胜利背景、Tongits 图标等） */
     private _updateWinStatus(player: PlayerResult, isWin: boolean): void {
         this.profit.string = player.sumWinBonus?.toString() ?? '0';
-        this.profit.color  = isWin ? new Color('#9BFF24') : new Color('#01BAFB');
-        this.winBg.active  = isWin;
+        this.profit.color  = isWin ? new Color('#57EE15') : new Color('#F57800');
 
         this.tongitsSprite.active = false;
         this.winnerSign.active    = false;

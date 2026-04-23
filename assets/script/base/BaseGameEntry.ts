@@ -3,6 +3,7 @@ import { Nexus, NexusBaseEntry, NexusEvents } from 'db://nexus-framework/index';
 import { ConnectManager } from 'db://assets/script/net/ConnectManager';
 import { ServicePrefabs } from 'db://assets/script/config/UIConfig';
 import { LoadingEvents, LoadingStage } from './LoadingEvents';
+import { BaseGameEvents, type GameEnteredPayload } from './BaseGameEvents';
 import { BaseLoadingView } from 'db://assets/script/base/BaseLoadingView';
 
 const { ccclass } = _decorator;
@@ -130,6 +131,9 @@ export abstract class BaseGameEntry extends NexusBaseEntry {
 
         this.node.active = false;
         this.enabled = false;
+
+        // 8. 游戏画面首次呈现：通知 View 做开场展示（重连不派发，由 resyncRoom 绕开）
+        Nexus.emit<GameEnteredPayload>(BaseGameEvents.GAME_ENTERED, { params });
     }
 
     // ── 进度通知 ──────────────────────────────────────────────

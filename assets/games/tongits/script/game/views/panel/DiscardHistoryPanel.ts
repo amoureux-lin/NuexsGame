@@ -68,8 +68,8 @@ export class DiscardHistoryPanel extends Component {
         Nexus.on                      (TongitsEvents.GAME_START,  this._onGameReset,  this);
         Nexus.on                      (TongitsEvents.ROOM_RESET,  this._onGameReset,  this);
         Nexus.on                      (TongitsEvents.GAME_RESULT, this._onGameReset,  this);
-
-        this.node.active = false;
+        // 不在此处 active=false：onLoad 仅首次 active=true 时触发，会吃掉第一次 show()。
+        // 初始可见性由 TongitsView.init() 负责。
     }
 
     protected onDestroy(): void {

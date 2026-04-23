@@ -367,7 +367,11 @@ export class TableAreaView extends Component {
     // ── 私有：弃牌堆视觉 ──────────────────────────────────
 
     private _rebuildDiscard(flyFromWorld?: Vec3): void {
-        this.discardNode.removeAllChildren();
+        // 保留 tip 节点（若正处于吃牌提示期间），只清理旧的弃牌节点。
+        // 用 removeAllChildren 会连带销毁 tip，导致吃牌标记在他人弃牌动画结束后消失。
+        for (const child of [...this.discardNode.children]) {
+            if (child !== this._discardTipNode) child.destroy();
+        }
         if (this._discardPile.length === 0) return;
         // 只显示最新一张，正面朝上
         const topValue = this._discardPile[this._discardPile.length - 1];

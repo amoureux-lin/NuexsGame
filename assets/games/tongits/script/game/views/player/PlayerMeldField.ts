@@ -331,6 +331,11 @@ export class PlayerMeldField extends Component {
             tip.on(Node.EventType.TOUCH_END, () => {
                 this.onMeldTipClick?.(capturedId);
             }, this);
+            // 牌组内每张牌也触发同一补牌回调（blockNode 本身无 UITransform 不响应点击）
+            for (const child of blockNode.children) {
+                const cn = child.getComponent(CardNode);
+                if (cn) cn.onClick = () => this.onMeldTipClick?.(capturedId);
+            }
         }
     }
 
@@ -346,12 +351,20 @@ export class PlayerMeldField extends Component {
         }
     }
 
-    /** 清除所有 meld 块上的补牌提示节点（不重置 onMeldTipClick，由外部管理） */
+    /** 清除所有 meld 块上的补牌提示节点与牌面点击回调（不重置 onMeldTipClick，由外部管理） */
     clearLayoffTips(): void {
-        for (const [, tipNode] of this._meldTipNodes) {
+        for (const [meldId, tipNode] of this._meldTipNodes) {
             if (tipNode.isValid) {
                 tipNode.off(Node.EventType.TOUCH_END);
                 tipNode.destroy();
+            }
+            // 还原该牌组内所有 CardNode 的点击回调
+            const blockNode = this._blocks.get(meldId);
+            if (blockNode?.isValid) {
+                for (const child of blockNode.children) {
+                    const cn = child.getComponent(CardNode);
+                    if (cn) cn.onClick = null;
+                }
             }
         }
         this._meldTipNodes.clear();
@@ -364,8 +377,9 @@ export class PlayerMeldField extends Component {
      * @param newCard      新牌编号
      * @param insertIndex  插入位置（0-based，超出范围自动 clamp 到末尾）
      * @param fromWorldPos 新牌飞入起始世界坐标（不传则直接出现在目标位置）
+     * @param fromScale    起始缩放（默认 1；他人补牌从 cardCountNode 飞出时应传 0.3）
      */
-    layOffToMeld(meldId: number, newCard: number, insertIndex: number, fromWorldPos?: Vec3): void {
+    layOffToMeld(meldId: number, newCard: number, insertIndex: number, fromWorldPos?: Vec3, fromScale: number = 1): void {
         const blockNode = this._blocks.get(meldId);
         if (!blockNode || !blockNode.isValid) return;
 
@@ -424,7 +438,7 @@ export class PlayerMeldField extends Component {
             n.setPosition(finalX, 0, 0);
             const toPos = n.worldPosition.clone();
             n.setWorldPosition(fromWorldPos);
-            n.setScale(1, 1, 1);
+            n.setScale(fromScale, fromScale, 1);
 
             const startFly = () => {
                 if (!n.isValid) return;

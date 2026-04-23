@@ -1,6 +1,7 @@
 import { _decorator } from 'cc';
 import { MvcView } from 'db://nexus-framework/index';
-import { BaseGameEvents, type BaseGameModel, type JoinRoomData } from './BaseGameModel';
+import { BaseGameEvents, type GameEnteredPayload } from './BaseGameEvents';
+import type { BaseGameModel, GamePlayerLike, JoinRoomData } from './BaseGameModel';
 import { GameEvents } from '../config/GameEvents';
 
 const { ccclass } = _decorator;
@@ -26,7 +27,10 @@ const { ccclass } = _decorator;
  * @template G 游戏状态类型（对应子游戏的 GameInfo）
  */
 @ccclass('BaseGameView')
-export abstract class BaseGameView<P = unknown, G = unknown> extends MvcView {
+export abstract class BaseGameView<
+    P extends GamePlayerLike = GamePlayerLike,
+    G = unknown,
+> extends MvcView {
 
     /** Model 只读引用，由 Entry 在场景就绪后通过 MODEL_READY 事件注入。 */
     protected _model: BaseGameModel<P, G> | null = null;
@@ -55,6 +59,10 @@ export abstract class BaseGameView<P = unknown, G = unknown> extends MvcView {
             BaseGameEvents.SELF_UPDATED,
             (d) => this.onSelfUpdated(d.self),
         );
+        this.listen<GameEnteredPayload>(
+            BaseGameEvents.GAME_ENTERED,
+            (d) => this.onReady(d),
+        );
     }
 
     /** 子类在此注册游戏特有事件监听。 */
@@ -79,6 +87,12 @@ export abstract class BaseGameView<P = unknown, G = unknown> extends MvcView {
 
     /** 自己的数据变化 */
     protected onSelfUpdated(_self: P): void {}
+
+    /**
+     * Loading 隐藏、游戏画面首次呈现给玩家时触发（仅首次进入，重连不触发）。
+     * 子类在此做开场动画、引导页等初始化展示。
+     */
+    protected onReady(_data?: GameEnteredPayload): void {}
 
     // ── 公共 dispatch 快捷方法 ────────────────────────────
 

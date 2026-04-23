@@ -70,9 +70,15 @@ export class ResultDetailPanel extends Component {
     // ── 私有 ─────────────────────────────────────────────
 
     private _populate(results: PlayerResult[], winnerId: number): void {
+        const sorted = [...results].sort((a, b) => {
+            const aIsWin = a.playerInfo?.playerInfo?.userId === winnerId ? 1 : 0;
+            const bIsWin = b.playerInfo?.playerInfo?.userId === winnerId ? 1 : 0;
+            return bIsWin - aIsWin;   // 赢家排在前
+        });
+
         for (let i = 0; i < this.rows.length; i++) {
             const row    = this.rows[i];
-            const player = results[i];
+            const player = sorted[i];
             if (!row) continue;
             if (player) {
                 const isWin = player.playerInfo?.playerInfo?.userId === winnerId;

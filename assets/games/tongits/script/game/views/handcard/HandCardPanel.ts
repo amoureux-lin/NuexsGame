@@ -373,8 +373,8 @@ export class HandCardPanel extends Component {
         // 世界坐标用于 _sapawUngroupWorldPos（_syncUngroupNodes 调用 setWorldPosition）
         const targetWorldPos = this._localToWorld(targetLocal);
 
-        // 所有根容器同步左移腾位（与落牌动画同时进行）
-        this._preShiftRootsForNewCard();
+        // 所有根容器同步左移腾位（与落牌动画同时进行），保留目标 X 供 doFinalize 对齐
+        const preShiftTargetX = this._preShiftRootsForNewCard();
         // 记录本次摸牌已占位（state.addCard 尚未调用，需要用此计数修正下次摸牌的目标位置）
         this._pendingUngroupCount++;
 
@@ -411,6 +411,14 @@ export class HandCardPanel extends Component {
                 await this._animateMergeExpand(allCards);
             } else {
                 if (flyNode?.isValid) flyNode.destroy();
+                // 停 preShift tween 并强制 setPosition 到 X_new：
+                // 只 stop 不 setPosition 的话，position 停在 quadOut 最后一帧的 ε 偏差处，
+                // 接着 _doLayout 的 setPosition(X_new) 会把根容器"再左移 ε"，
+                // 新节点的 world 位置跟着左偏 ε 再被 tween 拉回 —— 就是视觉上的"左移一下再归位"。
+                for (const root of [this._groupRoot, this._ungroupRoot, this._dragLayer, this._markerOverlayRoot]) {
+                    Tween.stopAllByTarget(root);
+                    root.setPosition(preShiftTargetX, 0, 0);
+                }
                 // 新节点从落点起步，_doLayout 无额外位移
                 this._sapawUngroupWorldPos = targetWorldPos.clone();
                 this._state.addCard(card);
@@ -461,8 +469,9 @@ export class HandCardPanel extends Component {
     /**
      * 将所有根容器向左移 shiftX，与弧形飞入动画同步进行，为新牌在右侧腾出位置。
      * shiftX = (newTotalW − currentTotalW) / 2
+     * @returns 本次腾位 tween 的终点 targetX，供 doFinalize 强制对齐（避免 tween 最后一帧 ε 偏差）。
      */
-    private _preShiftRootsForNewCard(): void {
+    private _preShiftRootsForNewCard(): number {
         const snap  = this._state.snapshot();
         const n     = snap.ungroup.length + this._pendingUngroupCount;
         const cardW = this._layoutCardW();
@@ -478,13 +487,16 @@ export class HandCardPanel extends Component {
 
         // 与 _doLayout 使用相同的绝对终点公式，避免从中间动画值出发导致目标偏移
         const targetX = -newTotalW / 2;
-        const dur  = 0.35;
+        // 与 addCard 里 flyNode 的 DROP_DUR 保持一致：flyNode 落地时 preShift 同步完成，
+        // _doLayout 随后对 _ungroupRoot 的 setPosition 才不会被尚在跑的 tween 反复覆盖。
+        const dur  = 0.25;
         const opts = { easing: 'quadOut' as const };
 
         for (const root of [this._groupRoot, this._ungroupRoot, this._dragLayer, this._markerOverlayRoot]) {
             Tween.stopAllByTarget(root);
             tween(root).to(dur, { position: new Vec3(targetX, 0, 0) }, opts).start();
         }
+        return targetX;
     }
 
     /**

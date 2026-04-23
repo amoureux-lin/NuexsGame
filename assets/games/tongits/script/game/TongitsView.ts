@@ -44,6 +44,8 @@ import {TongitsPanel} from "./views/panel/TongitsPanel";
 import { PotTrophyPanel } from './views/panel/PotTrophyPanel';
 import { DiscardHistoryPanel } from './views/panel/DiscardHistoryPanel';
 import type { PotInfo } from '../proto/tongits';
+import {GuidePanel} from "db://assets/games/tongits/script/game/views/panel/GuidePanel";
+import {ResultDetailPanel} from "db://assets/games/tongits/script/game/views/panel/ResultDetailPanel";
 
 const { ccclass, property } = _decorator;
 
@@ -102,6 +104,13 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
     /** 弃牌历史记录面板 */
     @property({ type: DiscardHistoryPanel, tooltip: '弃牌历史记录面板' })
     discardHistoryPanel: DiscardHistoryPanel | null = null;
+
+    @property({ type: ResultDetailPanel, tooltip: '结算详情子面板（默认 active=false）' })
+    detailPanel: ResultDetailPanel | null = null;
+
+    @property({ type: GuidePanel, tooltip: '引导' })
+    guidePanel: GuidePanel | null = null;
+
 
     // ── Model 只读引用快捷方式 ────────────────────────────
 
@@ -173,7 +182,17 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         this.init();
     }
 
+    protected onReady(params:any){
+        super.onReady(params);
+        let guidOpen = Nexus.storage.get("guid");
+        if(!guidOpen){
+            this.guidePanel.show();
+        }
+    }
+
     init(){
+        this.guidePanel.node.active = false;
+        this.detailPanel.node.active = false;
         if (this.tableAreaView) this.tableAreaView.node.active = false;
         if (this.actionPanel) this.actionPanel.node.active = false;
         this.actionPanel?.hideAll();
@@ -193,11 +212,15 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         if (this.tongitsResultPanel) {
             this.tongitsResultPanel.node.active = false;
         }
+        if (this.discardHistoryPanel) {
+            this.discardHistoryPanel.node.active = false;
+        }
         if (this.tableAreaView) {
             this.tableAreaView.onHistoryClick = () => {
                 this.discardHistoryPanel?.show((this.tongitsModel?.gameInfo as GameInfo | null)?.discardPile ?? []);
             };
         }
+
     }
 
     // ── 事件注册 ─────────────────────────────────────────
@@ -594,12 +617,15 @@ export class TongitsView extends BaseGameView<TongitsPlayerInfo, GameInfo> {
         const actionSeat = this.seatManager?.getSeatByUserId(data.actionPlayerId);
         const targetSeat = this.seatManager?.getSeatByUserId(data.targetPlayerId);
         if (targetSeat) {
-            const fromWorldPos = actionSeat?.node.worldPosition.clone();
+            // 从操作玩家的手牌区（cardCountNode）飞出，起始缩放与其视觉尺寸一致
+            const fromWorldPos = actionSeat?.cardCountNode?.getWorldPosition().clone()
+                              ?? actionSeat?.node.worldPosition.clone();
             targetSeat.meldField?.layOffToMeld(
                 data.targetMeldId,
                 data.cardAdded,
                 Number.MAX_SAFE_INTEGER, // 追加到末尾，由 layOffToMeld 内部 clamp
                 fromWorldPos,
+                0.3,
             );
         }
     }

@@ -1,7 +1,7 @@
 import { _decorator, AudioClip, Font, Prefab, sp, SpriteFrame } from 'cc';
 import {logger, Nexus} from 'db://nexus-framework/index';
 import { BaseGameEntry, CommonLoadDirItem } from 'db://assets/script/base/BaseGameEntry';
-import { BaseGameEvents } from 'db://assets/script/base/BaseGameModel';
+import { BaseGameEvents } from 'db://assets/script/base/BaseGameEvents';
 import { TongitsUI, TongitsUIPanelConfig } from './config/TongitsUIConfig';
 import { TongitsController } from './game/TongitsController';
 import { TongitsModel } from './game/TongitsModel';
@@ -107,3 +107,4 @@ export class TongitsEntry extends BaseGameEntry {
         Nexus.ui.unregisterPanels(TongitsUI);
     }
 }
+

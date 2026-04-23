@@ -1,6 +1,7 @@
 import { NexusEvents } from 'db://nexus-framework/index';
+import { BaseGameEvents } from 'db://assets/script/base/BaseGameEvents';
 
-/** 游戏业务事件名定义（与框架 NexusEvents 合并为统一配置） */
+/** 游戏业务事件名定义（与框架 NexusEvents、BaseGameEvents 合并为统一配置） */
 const GameEventDefines = {
     HTTP_GENERATE_TOKEN: "/auth/v1/game/get-token-dev", // test get token
     HTTP_GAME_CONFIG: "/api/v1/get_game_config", //获取
@@ -32,11 +33,12 @@ const GameEventDefines = {
 } as const;
 
 /**
- * 统一事件名配置：框架事件 + 游戏业务事件。
- * 通过展开 NexusEvents 实现“继承”，一处引用即可使用全部事件 key。
+ * 统一事件名配置：NexusEvents（框架底层）+ BaseGameEvents（游戏基础层）+ GameEventDefines（应用业务层）。
+ * 通过展开实现"继承"，一处引用即可使用全部事件 key。
  */
 export const GameEvents = {
     ...NexusEvents,
+    ...BaseGameEvents,
     ...GameEventDefines,
 } as const;
 

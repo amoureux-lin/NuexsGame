@@ -1,5 +1,6 @@
 import { MvcModel, Nexus } from 'db://nexus-framework/index';
 import { MessageType } from 'db://assets/script/proto/message_type';
+import { BaseGameEvents } from './BaseGameEvents';
 import type { PlayerInfo } from 'db://assets/script/proto/game_common_room';
 import type {
     UserOfflineBroadcast,
@@ -61,18 +62,6 @@ export interface RoomInfoLike {
 export interface GamePlayerLike {
     playerInfo: PlayerInfo | undefined;
 }
-
-/** BaseGameModel 通用事件名 */
-export const BaseGameEvents = {
-    ROOM_JOINED: 'base:room:joined',
-    PLAYERS_UPDATED: 'base:players:updated',
-    GAME_INFO_UPDATED: 'base:gameInfo:updated',
-    SELF_UPDATED: 'base:self:updated',
-    WATCHERS_UPDATED: 'base:watchers:updated',
-    SPEAKERS_UPDATED: 'base:speakers:updated',
-    /** Entry 在场景加载完成后 emit，携带 model 实例，供 View 保存只读引用 */
-    MODEL_READY: 'base:model:ready',
-} as const;
 
 /** 房间状态枚举 */
 export const enum ROOM_STATE { NULL = 0, WAIT = 1, GAME = 2, OVER = 3 }
