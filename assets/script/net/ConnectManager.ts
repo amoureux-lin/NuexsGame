@@ -1,9 +1,6 @@
 import {getQueryParam, Nexus} from 'db://nexus-framework/index';
 import { GameEvents } from '../config/GameEvents';
-
-/** 服务器地址配置 */
-const BASE_URL_DEBUG = 'https://gwm.herondev.xin';
-const BASE_URL_PROD  = 'https://gwm.herondev.xin'; // TODO: 替换为生产地址
+import { getResolvedHostUrl, isDebugEnv } from '../config/GameNetworkConfig';
 
 const CONFIG_MAX_RETRY = 5;
 const CONFIG_RETRY_DELAY = 2000;
@@ -19,11 +16,9 @@ export class ConnectManager {
      * 由 GameLauncher 在框架初始化完成后主动调用。
      */
     static init(): void {
-        const isDebug = Nexus.config?.debug ?? false;
-        const baseUrl = isDebug ? BASE_URL_DEBUG : BASE_URL_PROD;
-        Nexus.net.setBaseUrl(baseUrl);
+        Nexus.net.setBaseUrl(getResolvedHostUrl());
 
-        if (isDebug) {
+        if (isDebugEnv()) {
             ConnectManager.generateToken((token) => {
                 if (token) {
                     Nexus.net.setToken(token);

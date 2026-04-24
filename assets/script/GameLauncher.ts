@@ -5,7 +5,10 @@ import { bundles } from './config/BundleConfig';
 import { CommonUI, UIPanelConfig } from './config/UIConfig';
 import { COMMON_MSG_REGISTRY } from './proto/msg_registry_common';
 import { WsDelegate } from './net/WsDelegate';
-import { ConnectManager } from './net/ConnectManager';
+import { GameNetworkHostKind, initHostKind } from './config/GameNetworkConfig';
+
+/** 默认服务器环境（无 URL ?env= 参数时生效） */
+const DEFAULT_HOST_KIND = GameNetworkHostKind.dev;
 
 const { ccclass, property } = _decorator;
 
@@ -43,14 +46,9 @@ export class GameLauncher extends Component {
             receiveTimeoutMs: 6000,
         }, new WsDelegate());
         // 初始化 Nexus 配置
-        // 非浏览器环境或 localhost 视为调试模式
-        const isDebug = sys.isBrowser
-            ? (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
-            : true;
-
         const config: NexusConfig = {
             version: '1.0.0',
-            debug: isDebug,
+            debug: false,
             enableLobby: false,  // 不填 entryBundle 时：true → 进 lobby，false → 进第一个 subgame
             defaultLanguage: 'zh_CN',
             languages: ['zh_CN', 'en_US'],
@@ -60,6 +58,9 @@ export class GameLauncher extends Component {
         await Nexus.init(config);
         // 注册公共 Proto 消息映射，供 WS 收发时 getDecoder/getEncoder 查表
         Nexus.proto.registerCommon(COMMON_MSG_REGISTRY);
+
+        // 解析并固定当前环境（URL ?env= 优先，否则用 DEFAULT_HOST_KIND）
+        initHostKind(DEFAULT_HOST_KIND);
 
         // ?mock=true：纯本地 mock 模式，跳过 WS 连接
         if (getQueryParams()['mock'] === 'true') {
