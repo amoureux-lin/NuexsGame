@@ -1,15 +1,34 @@
-import { AssetManager, assetManager, director, error, instantiate, Node, Prefab, Scene } from 'cc';
+import { AssetManager, assetManager, director, error, instantiate, macro, Node, Prefab, ResolutionPolicy, Scene, screen, Size, view } from 'cc';
 import { Nexus } from '../core/Nexus';
 import { NexusBaseEntry } from '../base/NexusBaseEntry';
 import type { BundleConfig, NexusConfig } from '../core/NexusConfig';
 import { ServiceRegistry } from '../core/ServiceRegistry';
 import { IBundleService, UILayer } from '../services/contracts';
-import { NexusEvents } from '../NexusEvents';
+import { NexusEvents, type OrientationChangedPayload, type OrientationChangePhase } from '../NexusEvents';
 
 /** 入口场景名约定：bundleName + 'Main'，如 lobbyMain、slotGameMain */
 const ENTRY_SCENE_SUFFIX = 'Main';
 /** Cocos Creator 内置 Bundle，不可卸载，避免破坏引擎 */
 const BUILTIN_BUNDLES = new Set<string>(['internal', 'main', 'resources']);
+
+const LANDSCAPE_RESOLUTION = {
+    width: 1334,
+    height: 750,
+    policy: ResolutionPolicy.FIXED_HEIGHT,
+    fitWidth: false,
+    fitHeight: true,
+};
+
+const PORTRAIT_RESOLUTION = {
+    width: 750,
+    height: 1334,
+    policy: ResolutionPolicy.FIXED_WIDTH,
+    fitWidth: true,
+    fitHeight: false,
+};
+
+type BundleRuntimeResolution = typeof LANDSCAPE_RESOLUTION | typeof PORTRAIT_RESOLUTION;
+const PREVIEW_RESIZE_FIX_DELAY_MS = 650;
 
 /**
  * 基于 assetManager.loadBundle + director.loadScene 的 Bundle 管理实现。
@@ -33,6 +52,18 @@ export class BundleServiceImpl extends IBundleService {
     private _runtimeEntered = false;
     /** 并发 enter() 控制：每次 enter 递增，异步步骤间检测是否已被新 enter 取代 */
     private _enterGeneration = 0;
+    /** 当前运行时已应用的方向；未配置时默认横屏。 */
+    private _orientation: BundleConfig['orientation'] = 'landscape';
+    private _previewResizeTimer = 0;
+    private readonly _onPreviewResize = (): void => {
+        if (this._previewResizeTimer) {
+            window.clearTimeout(this._previewResizeTimer);
+        }
+        this._previewResizeTimer = window.setTimeout(() => {
+            this._previewResizeTimer = 0;
+            this.ensurePreviewFrameOrientation();
+        }, PREVIEW_RESIZE_FIX_DELAY_MS);
+    };
 
     /** 缓存 Bundle 配置并预加载标记为 preload 的包。 */
     async onBoot(config: NexusConfig): Promise<void> {
@@ -40,6 +71,7 @@ export class BundleServiceImpl extends IBundleService {
         for (const b of config.bundles) {
             this._configs.set(b.name, b);
         }
+        this.bindPreviewResizeListener();
         const preloads = config.bundles.filter(b => b.preload);
         await Promise.all(preloads.map(b => this.load(b.name)));
     }
@@ -89,6 +121,8 @@ export class BundleServiceImpl extends IBundleService {
 
         if (cancelled()) return;
 
+        this.applyDesignResolution(bundleName);
+
         // 加载新 Bundle
         await this.load(bundleName);
         this._current = bundleName;
@@ -103,24 +137,41 @@ export class BundleServiceImpl extends IBundleService {
             error(`[Nexus][BundleService] Failed to load entry for bundle: ${bundleName}`, e);
             // 回退状态，避免框架卡在无 Bundle 可用的中间态
             this._current = '';
+            await this.invokeExitHooks();
             await ServiceRegistry.notifyBundleExit(bundleName);
+            Nexus.event.emit(NexusEvents.BUNDLE_ENTER_FAILED, { bundleName, error: e });
+            throw e;
         }
     }
 
     /** 由 Entry 在加载完成后主动调用，加载并切换到当前 Bundle 的主场景。 */
-    async runScene(): Promise<void> {
+    async runScene(owner?: object): Promise<void> {
+        const generation = this._enterGeneration;
         const bundleName = this._current;
         if (!bundleName) {
             error('[Nexus][BundleService] runScene: no active bundle');
             return;
         }
+        if (owner && owner !== this._runtimeEntryComp) {
+            error('[Nexus][BundleService] runScene ignored: entry is no longer active');
+            return;
+        }
 
         const entrySceneName = `scene/${bundleName + ENTRY_SCENE_SUFFIX}`;
         const scene = await this.tryLoadScene(bundleName, entrySceneName);
+        if (generation !== this._enterGeneration) {
+            error('[Nexus][BundleService] runScene ignored: bundle switch has been superseded');
+            return;
+        }
 
         if (scene) {
             await new Promise<void>((resolve) => {
                 director.runScene(scene, undefined, async () => {
+                    if (generation !== this._enterGeneration) {
+                        resolve();
+                        return;
+                    }
+                    this.emitCurrentOrientation(bundleName, 'scene-ready');
                     await this.invokeEnterHooks();
                     await ServiceRegistry.notifyBundleEnter(bundleName);
                     Nexus.event.emit(NexusEvents.BUNDLE_ENTER, bundleName);
@@ -132,6 +183,7 @@ export class BundleServiceImpl extends IBundleService {
                 });
             });
         } else {
+            this.emitCurrentOrientation(bundleName, 'scene-ready');
             await ServiceRegistry.notifyBundleEnter(bundleName);
             Nexus.event.emit(NexusEvents.BUNDLE_ENTER, bundleName);
         }
@@ -167,11 +219,17 @@ export class BundleServiceImpl extends IBundleService {
         return this._current;
     }
 
+    /** 返回当前运行时已应用的横竖屏方向。 */
+    get orientation(): BundleConfig['orientation'] {
+        return this._orientation;
+    }
+
     /** 空实现，保留接口兼容。 */
     loadFinish(): void {}
 
     /** 销毁时执行退出钩子并清空缓存。 */
     async onDestroy(): Promise<void> {
+        this.unbindPreviewResizeListener();
         await this.invokeExitHooks();
         this._configs.clear();
         this._bundles.clear();
@@ -189,6 +247,102 @@ export class BundleServiceImpl extends IBundleService {
         if (!this._configs.has(bundleName)) {
             throw new Error(`[Nexus] Bundle not configured: ${bundleName}`);
         }
+    }
+
+    private applyDesignResolution(bundleName: string): void {
+        const cfg = this._configs.get(bundleName);
+        const orientation = cfg?.orientation ?? 'landscape';
+        const resolution = orientation === 'portrait' ? PORTRAIT_RESOLUTION : LANDSCAPE_RESOLUTION;
+
+        this._orientation = orientation;
+        view.setOrientation(orientation === 'portrait'
+            ? macro.ORIENTATION_PORTRAIT
+            : macro.ORIENTATION_LANDSCAPE);
+        view.setDesignResolutionSize(resolution.width, resolution.height, resolution.policy);
+        this.rotatePreviewFrameIfNeeded(cfg, orientation);
+        this.emitOrientation(bundleName, orientation, resolution, 'before-load');
+    }
+
+    private ensurePreviewFrameOrientation(): void {
+        if (!this._current) {
+            return;
+        }
+        const cfg = this._configs.get(this._current);
+        const orientation = cfg?.orientation ?? this._orientation ?? 'landscape';
+        this.rotatePreviewFrameIfNeeded(cfg, orientation);
+    }
+
+    private rotatePreviewFrameIfNeeded(cfg: BundleConfig | undefined, orientation: NonNullable<BundleConfig['orientation']>): void {
+        if (!cfg?.previewRotateFrame || !this.isCreatorBrowserPreview()) {
+            return;
+        }
+
+        const size = screen.windowSize;
+        const isPortrait = size.height >= size.width;
+        const shouldBePortrait = orientation === 'portrait';
+        if (isPortrait === shouldBePortrait) {
+            return;
+        }
+
+        screen.windowSize = new Size(size.height, size.width);
+
+        if (typeof window !== 'undefined') {
+            window.dispatchEvent(new Event('resize'));
+            window.dispatchEvent(new Event('orientationchange'));
+        }
+    }
+
+    private isCreatorBrowserPreview(): boolean {
+        if (typeof document === 'undefined') {
+            return false;
+        }
+        return !!document.querySelector('#GameCanvas')
+            && !!document.querySelector('.toolbar')
+            && !!document.querySelector('#btn-rotate');
+    }
+
+    private bindPreviewResizeListener(): void {
+        if (typeof window === 'undefined') {
+            return;
+        }
+        window.removeEventListener('resize', this._onPreviewResize);
+        window.addEventListener('resize', this._onPreviewResize);
+    }
+
+    private unbindPreviewResizeListener(): void {
+        if (typeof window === 'undefined') {
+            return;
+        }
+        window.removeEventListener('resize', this._onPreviewResize);
+        if (this._previewResizeTimer) {
+            window.clearTimeout(this._previewResizeTimer);
+            this._previewResizeTimer = 0;
+        }
+    }
+
+    private emitCurrentOrientation(bundleName: string, phase: OrientationChangePhase): void {
+        const cfg = this._configs.get(bundleName);
+        const orientation = cfg?.orientation ?? this._orientation ?? 'landscape';
+        const resolution = orientation === 'portrait' ? PORTRAIT_RESOLUTION : LANDSCAPE_RESOLUTION;
+        this.emitOrientation(bundleName, orientation, resolution, phase);
+    }
+
+    private emitOrientation(
+        bundleName: string,
+        orientation: NonNullable<BundleConfig['orientation']>,
+        resolution: BundleRuntimeResolution,
+        phase: OrientationChangePhase,
+    ): void {
+        const payload: OrientationChangedPayload = {
+            bundleName,
+            orientation,
+            width: resolution.width,
+            height: resolution.height,
+            fitWidth: resolution.fitWidth,
+            fitHeight: resolution.fitHeight,
+            phase,
+        };
+        Nexus.event.emit(NexusEvents.ORIENTATION_CHANGED, payload);
     }
 
     /** 仅加载入口场景到内存并返回，不 runScene。 */
@@ -260,13 +414,11 @@ export class BundleServiceImpl extends IBundleService {
         if (!bundle) throw new Error(`[Nexus] Bundle not loaded: ${bundleName}`);
 
         const entryPrefabPath = `${bundleName}Entry`;
-        const prefab = await new Promise<Prefab | null>((resolve, reject) => {
+        const prefab = await new Promise<Prefab>((resolve, reject) => {
             bundle.load(entryPrefabPath, Prefab, (err, p) => err ? reject(err) : resolve(p));
         }).catch((e) => {
-            error(`[Nexus] Missing entry prefab: ${bundleName}/${entryPrefabPath}.prefab.`, e);
-            return null;
+            throw new Error(`[Nexus] Missing entry prefab: ${bundleName}/${entryPrefabPath}.prefab. ${String(e)}`);
         });
-        if (!prefab) return;
 
         const node = instantiate(prefab);
         node.name = `[Entry:${bundleName}]`;
@@ -276,8 +428,7 @@ export class BundleServiceImpl extends IBundleService {
         const comp = node.getComponent(NexusBaseEntry) ?? node.getComponentInChildren(NexusBaseEntry);
         if (!comp) {
             node.destroy();
-            error(`[Nexus] Entry prefab has no NexusBaseEntry component: ${bundleName}/${entryPrefabPath}.prefab`);
-            return;
+            throw new Error(`[Nexus] Entry prefab has no NexusBaseEntry component: ${bundleName}/${entryPrefabPath}.prefab`);
         }
 
         this._runtimeEntryNode = node;

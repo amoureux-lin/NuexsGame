@@ -22,10 +22,36 @@ export const BaseGameEvents = {
     WATCHERS_UPDATED: 'base:watchers:updated',
     /** 上麦列表变化 */
     SPEAKERS_UPDATED: 'base:speakers:updated',
+    /** 自己被踢/离开房间（reason: SelfLeftRoomReason） */
+    SELF_LEFT_ROOM: 'base:self:leftRoom',
+    /** 收到换房广播，需要重新 joinRoom 到新房间 */
+    SWITCH_ROOM: 'base:switch:room',
+    /** 服务器关闭广播 */
+    SERVER_CLOSED: 'base:server:closed',
+    /** 一局牌开始（子游戏 Model 收到自己的开始广播时 notify），payload: GameStartedPayload */
+    GAME_STARTED: 'base:game:started',
+    /** 一局牌结算（子游戏 Model 收到自己的结算广播时 notify），payload: GameEndedPayload */
+    GAME_ENDED: 'base:game:ended',
+    /** 一局结束后回到等待状态（子游戏 Model 收到房间重置广播时 notify），无 payload */
+    GAME_PHASE_RESET: 'base:game:phaseReset',
 } as const;
 
 /** GAME_ENTERED 事件载荷 */
 export interface GameEnteredPayload {
     /** 进入游戏时的启动参数（与 Entry.onEnter 的 params 一致） */
     params?: Record<string, unknown>;
+}
+
+/** GAME_STARTED 事件载荷 */
+export interface GameStartedPayload {
+    /** 自己 userId（观战者也传自己的 id） */
+    userId: number;
+    /** 自己座位号，观战者传 0 */
+    seat: number;
+}
+
+/** GAME_ENDED 事件载荷 */
+export interface GameEndedPayload {
+    /** 0=输 1=赢 2=平，对应 lib/websdk/WebSDKMessages.ResultType */
+    resultType: number;
 }

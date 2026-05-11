@@ -1,5 +1,5 @@
 import { _decorator, Component, Node, sp ,Label, Sprite, SpriteFrame, EventTouch, Button, Vec3, tween, Tween } from 'cc';
-import { Nexus } from 'db://nexus-framework/index';
+import { Nexus, numberToThousand, strSub } from 'db://nexus-framework/index';
 import {TongitsPlayerInfo} from "db://assets/games/tongits/script/proto/tongits";
 import { PlayerMeldField } from './PlayerMeldField';
 
@@ -383,10 +383,12 @@ export class PlayerSeat extends Component {
         if (this.trophyNode) this.trophyNode.active = false;
     }
 
-    /** 隐藏赢得金额节点与赢动画（游戏重置时调用） */
+    /**
+     * 隐藏赢得金额节点与赢动画（游戏重置时调用）。
+     * 不动 trophy——奖杯代表跨局的 pot 归属，由 TongitsView._refreshPotTrophyOnSeats 统一管理。
+     */
     resetWin(): void {
         this.hidePoint();
-        this.hideTrophy();
         if (this.winNode) {
             Tween.stopAllByTarget(this.winNode);
             this.winNode.setPosition(this._winOrigin);
@@ -460,9 +462,17 @@ export class PlayerSeat extends Component {
 
         Nexus.asset.loadRemote<SpriteFrame>(url).then((sf) => {
             if (!this.isValid || !this.avatarSprite) return;
+            // 异步期间 URL 可能已被新请求覆盖（快速切换/换座），仅最新请求生效
+            if (this._loadedAvatarUrl !== url) return;
             this.avatarSprite.spriteFrame = sf;
         }).catch((err) => {
             console.warn('[PlayerSeat] 头像加载失败:', url, err);
+            if (!this.isValid || !this.avatarSprite) return;
+            // 仍是当前正在等待的 URL → 清掉上一张残留 + 回滚 _loadedAvatarUrl 允许重试
+            if (this._loadedAvatarUrl === url) {
+                this.avatarSprite.spriteFrame = null;
+                this._loadedAvatarUrl = '';
+            }
         });
     }
 
@@ -487,21 +497,22 @@ export class PlayerSeat extends Component {
                 this.winAnimation.node.active = false;
             }
             return;
+
         }
 
         const info = this._data!.playerInfo;
 
         // 头像
-        // this._loadAvatar(info?.avatar ?? '');
+        this._loadAvatar(info?.avatar ?? '');
 
         // 昵称
         if (this.nameLabel) {
-            this.nameLabel.string = info?.nickname ?? '';
+            this.nameLabel.string = strSub(info?.nickname ?? '', 10, true)
         }
 
         // 金币
         if (this.coinLabel) {
-            this.coinLabel.string = String(info?.coin ?? 0);
+            this.coinLabel.string = numberToThousand(info?.coin ?? 0)
         }
 
         // 手牌数：游戏开始后对手可见，自己始终隐藏

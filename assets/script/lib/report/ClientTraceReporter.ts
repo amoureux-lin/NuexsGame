@@ -9,6 +9,10 @@ import { Nexus } from 'db://nexus-framework/index';
 export const ClientTracePhase = {
     SESSION_START: 'session_start', //会话开始
     HTTP_INIT: 'http_init', //HTTP初始化
+    /** HTTP 请求已发出（cmd 见 step.detail） */
+    HTTP_REQ_SEND: 'http_req_send',
+    /** HTTP 响应成功（业务码 0，cmd 见 step.detail） */
+    HTTP_RSP_OK: 'http_rsp_ok',
     /** HTTP 请求失败（业务码非 0 / 网络错误等，见 fail 或 step.detail） */
     HTTP_ERROR: 'http_error',
     LOAD_RESOURCE: 'load_resource', //加载资源
@@ -32,8 +36,12 @@ export type ClientTracePhaseKey = (typeof ClientTracePhase)[keyof typeof ClientT
 export interface ClientTraceStep {
     phase: string;
     offset_ms: number;
+    /** 绝对时间戳（ms），方便与服务端日志对齐 */
+    ts: number;
     ok?: boolean;
     detail?: string;
+    /** 结构化附加信息（HTTP 参数 / WS 连接参数等） */
+    meta?: Record<string, unknown>;
 }
 
 export interface ClientTerminalError {
@@ -41,9 +49,11 @@ export interface ClientTerminalError {
     code?: string;
     message?: string;
     last_successful_phase?: string;
+    meta?: Record<string, unknown>;
 }
 
 const MAX_STEPS = 30;
+const META_MAX_CHARS = 4096;
 
 export type ClientTraceReportHandler = (envelope: ClientTraceReportEnvelope) => void;
 
@@ -97,29 +107,27 @@ export class ClientTraceReporter {
         return this.traceId;
     }
 
-    public step(phase: string, extra?: { ok?: boolean; detail?: string }): void {
+    public step(phase: string, extra?: { ok?: boolean; detail?: string; meta?: Record<string, unknown> }): void {
         if (!this.traceId) {
             this.startSession();
         }
         if (this.steps.length >= MAX_STEPS) {
             return;
         }
-        const offset_ms = this.startedAt ? Date.now() - this.startedAt : 0;
+        const now = Date.now();
+        const offset_ms = this.startedAt ? now - this.startedAt : 0;
         this.steps.push({
             phase,
             offset_ms,
+            ts: now,
             ok: extra?.ok,
             detail: extra?.detail ? this._truncate(extra.detail, 256) : undefined,
+            meta: extra?.meta ? this._limitMeta(extra.meta) : undefined,
         });
     }
 
+    /** 成功进入游戏，仅重置 session，不上报（成功是常态，无需消耗请求） */
     public succeed(): void {
-        const payload = {
-            flow: 'enter_game',
-            steps: this.steps,
-        };
-        const envelope = this._buildEnvelope(payload);
-        this.reportHandler?.(envelope);
         this._reset();
     }
 
@@ -131,10 +139,15 @@ export class ClientTraceReporter {
             terminal_error: {
                 ...terminal,
                 last_successful_phase: terminal.last_successful_phase ?? lastOk?.phase,
+                meta: terminal.meta ? this._limitMeta(terminal.meta) : undefined,
             },
         };
         const envelope = this._buildEnvelope(payload);
-        this.reportHandler?.(envelope);
+        console.log('[ClientTrace] fail()', terminal.category, terminal.code ?? '', 'steps:', this.steps.length, 'handler:', !!this.reportHandler);
+        if (this.reportHandler) {
+            this.reportHandler(envelope);
+            this.reportHandler = null;
+        }
         this._reset();
     }
 
@@ -169,5 +182,12 @@ export class ClientTraceReporter {
 
     private _truncate(s: string, max: number): string {
         return s.length <= max ? s : `${s.slice(0, max)}…`;
+    }
+
+    /** meta 体积控制：超过 META_MAX_CHARS 时降级为截断预览 */
+    private _limitMeta(meta: Record<string, unknown>): Record<string, unknown> {
+        const json = JSON.stringify(meta);
+        if (json.length <= META_MAX_CHARS) return meta;
+        return { truncated: true, size: json.length, preview: json.slice(0, META_MAX_CHARS) };
     }
 }

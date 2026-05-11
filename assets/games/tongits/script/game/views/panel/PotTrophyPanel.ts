@@ -56,7 +56,7 @@ export class PotTrophyPanel extends Component {
      * 在游戏开始（GameStartBroadcast）和结算（BeforeResultBroadcast）时调用。
      */
     setWinCount(count: number): void {
-        if (this.winCountLabel) this.winCountLabel.string = String(count);
+        if (this.winCountLabel) this.winCountLabel.string = count ==0 ? "" : String(count);
     }
 
     /**

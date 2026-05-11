@@ -21,9 +21,9 @@ const DEFAULT_DURATION: Record<ToastType, number> = {
 };
 
 const DEFAULT_POSITION_Y: Record<ToastPosition, number> = {
-    top:    380,
+    top:    150,
     center: 0,
-    bottom: -380,
+    bottom: -150,
 };
 
 /** 淡入时长（s） */
@@ -42,7 +42,7 @@ interface ActiveEntry {
     message: string;
     position: ToastPosition;
     /** 所有正在运行的 tween，reclaim 时统一 stop */
-    tweens: Tween<unknown>[];
+    tweens: Tween<any>[];
     /** 防止重复回收的标志 */
     done: boolean;
 }
@@ -84,10 +84,18 @@ export class ToastServiceImpl extends IToastService {
         if (config.positionY)         Object.assign(this._positionY, config.positionY);
     }
 
-    show(msg: string, options?: ToastShowOptions): void    { this._push('info',    msg, options); }
-    success(msg: string, options?: ToastShowOptions): void { this._push('success', msg, options); }
-    error(msg: string, options?: ToastShowOptions): void   { this._push('error',   msg, options); }
-    warn(msg: string, options?: ToastShowOptions): void    { this._push('warn',    msg, options); }
+    show(msg: string, options?: ToastShowOptions): void    {
+        this._push('info',    msg, options);
+    }
+    success(msg: string, options?: ToastShowOptions): void {
+        this._push('success', msg, options);
+    }
+    error(msg: string, options?: ToastShowOptions): void   {
+        this._push('error',   msg, options);
+    }
+    warn(msg: string, options?: ToastShowOptions): void    {
+        this._push('warn',    msg, options);
+    }
 
     // ── 内部实现 ──────────────────────────────────────────────────────────────
 
@@ -113,7 +121,12 @@ export class ToastServiceImpl extends IToastService {
         let container: Node | null = null;
         try {
             container = Nexus.ui.getLayerNode(UILayer.TOAST);
-        } catch {
+        } catch (e) {
+            console.warn('[Toast] Failed to get TOAST layer:', e);
+            return;
+        }
+        if (!container) {
+            console.warn('[Toast] TOAST layer node is null. Is Nexus.ui.setRoot() called?');
             return;
         }
 
@@ -122,7 +135,8 @@ export class ToastServiceImpl extends IToastService {
         container.addChild(node);
 
         // 配置内容（调用游戏侧 ToastItem 子类实现）
-        node.getComponent(ToastItem)?.setup(message, type, icon);
+        const toastItem = node.getComponent(ToastItem);
+        toastItem?.setup(message, type, icon);
 
         // UIOpacity（prefab 根节点若未挂则自动添加）
         const opacity = node.getComponent(UIOpacity) ?? node.addComponent(UIOpacity);
@@ -158,7 +172,7 @@ export class ToastServiceImpl extends IToastService {
             .call(() => this._reclaim(entry))
             .start();
 
-        entry.tweens.push(tweenPos as Tween<unknown>, tweenOpa as Tween<unknown>);
+        entry.tweens.push(tweenPos as Tween<any>, tweenOpa as Tween<any>);
     }
 
     /**
@@ -203,7 +217,7 @@ export class ToastServiceImpl extends IToastService {
             .call(() => this._reclaim(entry))
             .start();
 
-        entry.tweens.push(fastTween as Tween<unknown>);
+        entry.tweens.push(fastTween as Tween<any>);
     }
 
     /** 停止所有 tween，将节点归还对象池。 */

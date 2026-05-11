@@ -1,11 +1,15 @@
 import { MvcModel, Nexus } from 'db://nexus-framework/index';
 import { MessageType } from 'db://assets/script/proto/message_type';
 import { BaseGameEvents } from './BaseGameEvents';
+import { ErrorReporter } from 'db://assets/script/lib/report/ErrorReporter';
+import { ViewError } from 'db://assets/script/base/errors';
 import type { PlayerInfo } from 'db://assets/script/proto/game_common_room';
 import type {
     UserOfflineBroadcast,
     JoinRoomBroadcast,
     LeaveRoomBroadcast,
+    SelfLeftRoomBroadcast,
+    SwitchRoomBroadcast,
     PlayerSitDownRes,
     SitDownBroadcast,
     StandUpBroadcast,
@@ -557,7 +561,30 @@ export abstract class BaseGameModel<
 
     /** 服务器关闭广播 COMMON_SERVER_CLOSED_BROADCAST */
     onServerClosedBroadcast(_data: ServerClosedBroadcast): void {
-        // 子类覆写：弹窗提示并退出
+        this.notify(BaseGameEvents.SERVER_CLOSED, _data);
+    }
+
+    /**
+     * 自己离开房间广播 COMMON_SELF_LEFT_ROOM_BROADCAST
+     * reason: 0=未指定 1=主动退出 2=预约离开执行 3=被踢
+     */
+    onSelfLeftRoomBroadcast(data: SelfLeftRoomBroadcast): void {
+        // 清理自己的数据
+        this.removePlayerFromSeat(this.myUserId);
+        this.removeFromWatchers(this.myUserId);
+        this.removeFromSpeakers(this.myUserId);
+        this._playersCount = data.playersCount;
+        // 通知上层处理（弹窗/退出/WebSDK）
+        this.notify(BaseGameEvents.SELF_LEFT_ROOM, data);
+    }
+
+    /**
+     * 换房广播 COMMON_SWITCH_ROOM_BROADCAST
+     * 收到后需要重新 joinRoom 到 data.roomId 的新房间
+     */
+    onSwitchRoomBroadcast(data: SwitchRoomBroadcast): void {
+        // 通知上层执行重新 joinRoom
+        this.notify(BaseGameEvents.SWITCH_ROOM, data);
     }
 
     // ── 自己操作的 Res 响应（房主操作） ──────────────────
@@ -669,6 +696,8 @@ export abstract class BaseGameModel<
         net.onWsMsg(MessageType.COMMON_SEND_BARRAGE_BROADCAST,         this.onBarrageBroadcast.bind(this),          this);
         net.onWsMsg(MessageType.COMMON_USER_UPDATE_BROADCAST,          this.onUserInfoUpdateBroadcast.bind(this),   this);
         net.onWsMsg(MessageType.COMMON_SERVER_CLOSED_BROADCAST,        this.onServerClosedBroadcast.bind(this),     this);
+        net.onWsMsg(MessageType.COMMON_SELF_LEFT_ROOM_BROADCAST,     this.onSelfLeftRoomBroadcast.bind(this),     this);
+        net.onWsMsg(MessageType.COMMON_SWITCH_ROOM_BROADCAST,        this.onSwitchRoomBroadcast.bind(this),       this);
         net.onWsMsg(MessageType.COMMON_ROOM_NEW_OWNER_BROADCAST,       this.onNewOwnerBroadcast.bind(this),         this);
         net.onWsMsg(MessageType.ROOM_SET_ROOM_MODE_BROADCAST,          this.onSetRoomModeBroadcast.bind(this),      this);
         net.onWsMsg(MessageType.ROOM_OWNER_KICK_OUT_OF_ROOM_BROADCAST, this.onKickOutOfRoomBroadcast.bind(this),   this);
@@ -690,6 +719,35 @@ export abstract class BaseGameModel<
     registerHandlers(): void {
         this.registerCommonHandlers();
         this.registerGameHandlers();
+    }
+
+    // ── notify 覆写：注入 _isBackground + 订阅者隔离兜底 ────
+
+    /**
+     * 覆写 MvcModel.notify。两件事：
+     *   1. 为对象类型 payload 注入 _isBackground，View 据此跳过动画/特效。
+     *   2. 把派发包在 try-catch 里 —— Nexus.emit 不逐订阅者 catch，第一个抛错的
+     *      订阅者会让后续订阅者全部跳过。这里兜底确保订阅者抛错不会反噬 Model
+     *      层（典型场景：joinRoom 触发 ROOM_JOINED，View.onRoomJoined 抛错若不
+     *      隔离，会被 entry 的 retry 误当成"网络失败"无限重试）。
+     *
+     * 注意：这只是外层兜底，逐订阅者隔离在 BaseGameView.listen 内做（每个 listen
+     * 自己包 try-catch），那才是 publisher/subscriber 真正解耦的位置。
+     */
+    protected override notify<T>(event: string, data?: T): void {
+        if (data && typeof data === 'object' && !Array.isArray(data)) {
+            (data as any)._isBackground = !!Nexus.data.get('_isBackground');
+        }
+        try {
+            super.notify(event, data);
+        } catch (rawErr) {
+            // 任何订阅者同步抛错（且穿透了 BaseGameView.listen 的兜底）会到这里。
+            // 上报但绝不外抛 —— Model 不该被 View 弄崩。
+            ErrorReporter.report(
+                new ViewError(`subscriber of "${event}" threw during notify`, rawErr),
+                { event },
+            );
+        }
     }
 
     // ── 生命周期 ─────────────────────────────────────────

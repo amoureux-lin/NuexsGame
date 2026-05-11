@@ -23,33 +23,35 @@ import {
 export class Nexus {
     private static _initialized = false;
     private static _config: NexusConfig | null = null;
+    private static _hideTime = 0;
+    private static readonly _onGameHide = (): void => {
+        Nexus._hideTime = Date.now();
+        Nexus.emit(NexusEvents.APP_HIDE);
+    };
+    private static readonly _onGameShow = (): void => {
+        const duration = Nexus._hideTime > 0 ? Date.now() - Nexus._hideTime : 0;
+        Nexus._hideTime = 0;
+        Nexus.emit<number>(NexusEvents.APP_SHOW, duration);
+    };
+    private static readonly _onUnhandledRejection = (e: any): void => {
+        console.error('[Nexus] Unhandled Promise rejection:', e.reason);
+        try { Nexus.emit(NexusEvents.ERROR_UNHANDLED, { reason: e.reason }); } catch { /* ignore */ }
+    };
+    private static readonly _onWindowError = (e: any): void => {
+        console.error('[Nexus] Uncaught error:', e.message, e.error);
+        try { Nexus.emit(NexusEvents.ERROR_UNCAUGHT, { message: e.message, error: e.error }); } catch { /* ignore */ }
+    };
 
     /** 初始化框架并按顺序启动所有已注册服务。 */
     static async init(config: NexusConfig): Promise<void> {
+        if (Nexus._initialized) {
+            throw new Error('[Nexus] Already initialized. Call Nexus.destroy() before Nexus.init() again.');
+        }
+
         Nexus._config = config;
         await ServiceRegistry.bootAll(config);
         Nexus._initialized = true;
-
-        // 监听应用前后台切换，APP_SHOW 携带实际后台时长（ms）
-        let _hideTime = 0;
-        game.on(Game.EVENT_HIDE, () => { _hideTime = Date.now(); Nexus.emit(NexusEvents.APP_HIDE); });
-        game.on(Game.EVENT_SHOW, () => {
-            const duration = _hideTime > 0 ? Date.now() - _hideTime : 0;
-            _hideTime = 0;
-            Nexus.emit<number>(NexusEvents.APP_SHOW, duration);
-        });
-
-        // 全局错误边界：捕获未处理的 Promise rejection 和同步错误
-        if (typeof window !== 'undefined') {
-            window.addEventListener('unhandledrejection', (e) => {
-                console.error('[Nexus] Unhandled Promise rejection:', e.reason);
-                try { Nexus.emit(NexusEvents.ERROR_UNHANDLED, { reason: e.reason }); } catch { /* ignore */ }
-            });
-            window.addEventListener('error', (e) => {
-                console.error('[Nexus] Uncaught error:', e.message, e.error);
-                try { Nexus.emit(NexusEvents.ERROR_UNCAUGHT, { message: e.message, error: e.error }); } catch { /* ignore */ }
-            });
-        }
+        Nexus.bindGlobalListeners();
     }
 
     /** 进入配置中的入口 Bundle（未配置时根据 enableLobby 与 bundles 自动推导）。 */
@@ -86,9 +88,11 @@ export class Nexus {
 
     /** 销毁框架并释放全部服务。 */
     static async destroy(): Promise<void> {
+        Nexus.unbindGlobalListeners();
         await ServiceRegistry.destroyAll();
         Nexus._initialized = false;
         Nexus._config = null;
+        Nexus._hideTime = 0;
     }
 
     /** 返回当前生效的框架配置。 */
@@ -196,6 +200,26 @@ export class Nexus {
     private static ensureInitialized(): void {
         if (!Nexus._initialized || !Nexus._config) {
             throw new Error('[Nexus] Call bootstrapNexus() and Nexus.init() before using services.');
+        }
+    }
+
+    private static bindGlobalListeners(): void {
+        game.on(Game.EVENT_HIDE, Nexus._onGameHide);
+        game.on(Game.EVENT_SHOW, Nexus._onGameShow);
+
+        if (typeof window !== 'undefined') {
+            window.addEventListener('unhandledrejection', Nexus._onUnhandledRejection);
+            window.addEventListener('error', Nexus._onWindowError);
+        }
+    }
+
+    private static unbindGlobalListeners(): void {
+        game.off(Game.EVENT_HIDE, Nexus._onGameHide);
+        game.off(Game.EVENT_SHOW, Nexus._onGameShow);
+
+        if (typeof window !== 'undefined') {
+            window.removeEventListener('unhandledrejection', Nexus._onUnhandledRejection);
+            window.removeEventListener('error', Nexus._onWindowError);
         }
     }
 }

@@ -2,7 +2,7 @@
   "ver": "1.0.27",
   "importer": "image",
   "imported": true,
-  "uuid": "5846d43b-31e8-4f97-ac69-daafc67b40ee",
+  "uuid": "f1fa49f3-7e9f-478d-8d4d-c6d1955146f1",
   "files": [
     ".json",
     ".png"
@@ -10,14 +10,14 @@
   "subMetas": {
     "6c48a": {
       "importer": "texture",
-      "uuid": "5846d43b-31e8-4f97-ac69-daafc67b40ee@6c48a",
+      "uuid": "f1fa49f3-7e9f-478d-8d4d-c6d1955146f1@6c48a",
       "displayName": "banfight_fx",
       "id": "6c48a",
       "name": "texture",
       "userData": {
         "wrapModeS": "clamp-to-edge",
         "wrapModeT": "clamp-to-edge",
-        "imageUuidOrDatabaseUri": "5846d43b-31e8-4f97-ac69-daafc67b40ee",
+        "imageUuidOrDatabaseUri": "f1fa49f3-7e9f-478d-8d4d-c6d1955146f1",
         "isUuid": true,
         "visible": false,
         "minfilter": "linear",
@@ -34,7 +34,7 @@
     },
     "f9941": {
       "importer": "sprite-frame",
-      "uuid": "5846d43b-31e8-4f97-ac69-daafc67b40ee@f9941",
+      "uuid": "f1fa49f3-7e9f-478d-8d4d-c6d1955146f1@f9941",
       "displayName": "banfight_fx",
       "id": "f9941",
       "name": "spriteFrame",
@@ -113,7 +113,7 @@
           ]
         },
         "isUuid": true,
-        "imageUuidOrDatabaseUri": "5846d43b-31e8-4f97-ac69-daafc67b40ee@6c48a",
+        "imageUuidOrDatabaseUri": "f1fa49f3-7e9f-478d-8d4d-c6d1955146f1@6c48a",
         "atlasUuid": "",
         "trimType": "auto"
       },
@@ -127,8 +127,8 @@
   },
   "userData": {
     "type": "sprite-frame",
-    "hasAlpha": true,
     "fixAlphaTransparencyArtifacts": false,
-    "redirect": "5846d43b-31e8-4f97-ac69-daafc67b40ee@6c48a"
+    "hasAlpha": true,
+    "redirect": "f1fa49f3-7e9f-478d-8d4d-c6d1955146f1@6c48a"
   }
 }

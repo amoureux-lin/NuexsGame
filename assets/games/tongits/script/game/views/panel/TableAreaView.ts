@@ -121,7 +121,6 @@ export class TableAreaView extends Component {
      * @param totalCount 牌堆剩余总张数
      */
     setupDeck(totalCount: number): void {
-        console.log("游戏开始时初始化牌堆（发完手牌后、剩余牌建堆时调用）:",totalCount);
         this._deckRemaining = totalCount;
         this._buildDeckPile();
     }
@@ -140,7 +139,7 @@ export class TableAreaView extends Component {
             const n = this.makeDeckCard();
             const pileIdx = Math.min(i, visible - 1);
             n.setPosition(0, startY + pileIdx * DECK_STACK_DY, 0);
-            n.setScale(0.68, 0.68);
+            n.setScale(0.75, 0.75);
             this.sendCardNode.addChild(n);
             this._sendPileNodes.push(n);
         }
@@ -163,10 +162,24 @@ export class TableAreaView extends Component {
     popDeckCard(): Node | null {
         this._deckRemaining = Math.max(0, this._deckRemaining - 1);
         this._updateDeckCountLabel();
-        if (this._deckPileNodes.length > 0) {
-            return this._deckPileNodes.pop()!;
+        if (this._deckPileNodes.length === 0) return null;
+
+        const popped = this._deckPileNodes.pop()!;
+
+        // 重算剩余节点的居中 Y 并动画过渡
+        const remaining = this._deckPileNodes.length;
+        if (remaining > 0) {
+            const newStartY = -(remaining - 1) * DECK_STACK_DY / 2;
+            for (let i = 0; i < remaining; i++) {
+                const n = this._deckPileNodes[i];
+                if (!n.isValid) continue;
+                tween(n)
+                    .to(0.12, { position: new Vec3(0, newStartY + i * DECK_STACK_DY, 0) }, { easing: 'quadOut' })
+                    .start();
+            }
         }
-        return null;
+
+        return popped;
     }
 
     /** 返回牌堆节点的世界坐标（供 HandCardPanel 发牌/摸牌动画用） */
@@ -247,7 +260,7 @@ export class TableAreaView extends Component {
         for (let i = 0; i < visible; i++) {
             const n = this.makeDeckCard();
             n.setPosition(0, startY + i * DECK_STACK_DY, 0);
-            // n.setScale(0.68,0.68)
+            // n.setScale(0.75,0.75)
             this.deckNode.addChild(n);
             this._deckPileNodes.push(n);
         }
@@ -300,14 +313,14 @@ export class TableAreaView extends Component {
         if (!this.deckLight?.isValid) return;
         this.stopDeckLight();
         this.deckLight.active = true;
-        this.deckLight.setScale(1, 1, 1);
-        this._deckLightTween = tween(this.deckLight)
-            .repeatForever(
-                tween()
-                    .to(0.5, { scale: new Vec3(1.15, 1.15, 1) }, { easing: 'sineOut' })
-                    .to(0.5, { scale: new Vec3(1.00, 1.00, 1) }, { easing: 'sineIn'  })
-            )
-            .start();
+        // this.deckLight.setScale(1, 1, 1);
+        // this._deckLightTween = tween(this.deckLight)
+        //     .repeatForever(
+        //         tween()
+        //             .to(0.5, { scale: new Vec3(1.15, 1.15, 1) }, { easing: 'sineOut' })
+        //             .to(0.5, { scale: new Vec3(1.00, 1.00, 1) }, { easing: 'sineIn'  })
+        //     )
+        //     .start();
     }
 
     /**
@@ -319,7 +332,7 @@ export class TableAreaView extends Component {
             this._deckLightTween = null;
         }
         if (this.deckLight?.isValid) {
-            this.deckLight.setScale(1, 1, 1);
+            // this.deckLight.setScale(1, 1, 1);
             this.deckLight.active = false;
         }
     }

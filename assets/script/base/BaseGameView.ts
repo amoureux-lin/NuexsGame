@@ -1,8 +1,10 @@
 import { _decorator } from 'cc';
-import { MvcView } from 'db://nexus-framework/index';
+import { MvcView, Nexus } from 'db://nexus-framework/index';
 import { BaseGameEvents, type GameEnteredPayload } from './BaseGameEvents';
 import type { BaseGameModel, GamePlayerLike, JoinRoomData } from './BaseGameModel';
 import { GameEvents } from '../config/GameEvents';
+import { ErrorReporter } from 'db://assets/script/lib/report/ErrorReporter';
+import { ViewError } from './errors';
 
 const { ccclass } = _decorator;
 
@@ -74,6 +76,37 @@ export abstract class BaseGameView<
         this.registerGameEvents();
     }
 
+    // ── 错误边界 ──────────────────────────────────────────
+    //
+    // 覆写 MvcView.listen：把每个订阅者用 try-catch 包一层。
+    // 这一层是 publisher/subscriber 真正解耦的位置 —— 业务回调抛错被 catch 在
+    // 这里，**绝不会反向冒到 Nexus.emit → model.notify → entry.joinRoom**。
+    //
+    // 即使 View 里某个 onXxx 故意写错代码，也只是 ErrorReporter 上报一条 ViewError，
+    // 主流程（进房、retry、其他订阅者）不受任何影响。
+    //
+    // 这跟 BaseGameModel.notify 的外层 try-catch 是双重防御：
+    //   - listen 内层 catch：每个订阅者独立隔离，后续订阅者照常派发
+    //   - notify 外层 catch：万一漏了某个订阅者没走 listen，最后兜一手
+
+    /** 覆写：在 fn 外面包一层 try-catch + 上报，订阅者抛错不再反噬 publisher。 */
+    protected override listen<T>(event: string, fn: (data: T) => void): void {
+        const safeFn = (data: T) => {
+            try {
+                fn.call(this, data);
+            } catch (rawErr) {
+                ErrorReporter.report(
+                    new ViewError(
+                        `${this.constructor.name} handler for "${event}" threw`,
+                        rawErr,
+                    ),
+                    { event, component: this.constructor.name },
+                );
+            }
+        };
+        Nexus.on<T>(event, safeFn, this);
+    }
+
     // ── 公共回调（子类按需 override） ─────────────────────
 
     /** 进房数据就绪 */
@@ -99,6 +132,11 @@ export abstract class BaseGameView<
     /** 打开公共设置面板 */
     protected openSettings(): void {
         this.dispatch(GameEvents.CMD_OPEN_SETTINGS);
+    }
+
+    /** 打开公共菜单面板 */
+    protected openMenu(): void {
+        this.dispatch(GameEvents.CMD_OPEN_MENU);
     }
 
     /** 返回大厅 */

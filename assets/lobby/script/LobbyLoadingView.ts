@@ -24,7 +24,8 @@ export class LobbyLoadingView extends BaseLoadingView {
      * 无子包资源，BUNDLE 段极短；公共资源较重，分配更多前段空间。
      */
     protected override stageRanges: Record<LoadingStage, [number, number]> = {
-        [LoadingStage.COMMON_RESOURCES]: [0,  45],
+        [LoadingStage.COMMON_RESOURCES]: [0,  42],
+        [LoadingStage.I18N]:             [42, 45],
         [LoadingStage.BUNDLE_RESOURCES]: [45, 50],   // 当前无资源，几乎瞬过
         [LoadingStage.CONNECTING]:       [50, 75],
         [LoadingStage.JOINING]:          [75, 100],

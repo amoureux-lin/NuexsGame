@@ -7,7 +7,25 @@
 /* eslint-disable */
 import Long from "long";
 import _m0 from "protobufjs";
-import { PlayerInfo } from "./game_common_room";
+import {
+  ExitRoomIntent,
+  exitRoomIntentFromJSON,
+  exitRoomIntentToJSON,
+  PendingRoomAction,
+  pendingRoomActionFromJSON,
+  pendingRoomActionToJSON,
+  PlayerInfo,
+  PlayerSettings,
+  RoomActionAcceptStatus,
+  roomActionAcceptStatusFromJSON,
+  roomActionAcceptStatusToJSON,
+  SelfLeftRoomReason,
+  selfLeftRoomReasonFromJSON,
+  selfLeftRoomReasonToJSON,
+  StandUpReason,
+  standUpReasonFromJSON,
+  standUpReasonToJSON,
+} from "./game_common_room";
 
 export const protobufPackage = "common.v1";
 
@@ -44,6 +62,8 @@ export interface JoinRoomBroadcast {
  * MessageType: COMMON_PLAYER_EXIT_ROOM_REQ
  */
 export interface PlayerExitRoomReq {
+  /** 立即退出或预约退出 */
+  intent: ExitRoomIntent;
 }
 
 /**
@@ -51,10 +71,14 @@ export interface PlayerExitRoomReq {
  * MessageType: COMMON_PLAYER_EXIT_ROOM_RES
  */
 export interface PlayerExitRoomRes {
+  /** 退出房间响应状态 */
+  status: RoomActionAcceptStatus;
+  /** 当前最新预约动作 */
+  activePendingAction: PendingRoomAction;
 }
 
 /**
- * 玩家离开房间广播
+ * 其他玩家离开房间广播
  * MessageType: COMMON_LEAVE_ROOM_BROADCAST
  */
 export interface LeaveRoomBroadcast {
@@ -62,6 +86,52 @@ export interface LeaveRoomBroadcast {
   userId: number;
   player: PlayerInfo | undefined;
   playersCount: number;
+}
+
+/**
+ * 自己已离开房间广播（只广播给自己）
+ * MessageType: COMMON_SELF_LEFT_ROOM_BROADCAST
+ */
+export interface SelfLeftRoomBroadcast {
+  roomId: number;
+  userId: number;
+  player: PlayerInfo | undefined;
+  playersCount: number;
+  bcUid: number;
+  reason: SelfLeftRoomReason;
+}
+
+/**
+ * 玩家换房请求
+ * MessageType: COMMON_PLAYER_SWITCH_ROOM_REQ
+ */
+export interface PlayerSwitchRoomReq {
+}
+
+/**
+ * 玩家换房响应
+ * MessageType: COMMON_PLAYER_SWITCH_ROOM_RES
+ */
+export interface PlayerSwitchRoomRes {
+  status: RoomActionAcceptStatus;
+  activePendingAction: PendingRoomAction;
+}
+
+/**
+ * 换房广播
+ * MessageType: COMMON_SWITCH_ROOM_BROADCAST
+ */
+export interface SwitchRoomBroadcast {
+  /** 目标房间ID */
+  roomId: number;
+  /** 目标房间底分 */
+  score: number;
+  /** 本次换房操作ID */
+  opId: string;
+  /** Gateway PendingJoin 状态版本 */
+  stateVer: number;
+  /** 本次换房等待过期时间，Unix 时间戳（秒） */
+  expireAt: number;
 }
 
 /**
@@ -115,9 +185,14 @@ export interface PlayerStandUpRes {
  * MessageType: COMMON_STAND_UP_BROADCAST
  */
 export interface StandUpBroadcast {
+  /** 废弃字段 */
   bcUid: number;
   userId: number;
-  player: PlayerInfo | undefined;
+  player:
+    | PlayerInfo
+    | undefined;
+  /** 站起原因 */
+  reason: StandUpReason;
 }
 
 /**
@@ -158,6 +233,21 @@ export interface ReadyBroadcast {
 export interface UserInfoUpdateBroadcast {
   userId: number;
   coins: number;
+}
+
+/**
+ * 玩家设置请求
+ * MessageType: COMMON_PLAYER_SETTINGS_REQ
+ */
+export interface PlayerSettingsReq {
+  settings: PlayerSettings | undefined;
+}
+
+/**
+ * 玩家设置响应
+ * MessageType: COMMON_PLAYER_SETTINGS_RES
+ */
+export interface PlayerSettingsRes {
 }
 
 /**
@@ -431,11 +521,14 @@ export const JoinRoomBroadcast = {
 };
 
 function createBasePlayerExitRoomReq(): PlayerExitRoomReq {
-  return {};
+  return { intent: 0 };
 }
 
 export const PlayerExitRoomReq = {
-  encode(_: PlayerExitRoomReq, writer: _m0.Writer = _m0.Writer.create()): _m0.Writer {
+  encode(message: PlayerExitRoomReq, writer: _m0.Writer = _m0.Writer.create()): _m0.Writer {
+    if (message.intent !== 0) {
+      writer.uint32(8).int32(message.intent);
+    }
     return writer;
   },
 
@@ -446,6 +539,13 @@ export const PlayerExitRoomReq = {
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
+        case 1:
+          if (tag !== 8) {
+            break;
+          }
+
+          message.intent = reader.int32() as any;
+          continue;
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -455,30 +555,40 @@ export const PlayerExitRoomReq = {
     return message;
   },
 
-  fromJSON(_: any): PlayerExitRoomReq {
-    return {};
+  fromJSON(object: any): PlayerExitRoomReq {
+    return { intent: isSet(object.intent) ? exitRoomIntentFromJSON(object.intent) : 0 };
   },
 
-  toJSON(_: PlayerExitRoomReq): unknown {
+  toJSON(message: PlayerExitRoomReq): unknown {
     const obj: any = {};
+    if (message.intent !== 0) {
+      obj.intent = exitRoomIntentToJSON(message.intent);
+    }
     return obj;
   },
 
   create<I extends Exact<DeepPartial<PlayerExitRoomReq>, I>>(base?: I): PlayerExitRoomReq {
     return PlayerExitRoomReq.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<PlayerExitRoomReq>, I>>(_: I): PlayerExitRoomReq {
+  fromPartial<I extends Exact<DeepPartial<PlayerExitRoomReq>, I>>(object: I): PlayerExitRoomReq {
     const message = createBasePlayerExitRoomReq();
+    message.intent = object.intent ?? 0;
     return message;
   },
 };
 
 function createBasePlayerExitRoomRes(): PlayerExitRoomRes {
-  return {};
+  return { status: 0, activePendingAction: 0 };
 }
 
 export const PlayerExitRoomRes = {
-  encode(_: PlayerExitRoomRes, writer: _m0.Writer = _m0.Writer.create()): _m0.Writer {
+  encode(message: PlayerExitRoomRes, writer: _m0.Writer = _m0.Writer.create()): _m0.Writer {
+    if (message.status !== 0) {
+      writer.uint32(8).int32(message.status);
+    }
+    if (message.activePendingAction !== 0) {
+      writer.uint32(16).int32(message.activePendingAction);
+    }
     return writer;
   },
 
@@ -489,6 +599,20 @@ export const PlayerExitRoomRes = {
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
+        case 1:
+          if (tag !== 8) {
+            break;
+          }
+
+          message.status = reader.int32() as any;
+          continue;
+        case 2:
+          if (tag !== 16) {
+            break;
+          }
+
+          message.activePendingAction = reader.int32() as any;
+          continue;
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -498,20 +622,33 @@ export const PlayerExitRoomRes = {
     return message;
   },
 
-  fromJSON(_: any): PlayerExitRoomRes {
-    return {};
+  fromJSON(object: any): PlayerExitRoomRes {
+    return {
+      status: isSet(object.status) ? roomActionAcceptStatusFromJSON(object.status) : 0,
+      activePendingAction: isSet(object.activePendingAction)
+        ? pendingRoomActionFromJSON(object.activePendingAction)
+        : 0,
+    };
   },
 
-  toJSON(_: PlayerExitRoomRes): unknown {
+  toJSON(message: PlayerExitRoomRes): unknown {
     const obj: any = {};
+    if (message.status !== 0) {
+      obj.status = roomActionAcceptStatusToJSON(message.status);
+    }
+    if (message.activePendingAction !== 0) {
+      obj.activePendingAction = pendingRoomActionToJSON(message.activePendingAction);
+    }
     return obj;
   },
 
   create<I extends Exact<DeepPartial<PlayerExitRoomRes>, I>>(base?: I): PlayerExitRoomRes {
     return PlayerExitRoomRes.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<PlayerExitRoomRes>, I>>(_: I): PlayerExitRoomRes {
+  fromPartial<I extends Exact<DeepPartial<PlayerExitRoomRes>, I>>(object: I): PlayerExitRoomRes {
     const message = createBasePlayerExitRoomRes();
+    message.status = object.status ?? 0;
+    message.activePendingAction = object.activePendingAction ?? 0;
     return message;
   },
 };
@@ -618,6 +755,380 @@ export const LeaveRoomBroadcast = {
       ? PlayerInfo.fromPartial(object.player)
       : undefined;
     message.playersCount = object.playersCount ?? 0;
+    return message;
+  },
+};
+
+function createBaseSelfLeftRoomBroadcast(): SelfLeftRoomBroadcast {
+  return { roomId: 0, userId: 0, player: undefined, playersCount: 0, bcUid: 0, reason: 0 };
+}
+
+export const SelfLeftRoomBroadcast = {
+  encode(message: SelfLeftRoomBroadcast, writer: _m0.Writer = _m0.Writer.create()): _m0.Writer {
+    if (message.roomId !== 0) {
+      writer.uint32(8).int64(message.roomId);
+    }
+    if (message.userId !== 0) {
+      writer.uint32(16).int64(message.userId);
+    }
+    if (message.player !== undefined) {
+      PlayerInfo.encode(message.player, writer.uint32(26).fork()).ldelim();
+    }
+    if (message.playersCount !== 0) {
+      writer.uint32(32).int32(message.playersCount);
+    }
+    if (message.bcUid !== 0) {
+      writer.uint32(40).int64(message.bcUid);
+    }
+    if (message.reason !== 0) {
+      writer.uint32(48).int32(message.reason);
+    }
+    return writer;
+  },
+
+  decode(input: _m0.Reader | Uint8Array, length?: number): SelfLeftRoomBroadcast {
+    const reader = input instanceof _m0.Reader ? input : _m0.Reader.create(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseSelfLeftRoomBroadcast();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          if (tag !== 8) {
+            break;
+          }
+
+          message.roomId = longToNumber(reader.int64() as Long);
+          continue;
+        case 2:
+          if (tag !== 16) {
+            break;
+          }
+
+          message.userId = longToNumber(reader.int64() as Long);
+          continue;
+        case 3:
+          if (tag !== 26) {
+            break;
+          }
+
+          message.player = PlayerInfo.decode(reader, reader.uint32());
+          continue;
+        case 4:
+          if (tag !== 32) {
+            break;
+          }
+
+          message.playersCount = reader.int32();
+          continue;
+        case 5:
+          if (tag !== 40) {
+            break;
+          }
+
+          message.bcUid = longToNumber(reader.int64() as Long);
+          continue;
+        case 6:
+          if (tag !== 48) {
+            break;
+          }
+
+          message.reason = reader.int32() as any;
+          continue;
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skipType(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): SelfLeftRoomBroadcast {
+    return {
+      roomId: isSet(object.roomId) ? globalThis.Number(object.roomId) : 0,
+      userId: isSet(object.userId) ? globalThis.Number(object.userId) : 0,
+      player: isSet(object.player) ? PlayerInfo.fromJSON(object.player) : undefined,
+      playersCount: isSet(object.playersCount) ? globalThis.Number(object.playersCount) : 0,
+      bcUid: isSet(object.bcUid) ? globalThis.Number(object.bcUid) : 0,
+      reason: isSet(object.reason) ? selfLeftRoomReasonFromJSON(object.reason) : 0,
+    };
+  },
+
+  toJSON(message: SelfLeftRoomBroadcast): unknown {
+    const obj: any = {};
+    if (message.roomId !== 0) {
+      obj.roomId = Math.round(message.roomId);
+    }
+    if (message.userId !== 0) {
+      obj.userId = Math.round(message.userId);
+    }
+    if (message.player !== undefined) {
+      obj.player = PlayerInfo.toJSON(message.player);
+    }
+    if (message.playersCount !== 0) {
+      obj.playersCount = Math.round(message.playersCount);
+    }
+    if (message.bcUid !== 0) {
+      obj.bcUid = Math.round(message.bcUid);
+    }
+    if (message.reason !== 0) {
+      obj.reason = selfLeftRoomReasonToJSON(message.reason);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<SelfLeftRoomBroadcast>, I>>(base?: I): SelfLeftRoomBroadcast {
+    return SelfLeftRoomBroadcast.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<SelfLeftRoomBroadcast>, I>>(object: I): SelfLeftRoomBroadcast {
+    const message = createBaseSelfLeftRoomBroadcast();
+    message.roomId = object.roomId ?? 0;
+    message.userId = object.userId ?? 0;
+    message.player = (object.player !== undefined && object.player !== null)
+      ? PlayerInfo.fromPartial(object.player)
+      : undefined;
+    message.playersCount = object.playersCount ?? 0;
+    message.bcUid = object.bcUid ?? 0;
+    message.reason = object.reason ?? 0;
+    return message;
+  },
+};
+
+function createBasePlayerSwitchRoomReq(): PlayerSwitchRoomReq {
+  return {};
+}
+
+export const PlayerSwitchRoomReq = {
+  encode(_: PlayerSwitchRoomReq, writer: _m0.Writer = _m0.Writer.create()): _m0.Writer {
+    return writer;
+  },
+
+  decode(input: _m0.Reader | Uint8Array, length?: number): PlayerSwitchRoomReq {
+    const reader = input instanceof _m0.Reader ? input : _m0.Reader.create(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBasePlayerSwitchRoomReq();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skipType(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(_: any): PlayerSwitchRoomReq {
+    return {};
+  },
+
+  toJSON(_: PlayerSwitchRoomReq): unknown {
+    const obj: any = {};
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<PlayerSwitchRoomReq>, I>>(base?: I): PlayerSwitchRoomReq {
+    return PlayerSwitchRoomReq.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<PlayerSwitchRoomReq>, I>>(_: I): PlayerSwitchRoomReq {
+    const message = createBasePlayerSwitchRoomReq();
+    return message;
+  },
+};
+
+function createBasePlayerSwitchRoomRes(): PlayerSwitchRoomRes {
+  return { status: 0, activePendingAction: 0 };
+}
+
+export const PlayerSwitchRoomRes = {
+  encode(message: PlayerSwitchRoomRes, writer: _m0.Writer = _m0.Writer.create()): _m0.Writer {
+    if (message.status !== 0) {
+      writer.uint32(8).int32(message.status);
+    }
+    if (message.activePendingAction !== 0) {
+      writer.uint32(16).int32(message.activePendingAction);
+    }
+    return writer;
+  },
+
+  decode(input: _m0.Reader | Uint8Array, length?: number): PlayerSwitchRoomRes {
+    const reader = input instanceof _m0.Reader ? input : _m0.Reader.create(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBasePlayerSwitchRoomRes();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          if (tag !== 8) {
+            break;
+          }
+
+          message.status = reader.int32() as any;
+          continue;
+        case 2:
+          if (tag !== 16) {
+            break;
+          }
+
+          message.activePendingAction = reader.int32() as any;
+          continue;
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skipType(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): PlayerSwitchRoomRes {
+    return {
+      status: isSet(object.status) ? roomActionAcceptStatusFromJSON(object.status) : 0,
+      activePendingAction: isSet(object.activePendingAction)
+        ? pendingRoomActionFromJSON(object.activePendingAction)
+        : 0,
+    };
+  },
+
+  toJSON(message: PlayerSwitchRoomRes): unknown {
+    const obj: any = {};
+    if (message.status !== 0) {
+      obj.status = roomActionAcceptStatusToJSON(message.status);
+    }
+    if (message.activePendingAction !== 0) {
+      obj.activePendingAction = pendingRoomActionToJSON(message.activePendingAction);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<PlayerSwitchRoomRes>, I>>(base?: I): PlayerSwitchRoomRes {
+    return PlayerSwitchRoomRes.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<PlayerSwitchRoomRes>, I>>(object: I): PlayerSwitchRoomRes {
+    const message = createBasePlayerSwitchRoomRes();
+    message.status = object.status ?? 0;
+    message.activePendingAction = object.activePendingAction ?? 0;
+    return message;
+  },
+};
+
+function createBaseSwitchRoomBroadcast(): SwitchRoomBroadcast {
+  return { roomId: 0, score: 0, opId: "", stateVer: 0, expireAt: 0 };
+}
+
+export const SwitchRoomBroadcast = {
+  encode(message: SwitchRoomBroadcast, writer: _m0.Writer = _m0.Writer.create()): _m0.Writer {
+    if (message.roomId !== 0) {
+      writer.uint32(8).int64(message.roomId);
+    }
+    if (message.score !== 0) {
+      writer.uint32(16).int64(message.score);
+    }
+    if (message.opId !== "") {
+      writer.uint32(26).string(message.opId);
+    }
+    if (message.stateVer !== 0) {
+      writer.uint32(32).int64(message.stateVer);
+    }
+    if (message.expireAt !== 0) {
+      writer.uint32(40).int64(message.expireAt);
+    }
+    return writer;
+  },
+
+  decode(input: _m0.Reader | Uint8Array, length?: number): SwitchRoomBroadcast {
+    const reader = input instanceof _m0.Reader ? input : _m0.Reader.create(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseSwitchRoomBroadcast();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          if (tag !== 8) {
+            break;
+          }
+
+          message.roomId = longToNumber(reader.int64() as Long);
+          continue;
+        case 2:
+          if (tag !== 16) {
+            break;
+          }
+
+          message.score = longToNumber(reader.int64() as Long);
+          continue;
+        case 3:
+          if (tag !== 26) {
+            break;
+          }
+
+          message.opId = reader.string();
+          continue;
+        case 4:
+          if (tag !== 32) {
+            break;
+          }
+
+          message.stateVer = longToNumber(reader.int64() as Long);
+          continue;
+        case 5:
+          if (tag !== 40) {
+            break;
+          }
+
+          message.expireAt = longToNumber(reader.int64() as Long);
+          continue;
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skipType(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): SwitchRoomBroadcast {
+    return {
+      roomId: isSet(object.roomId) ? globalThis.Number(object.roomId) : 0,
+      score: isSet(object.score) ? globalThis.Number(object.score) : 0,
+      opId: isSet(object.opId) ? globalThis.String(object.opId) : "",
+      stateVer: isSet(object.stateVer) ? globalThis.Number(object.stateVer) : 0,
+      expireAt: isSet(object.expireAt) ? globalThis.Number(object.expireAt) : 0,
+    };
+  },
+
+  toJSON(message: SwitchRoomBroadcast): unknown {
+    const obj: any = {};
+    if (message.roomId !== 0) {
+      obj.roomId = Math.round(message.roomId);
+    }
+    if (message.score !== 0) {
+      obj.score = Math.round(message.score);
+    }
+    if (message.opId !== "") {
+      obj.opId = message.opId;
+    }
+    if (message.stateVer !== 0) {
+      obj.stateVer = Math.round(message.stateVer);
+    }
+    if (message.expireAt !== 0) {
+      obj.expireAt = Math.round(message.expireAt);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<SwitchRoomBroadcast>, I>>(base?: I): SwitchRoomBroadcast {
+    return SwitchRoomBroadcast.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<SwitchRoomBroadcast>, I>>(object: I): SwitchRoomBroadcast {
+    const message = createBaseSwitchRoomBroadcast();
+    message.roomId = object.roomId ?? 0;
+    message.score = object.score ?? 0;
+    message.opId = object.opId ?? "";
+    message.stateVer = object.stateVer ?? 0;
+    message.expireAt = object.expireAt ?? 0;
     return message;
   },
 };
@@ -946,7 +1457,7 @@ export const PlayerStandUpRes = {
 };
 
 function createBaseStandUpBroadcast(): StandUpBroadcast {
-  return { bcUid: 0, userId: 0, player: undefined };
+  return { bcUid: 0, userId: 0, player: undefined, reason: 0 };
 }
 
 export const StandUpBroadcast = {
@@ -959,6 +1470,9 @@ export const StandUpBroadcast = {
     }
     if (message.player !== undefined) {
       PlayerInfo.encode(message.player, writer.uint32(18).fork()).ldelim();
+    }
+    if (message.reason !== 0) {
+      writer.uint32(32).int32(message.reason);
     }
     return writer;
   },
@@ -991,6 +1505,13 @@ export const StandUpBroadcast = {
 
           message.player = PlayerInfo.decode(reader, reader.uint32());
           continue;
+        case 4:
+          if (tag !== 32) {
+            break;
+          }
+
+          message.reason = reader.int32() as any;
+          continue;
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1005,6 +1526,7 @@ export const StandUpBroadcast = {
       bcUid: isSet(object.bcUid) ? globalThis.Number(object.bcUid) : 0,
       userId: isSet(object.userId) ? globalThis.Number(object.userId) : 0,
       player: isSet(object.player) ? PlayerInfo.fromJSON(object.player) : undefined,
+      reason: isSet(object.reason) ? standUpReasonFromJSON(object.reason) : 0,
     };
   },
 
@@ -1019,6 +1541,9 @@ export const StandUpBroadcast = {
     if (message.player !== undefined) {
       obj.player = PlayerInfo.toJSON(message.player);
     }
+    if (message.reason !== 0) {
+      obj.reason = standUpReasonToJSON(message.reason);
+    }
     return obj;
   },
 
@@ -1032,6 +1557,7 @@ export const StandUpBroadcast = {
     message.player = (object.player !== undefined && object.player !== null)
       ? PlayerInfo.fromPartial(object.player)
       : undefined;
+    message.reason = object.reason ?? 0;
     return message;
   },
 };
@@ -1358,6 +1884,108 @@ export const UserInfoUpdateBroadcast = {
     const message = createBaseUserInfoUpdateBroadcast();
     message.userId = object.userId ?? 0;
     message.coins = object.coins ?? 0;
+    return message;
+  },
+};
+
+function createBasePlayerSettingsReq(): PlayerSettingsReq {
+  return { settings: undefined };
+}
+
+export const PlayerSettingsReq = {
+  encode(message: PlayerSettingsReq, writer: _m0.Writer = _m0.Writer.create()): _m0.Writer {
+    if (message.settings !== undefined) {
+      PlayerSettings.encode(message.settings, writer.uint32(10).fork()).ldelim();
+    }
+    return writer;
+  },
+
+  decode(input: _m0.Reader | Uint8Array, length?: number): PlayerSettingsReq {
+    const reader = input instanceof _m0.Reader ? input : _m0.Reader.create(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBasePlayerSettingsReq();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          if (tag !== 10) {
+            break;
+          }
+
+          message.settings = PlayerSettings.decode(reader, reader.uint32());
+          continue;
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skipType(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): PlayerSettingsReq {
+    return { settings: isSet(object.settings) ? PlayerSettings.fromJSON(object.settings) : undefined };
+  },
+
+  toJSON(message: PlayerSettingsReq): unknown {
+    const obj: any = {};
+    if (message.settings !== undefined) {
+      obj.settings = PlayerSettings.toJSON(message.settings);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<PlayerSettingsReq>, I>>(base?: I): PlayerSettingsReq {
+    return PlayerSettingsReq.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<PlayerSettingsReq>, I>>(object: I): PlayerSettingsReq {
+    const message = createBasePlayerSettingsReq();
+    message.settings = (object.settings !== undefined && object.settings !== null)
+      ? PlayerSettings.fromPartial(object.settings)
+      : undefined;
+    return message;
+  },
+};
+
+function createBasePlayerSettingsRes(): PlayerSettingsRes {
+  return {};
+}
+
+export const PlayerSettingsRes = {
+  encode(_: PlayerSettingsRes, writer: _m0.Writer = _m0.Writer.create()): _m0.Writer {
+    return writer;
+  },
+
+  decode(input: _m0.Reader | Uint8Array, length?: number): PlayerSettingsRes {
+    const reader = input instanceof _m0.Reader ? input : _m0.Reader.create(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBasePlayerSettingsRes();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skipType(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(_: any): PlayerSettingsRes {
+    return {};
+  },
+
+  toJSON(_: PlayerSettingsRes): unknown {
+    const obj: any = {};
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<PlayerSettingsRes>, I>>(base?: I): PlayerSettingsRes {
+    return PlayerSettingsRes.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<PlayerSettingsRes>, I>>(_: I): PlayerSettingsRes {
+    const message = createBasePlayerSettingsRes();
     return message;
   },
 };

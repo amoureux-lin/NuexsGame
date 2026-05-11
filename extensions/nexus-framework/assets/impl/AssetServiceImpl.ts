@@ -1,11 +1,34 @@
 import { Asset, AssetManager, assetManager, ImageAsset, SpriteFrame, Texture2D } from 'cc';
 import { AssetCtor, IAssetService } from '../services/contracts';
+import { Nexus } from '../core/Nexus';
 
 /**
  * 基于 assetManager 的资源管理实现。
  * load / loadDir 委托给对应 Bundle 的原生接口，release / releaseBundle 直接释放引用。
  */
 export class AssetServiceImpl extends IAssetService {
+
+    /**
+     * 同步获取已加载的资源。
+     * 不传 bundle 时：先从当前 bundle 找，再回退到 common，都没有则返回 null。
+     */
+    get<T extends Asset>(path: string, type?: AssetCtor<T>, bundle?: string): T | null {
+        if (bundle) {
+            const b = assetManager.getBundle(bundle);
+            if (!b) return null;
+            return (type ? b.get(path, type as any) : b.get(path)) as T | null;
+        }
+        // 先从当前 bundle 找
+        const current = Nexus.bundle.current;
+        if (current) {
+            const b = assetManager.getBundle(current);
+            const asset = b ? (type ? b.get(path, type as any) : b.get(path)) as T | null : null;
+            if (asset) return asset;
+        }
+        // 回退到 common
+        const common = assetManager.getBundle('common');
+        return common ? (type ? common.get(path, type as any) : common.get(path)) as T | null : null;
+    }
 
     /** 加载单个资源；必要时先解析并加载 Bundle。 */
     async load<T extends Asset>(bundle: string, path: string, type?: AssetCtor<T>): Promise<T> {

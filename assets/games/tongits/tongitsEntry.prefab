@@ -236,7 +236,7 @@
       "a": 255
     },
     "_spriteFrame": {
-      "__uuid__": "9a066ea7-1fc6-4a3c-90d4-b5f2e4562895@f9941",
+      "__uuid__": "642a805d-6c62-4352-8cea-4917b1fb7982@f9941",
       "__expectedType__": "cc.SpriteFrame"
     },
     "_type": 1,
@@ -1043,7 +1043,7 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 1334.0000000000002,
+      "width": 1334,
       "height": 750
     },
     "_anchorPoint": {
@@ -1148,7 +1148,7 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 1334.0000000000002,
+      "width": 1334,
       "height": 750
     },
     "_anchorPoint": {

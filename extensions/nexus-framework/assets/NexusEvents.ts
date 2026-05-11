@@ -2,8 +2,10 @@ export const NexusEvents = {
     APP_READY:        'APP_READY',        // 应用准备
     APP_HIDE:         'APP_HIDE',         // 应用隐藏
     APP_SHOW:         'APP_SHOW',         // 应用显示
+    ORIENTATION_CHANGED: 'ORIENTATION_CHANGED', // 横竖屏配置已应用 { bundleName, orientation, width, height, fitWidth, fitHeight, phase }
     BUNDLE_ENTER:     'BUNDLE_ENTER',     // 进入 Bundle
     BUNDLE_EXIT:      'BUNDLE_EXIT',      // 退出 Bundle
+    BUNDLE_ENTER_FAILED: 'BUNDLE_ENTER_FAILED', // 进入 Bundle 失败 { bundleName, error }
     NET_CONNECTED:    'NET_CONNECTED',    // 网络连接成功
     NET_DISCONNECTED: 'NET_DISCONNECTED', // 网络断开
     NET_UNSTABLE:     'NET_UNSTABLE',     // 网络频繁断连，已触发熔断停止重连
@@ -18,3 +20,14 @@ export const NexusEvents = {
 
 export type NexusEventKey = typeof NexusEvents[keyof typeof NexusEvents];
 
+export type OrientationChangePhase = 'before-load' | 'scene-ready';
+
+export interface OrientationChangedPayload {
+    bundleName: string;
+    orientation: 'landscape' | 'portrait';
+    width: number;
+    height: number;
+    fitWidth: boolean;
+    fitHeight: boolean;
+    phase: OrientationChangePhase;
+}

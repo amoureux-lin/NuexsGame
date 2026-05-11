@@ -2,7 +2,7 @@
  * 由构建脚本根据 proto 生成，请勿手改。
  */
 import type { MessageMapping } from 'db://nexus-framework/index';
-import { JoinRoomReq, JoinRoomRes, StartGameReq, StartGameRes, GameStartBroadcast, TongitsReq, TongitsRes, DrawCardReq, DrawCardRes, DrawCardBroadcast, MeldCardReq, MeldCardRes, MeldCardBroadcast, LayOffCardReq, LayOffCardRes, LayOffCardBroadcast, DiscardCardReq, DiscardCardRes, DiscardCardBroadcast, TakeCardReq, TakeCardRes, TakeCardBroadcast, ChallengeReq, ChallengeRes, ChallengeBroadcast, PKBroadcast, GameResultBroadcast, RoomResetBroadcast, ActionChangeBroadcast, BeforeResultBroadcast, GameResultDetailsReq, GameResultDetailsRes, GetPlayerHistoryReq, GetPlayerHistoryRes } from './tongits';
+import { JoinRoomReq, JoinRoomRes, StartGameReq, StartGameRes, GameStartBroadcast, TongitsReq, TongitsRes, DrawCardReq, DrawCardRes, DrawCardBroadcast, MeldCardReq, MeldCardRes, MeldCardBroadcast, LayOffCardReq, LayOffCardRes, LayOffCardBroadcast, DiscardCardReq, DiscardCardRes, DiscardCardBroadcast, TakeCardReq, TakeCardRes, TakeCardBroadcast, ChallengeReq, ChallengeRes, ChallengeBroadcast, PKBroadcast, GameResultBroadcast, RoomResetBroadcast, ActionChangeBroadcast, BeforeResultBroadcast, GameResultDetailsReq, GameResultDetailsRes, GetPlayerHistoryReq, GetPlayerHistoryRes, GameReadyBroadcast, SwitchAutoGroupCardsReq, SwitchAutoGroupCardsRes, GamePlayerGroupCardsReq, GamePlayerGroupCardsRes } from './tongits';
 import { MessageType } from './message_type';
 
 /** 从 Writer 得到 Uint8Array（ts_proto 的 encode 返回 Writer） */
@@ -180,5 +180,30 @@ export const TONGITS_MSG_REGISTRY: Record<number, MessageMapping> = {
         decode: (buf) => GetPlayerHistoryRes.decode(buf),
         encode: (msg) => finish(GetPlayerHistoryRes.encode(msg as GetPlayerHistoryRes)),
         name: 'GetPlayerHistoryRes',
+    },
+    [MessageType.TONGITS_GAME_READY_BROADCAST]: {
+        decode: (buf) => GameReadyBroadcast.decode(buf),
+        encode: (msg) => finish(GameReadyBroadcast.encode(msg as GameReadyBroadcast)),
+        name: 'GameReadyBroadcast',
+    },
+    [MessageType.TONGITS_SWITCH_AUTO_GROUP_CARDS_REQ]: {
+        decode: (buf) => SwitchAutoGroupCardsReq.decode(buf),
+        encode: (msg) => finish(SwitchAutoGroupCardsReq.encode(msg as SwitchAutoGroupCardsReq)),
+        name: 'SwitchAutoGroupCardsReq',
+    },
+    [MessageType.TONGITS_SWITCH_AUTO_GROUP_CARDS_RES]: {
+        decode: (buf) => SwitchAutoGroupCardsRes.decode(buf),
+        encode: (msg) => finish(SwitchAutoGroupCardsRes.encode(msg as SwitchAutoGroupCardsRes)),
+        name: 'SwitchAutoGroupCardsRes',
+    },
+    [MessageType.TONGITS_GAME_PLAYER_GROUP_CARDS_REQ]: {
+        decode: (buf) => GamePlayerGroupCardsReq.decode(buf),
+        encode: (msg) => finish(GamePlayerGroupCardsReq.encode(msg as GamePlayerGroupCardsReq)),
+        name: 'GamePlayerGroupCardsReq',
+    },
+    [MessageType.TONGITS_GAME_PLAYER_GROUP_CARDS_RES]: {
+        decode: (buf) => GamePlayerGroupCardsRes.decode(buf),
+        encode: (msg) => finish(GamePlayerGroupCardsRes.encode(msg as GamePlayerGroupCardsRes)),
+        name: 'GamePlayerGroupCardsRes',
     },
 };

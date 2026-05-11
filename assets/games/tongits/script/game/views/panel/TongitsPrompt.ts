@@ -47,7 +47,6 @@ export class TongitsPrompt extends Component {
     /** 显示提示浮层，播放 win_loop 循环等待点击 */
     show(): void {
         this.node.active = true;
-        console.log("显示提示浮层，播放 win_loop 循环等待点击")
         this._ending = false;
         this.skeleton.node.active = true;
         this.skeleton.setCompleteListener(null);

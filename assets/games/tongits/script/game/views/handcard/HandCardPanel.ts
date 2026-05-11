@@ -23,8 +23,10 @@ import {
     _decorator, Component, Node, Prefab, instantiate,
     UITransform, Vec2, Vec3, tween, Tween, Button, Label,
 } from 'cc';
+import { Nexus } from 'db://nexus-framework/index';
 import { TableAreaView } from '../panel/TableAreaView';
-import { HandCardState, ButtonStates, HandCardSnapshot } from '../../../utils/HandCardState';
+import { HandCardState, ButtonStates, HandCardSnapshot, type ServerCards } from '../../../utils/HandCardState';
+import { TongitsEvents } from '../../../config/TongitsEvents';
 
 // ── 选中信息（对外统一出口） ───────────────────────────────
 
@@ -41,11 +43,32 @@ export interface SelectionInfo {
 // export type MeldCandidateInfo = { candidates: GroupData[][] };
 // onMeldCandidateChange: ((info: MeldCandidateInfo) => void) | null = null;
 import { autoGroup, GroupData, judgeGroupType, GroupType } from '../../../utils/GroupAlgorithm';
-import { SortMode }                                      from '../../../utils/CardDef';
+import { SortMode, calcPoint }                           from '../../../utils/CardDef';
 import { CardGroupView }                                 from './CardGroupView';
 import { CardNode, DEFAULT_CARD_W, DEFAULT_CARD_H, CARD_SPACING, getCardContentSize } from './CardNode';
 
 const { ccclass, property } = _decorator;
+
+// ── 动画 ceremony 任务 ─────────────────────────────────────
+//
+// 设计：所有"会改变手牌可视集合"的 API（addCard / refreshWithServerGroupsAnimated /
+// dealCards 等）都把 ceremony 入队，由 _runWorker 串行播放。期间 _renderLock 屏蔽
+// _onStateChange 的响应式渲染——状态本身已立刻 commit 到 _state，只是渲染按 ceremony
+// 节奏走，避免后续广播的 state 变更被动画路径覆盖。
+//
+// 每个 task 携带 fromSnap（ceremony 开始时视觉状态）+ toSnap（ceremony 结束时视觉状态）。
+// fromSnap 在 API 入口、commit 之前抓取——等价于"上次 ceremony 完成时的视觉"，
+// 因为 worker 严格 await 每个 ceremony，且每个 ceremony 末尾把视觉对齐到 toSnap。
+
+type AnimTaskBody =
+    | { kind: 'merge-expand'; fromSnap: HandCardSnapshot; toSnap: HandCardSnapshot; drawnCard?: number }
+    | { kind: 'drop-only';    fromSnap: HandCardSnapshot; toSnap: HandCardSnapshot; drawnCard: number };
+
+interface AnimTask {
+    body: AnimTaskBody;
+    /** ceremony 完成时 resolve；调用方需要 await 时使用 */
+    done: () => void;
+}
 
 // ── 拖拽状态 ──────────────────────────────────────────────
 
@@ -141,6 +164,9 @@ export class HandCardPanel extends Component {
      */
     onDeckDrawClick: (() => void) | null = null;
 
+    /** 手牌分组结构被本地修改后触发，由 TongitsView 同步给服务端。 */
+    onGroupsChange: ((groups: ServerCards[]) => void) | null = null;
+
     // ── 私有状态 ──────────────────────────────────────────
 
     private _state       = new HandCardState();
@@ -159,12 +185,28 @@ export class HandCardPanel extends Component {
     private _unsubscribe: (() => void) | null = null;
     /** 发牌后第一次 _doLayout 使用更长的重排时长，之后自动还原 */
     private _dealReorderDur: number = LAYOUT_DUR;
+    /** 一次性"瞬时布局"标记：showCards 时设为 true，下次 _doLayout 全部 setPosition 不走 tween */
+    private _instantLayout: boolean = false;
+    /** 观战模式：手牌全程拍背、不分组、排序按钮隐藏、交互禁用 */
+    private _spectatorMode: boolean = false;
+    // ── Ceremony 队列 / Render Lock（数据驱动渲染分层 / C 方案） ─
     /**
-     * 已启动动画但尚未写入 state 的散牌数。
-     * _computeNewCardLocalX / _preShiftRootsForNewCard 用此修正 n，
-     * 确保连续摸牌时每张新牌都按真实张数计算位置。
+     * Ceremony 任务队列。
+     * API 入口（addCard / dealCards / refreshWithServerGroupsAnimated）入队，
+     * _runWorker 串行 pop 播放。
      */
-    private _pendingUngroupCount = 0;
+    private _animQueue: AnimTask[] = [];
+    /** worker 是否运行中，防止重复启动 */
+    private _workerRunning = false;
+    /**
+     * Render Lock：true 时 _onStateChange 不立刻渲染，只缓存最新 snap。
+     * worker 在播 ceremony 期间持锁，ceremony 结束 / worker 收尾时按需统一渲染。
+     */
+    private _renderLock = false;
+    /** Lock 期间最新一次的 state snap，worker 收尾时拿来兜底渲染 */
+    private _latestSnap: HandCardSnapshot | null = null;
+    /** Lock 期间是否产生过 state 变更（区分"无变化"和"已用 _latestSnap 渲染"） */
+    private _renderDirty = false;
 
     // ── 补牌提示 ──────────────────────────────────────────
     /** 当前有效的补牌提示集合，merge-expand 后自动恢复 */
@@ -276,14 +318,17 @@ export class HandCardPanel extends Component {
      * Phase 4 — 预判 autoGroup：组内牌收缩消失，然后 setCards 触发
      *           重排动画（散牌从展开位滑到最终位置）
      */
-    async dealCards(cards: number[], deckCardCount = 0,oneCallback?:Function): Promise<void> {
+    async dealCards(handCardCount: number, handCards?: number[], deckCardCount = 0, oneCallback?: Function, serverGroups?: ServerCards[]): Promise<void> {
         this.clear();
-        if (!cards.length) return;
+        if (handCardCount <= 0) return;
 
-        const spreadXs = this._spreadPositions(cards.length);
+        // 没传 handCards 或 length 不匹配 → 全程拍背 + 跳过合并展开
+        const faceDown = !handCards || handCards.length !== handCardCount;
+
+        const spreadXs = this._spreadPositions(handCardCount);
 
         // ── Phase 1: 在 sendCardNode 下建发牌堆，一次性 re-parent 到 _ungroupRoot ──
-        this.tableAreaView?.setupSendDeck(cards.length);
+        this.tableAreaView?.setupSendDeck(handCardCount);
         const rawNodes = this.tableAreaView
             ? [...this.tableAreaView.sendPileNodes].reverse()
             : [];
@@ -296,10 +341,10 @@ export class HandCardPanel extends Component {
         });
         const cns = nodes.map(n => n.getComponent(CardNode)!);
 
-        const lastIdx = cards.length - 1;
+        const lastIdx = handCardCount - 1;
 
         // ── Phase 2 & 3: 错时飞入（parallel：位移 + 缩放旋转同步）→ 落地弹跳 ──
-        await Promise.all(cards.map((_, i) =>
+        await Promise.all(Array.from({ length: handCardCount }, (_, i) =>
             delay(i * DEAL_INTERVAL).then(() => new Promise<void>(resolve => {
                 // 最后一张起飞时重建剩余牌堆
                 if (i === lastIdx) this.tableAreaView?.setupDeck(deckCardCount);
@@ -308,22 +353,23 @@ export class HandCardPanel extends Component {
                 const cn = cns[i];
 
                 // 按牌序偏转：中间牌垂直，两侧逐渐倾斜，形成扇形叠牌感
-                const rotZ = (i - (cards.length - 1) / 2) * 2;
+                const rotZ = (i - (handCardCount - 1) / 2) * 2;
 
-                n.setSiblingIndex(cards.length - 1); // 飞行期间置顶
+                n.setSiblingIndex(handCardCount - 1); // 飞行期间置顶
                 if (oneCallback) oneCallback();
                 tween(n)
                     // 初始：微缩 + 扇形旋转（从牌堆起飞姿态）
                     .set({ scale: new Vec3(0.68, 0.68, 1), eulerAngles: new Vec3(0, 0, rotZ) })
                     // 飞行阶段：位移与缩放/旋转并行
                     .parallel(
-                        // 位移：飞到展开位，到位后立刻翻正面
+                        // 位移：飞到展开位，到位后立刻翻正面（拍背模式跳过）
                         tween(n)
                             .to(FLY_DUR, { position: new Vec3(spreadXs[i], 0, 0) }, { easing: 'sineOut' })
                             .call(() => {
-                                cn.setCard(cards[i]); // 翻面前设牌值
-                                cn.setFaceDown(false);
-
+                                if (!faceDown) {
+                                    cn.setCard(handCards![i]); // 翻面前设牌值
+                                    cn.setFaceDown(false);
+                                }
                             }),
                         // 缩放+旋转：先压缩（飞行感）→ 还原旋转 → 轻微收缩（落地前）
                         tween(n)
@@ -342,119 +388,141 @@ export class HandCardPanel extends Component {
             }))
         ));
 
-        // ── Phase 4: 合并 → 按组重排展开 ────────────────────────
-        await this._animateMergeExpand(cards);
-    }
-
-    /**
-     * 立即显示手牌（无动画），重连 / 中途加入时调用
-     */
-    showCards(cards: number[]): void {
-        this.clear();
-        this._state.setCards(cards);
-    }
-
-    /**
-     * 摸牌：加入一张牌
-     *
-     * 动画流程（Phase A + Phase B 同时启动）：
-     *   Phase A — 弧形飞入：牌堆顶部节点翻正面，FlyUtil 弧形飞到手牌目标位
-     *   Phase B — 左移腾位：所有根容器向左移 shiftX
-     *   飞行落地后：
-     *     autoGroup  → _animateMergeExpand（合并展开）
-     *     otherwise  → _state.addCard（新节点从落点起步，_doLayout 无位移）
-     */
-    addCard(card: number): void {
-        const pileTop = this.tableAreaView?.popDeckCard() ?? null;
-
-        // 新牌目标：panel 本地坐标（flyNode 是 this.node 的直接子节点，直接用本地坐标）
-        const targetLocalX   = this._computeNewCardLocalX();
-        const targetLocal    = new Vec3(targetLocalX, 0, 0);
-        // 世界坐标用于 _sapawUngroupWorldPos（_syncUngroupNodes 调用 setWorldPosition）
-        const targetWorldPos = this._localToWorld(targetLocal);
-
-        // 所有根容器同步左移腾位（与落牌动画同时进行），保留目标 X 供 doFinalize 对齐
-        const preShiftTargetX = this._preShiftRootsForNewCard();
-        // 记录本次摸牌已占位（state.addCard 尚未调用，需要用此计数修正下次摸牌的目标位置）
-        this._pendingUngroupCount++;
-
-        // 落牌节点：翻正面后挂在 HandCardPanel，从目标上方滑落到目标位置
-        const DROP_HEIGHT = 80;
-        const DROP_DUR    = 0.25;
-
-        let flyNode: Node | null = null;
-        if (pileTop?.isValid) {
-            flyNode = pileTop;
-            this.node.addChild(flyNode);
-            const cn = flyNode.getComponent(CardNode);
-            if (cn) { cn.setCard(card); cn.setFaceDown(false); }
-            flyNode.setPosition(targetLocal.x, targetLocal.y + DROP_HEIGHT, 0);
-        }
-
-        const doFinalize = async () => {
-            this._pendingUngroupCount--;
-            // 摸牌进入 ACTION 阶段，清除 SELECT 阶段遗留的选中状态
-            this._state.clearSelection();
-            if (this._state.autoGroupEnabled) {
-                // flyNode 加入 _ungroupRoot 一起参与合并动画，_animateMergeExpand 统一清理
-                if (flyNode?.isValid) {
-                    const wp = flyNode.getWorldPosition().clone();
-                    this._ungroupRoot.addChild(flyNode);
-                    flyNode.setWorldPosition(wp);
-                }
-                const snap = this._state.snapshot();
-                const allCards = [
-                    ...snap.groups.reduce<number[]>((acc, g) => acc.concat(g.cards), []),
-                    ...snap.ungroup,
-                    card,
-                ];
-                await this._animateMergeExpand(allCards);
+        // ── Phase 4: 合并 → 按组重排展开（拍背模式跳过：不分组、不进 _state） ──
+        if (!faceDown) {
+            // dealCards 是初始化场景：清空队列后独占播放 ceremony
+            this._flushCeremonyQueue();
+            const fromSnap = this._state.snapshot();
+            this._renderLock = true;
+            if (serverGroups !== undefined) {
+                this._state.setCardsWithServerGroups(serverGroups);
             } else {
-                if (flyNode?.isValid) flyNode.destroy();
-                // 停 preShift tween 并强制 setPosition 到 X_new：
-                // 只 stop 不 setPosition 的话，position 停在 quadOut 最后一帧的 ε 偏差处，
-                // 接着 _doLayout 的 setPosition(X_new) 会把根容器"再左移 ε"，
-                // 新节点的 world 位置跟着左偏 ε 再被 tween 拉回 —— 就是视觉上的"左移一下再归位"。
-                for (const root of [this._groupRoot, this._ungroupRoot, this._dragLayer, this._markerOverlayRoot]) {
-                    Tween.stopAllByTarget(root);
-                    root.setPosition(preShiftTargetX, 0, 0);
-                }
-                // 新节点从落点起步，_doLayout 无额外位移
-                this._sapawUngroupWorldPos = targetWorldPos.clone();
-                this._state.addCard(card);
+                // 不强制 override，使用 _state 当前的 sortMode（默认 BY_RANK，玩家可切换）
+                this._state.setCards(handCards!);
             }
-        };
-
-        if (flyNode) {
-            // 下降动画：从上方滑落到目标位置
-            tween(flyNode)
-                .to(DROP_DUR,
-                    { position: new Vec3(targetLocal.x, targetLocal.y, 0) },
-                    { easing: 'quadOut' })
-                .call(() => { void doFinalize(); })
-                .start();
+            const toSnap = this._state.snapshot();
+            await this._enqueueCeremony({ kind: 'merge-expand', fromSnap, toSnap });
         } else {
-            void doFinalize();
+            // 拍背模式没有合并展开，但仍要触发回调通知发牌结束（外部 _ts.isDealing 复位等）
+            this.onDealMergeComplete?.();
         }
     }
 
     /**
-     * 计算摸牌后新牌在 HandCardPanel 本地坐标系中的目标 X。
+     * 立即显示手牌（无动画），重连 / 中途加入时调用。
      *
-     * 推导：设 GW = 组区总宽（含组区与散牌区之间的 GROUP_GAP；无组时为 0），
-     *       n = 当前散牌张数，则新牌 panel-local X = (GW + n × CARD_SPACING) / 2。
-     *
-     * flyNode 是 this.node 的直接子节点，直接用本地坐标设位置，无需世界坐标转换。
+     * @param handCardCount 手牌张数
+     * @param handCards     可选：牌值（缺省/length 不匹配 → 全程拍背、不进 _state）
+     * @param serverGroups  可选：服务端分组数据，传入则按服务端分组初始化，不走本地 autoGroup
      */
-    private _computeNewCardLocalX(): number {
-        const snap = this._state.snapshot();
-        const n = snap.ungroup.length + this._pendingUngroupCount;
-        let GW = 0;
-        for (const g of snap.groups) {
-            const gv = this._groupViews.get(g.id);
-            if (gv) GW += gv.width + GROUP_GAP;
+    showCards(handCardCount: number, handCards?: number[], serverGroups?: ServerCards[]): void {
+        this.clear();
+        if (handCardCount <= 0) return;
+
+        const faceDown = !handCards || handCards.length !== handCardCount;
+        if (faceDown) {
+            // 拍背：直接在 _ungroupRoot 建 N 个拍背 CardNode，平铺布局，不走 _state/_doLayout
+            const xs = this._spreadPositions(handCardCount);
+            for (let i = 0; i < handCardCount; i++) {
+                const n  = this._createCardNode(0);
+                const cn = n.getComponent(CardNode)!;
+                cn.setFaceDown(true);
+                cn.onClick = null;
+                n.setPosition(xs[i], 0, 0);
+                this._ungroupRoot.addChild(n);
+            }
+            return;
         }
-        return (GW + n * CARD_SPACING) / 2;
+        this._instantLayout = true;
+        if (serverGroups !== undefined) {
+            this._prepareForAuthoritativeServerLayout();
+            this._state.setCardsWithServerGroups(serverGroups);
+        } else {
+            this._state.setCards(handCards!);
+        }
+    }
+
+    /**
+     * 摸牌：加入一张牌（State-first / C 方案）
+     *
+     * 流程：
+     *   1. 抓 fromSnap = 当前视觉 snap（ceremony 开始时的视觉状态）
+     *   2. _renderLock=true 后立刻 commit 新状态到 _state
+     *      （_onStateChange 被 lock 屏蔽，不立即渲染；外部状态查询已是新真相）
+     *   3. 入队 ceremony，worker 串行播放 drop / merge / expand
+     *
+     * 选 ceremony 类型（以本地 autoGroup 为准）：
+     *     autoGroup ON  → merge-expand（应用 serverGroups 或本地 autoGroup 后展开）
+     *     autoGroup OFF → drop-only（忽略 serverGroups，仅下落追加到散牌区，
+     *                                保留玩家手动分组结构）
+     *
+     * @param card         摸到的牌值
+     * @param serverGroups 服务端下发的分组数据；autoGroup OFF 时被忽略
+     */
+    addCard(card: number, serverGroups?: ServerCards[]): void {
+        if (this._spectatorMode) return;
+        if (serverGroups !== undefined) {
+            this._prepareForAuthoritativeServerLayout();
+        }
+
+        const fromSnap = this._state.snapshot();
+        // ── 抓 lock + commit 状态（_onStateChange 此时被 lock 拦截，不立即渲染） ──
+        this._renderLock = true;
+        this._state.clearSelection();  // 摸牌进入 ACTION 阶段，清 SELECT 残留
+
+        // autoGroup OFF：忽略 serverGroups，简单追加到散牌区（不破坏手动分组），走 drop-only。
+        // 服务端在 autoGroup OFF 时仍会下发 groupCards，但应当被客户端忽略——
+        // 用户已明确表达不要客户端自动重排手牌。
+        if (!fromSnap.autoGroupEnabled) {
+            this._state.addCard(card);
+            const toSnap = this._state.snapshot();
+            this._enqueueCeremony({ kind: 'drop-only', fromSnap, toSnap, drawnCard: card });
+            return;
+        }
+
+        // autoGroup ON：优先服务端分组，否则本地 autoGroup
+        if (serverGroups !== undefined) {
+            this._state.setCardsWithServerGroups(serverGroups);
+        } else {
+            const allCards = [
+                ...fromSnap.ungroup,
+                ...fromSnap.groups.reduce<number[]>((a, g) => a.concat(g.cards), []),
+                card,
+            ];
+            // 不强制 override，使用 _state 当前的 sortMode
+            this._state.setCards(allCards);
+        }
+        const toSnap = this._state.snapshot();
+        this._enqueueCeremony({ kind: 'merge-expand', fromSnap, toSnap, drawnCard: card });
+    }
+
+    /**
+     * 使用服务端分组数据刷新手牌（无动画），用于关闭 autoGroup / ActionChange / 组牌响应等时机。
+     * 仅当有有效 serverGroups 时生效，否则不做任何操作。
+     */
+    refreshWithServerGroups(serverGroups: ServerCards[]): void {
+        if (!serverGroups) return;
+        this._prepareForAuthoritativeServerLayout();
+        this._instantLayout = true;
+        this._state.setCardsWithServerGroups(serverGroups);
+    }
+
+    /**
+     * 使用服务端分组数据刷新手牌（带合并展开动画），用于开启 autoGroup / 手动组牌响应等。
+     * State-first：立刻 commit 状态 + 入队 merge-expand ceremony（无 drawnCard）。
+     * 返回 Promise，调用方需要等动画完成时 await。
+     */
+    refreshWithServerGroupsAnimated(serverGroups: ServerCards[]): Promise<void> {
+        if (!serverGroups || serverGroups.length === 0) {
+            this.refreshWithServerGroups(serverGroups);
+            return Promise.resolve();
+        }
+        this._prepareForAuthoritativeServerLayout();
+        const fromSnap = this._state.snapshot();
+        this._renderLock = true;
+        this._state.setCardsWithServerGroups(serverGroups);
+        const toSnap = this._state.snapshot();
+        return this._enqueueCeremony({ kind: 'merge-expand', fromSnap, toSnap });
     }
 
     /** 将 HandCardPanel 本地坐标转为世界坐标（正确处理节点缩放与旋转） */
@@ -467,42 +535,12 @@ export class HandCardPanel extends Component {
     }
 
     /**
-     * 将所有根容器向左移 shiftX，与弧形飞入动画同步进行，为新牌在右侧腾出位置。
-     * shiftX = (newTotalW − currentTotalW) / 2
-     * @returns 本次腾位 tween 的终点 targetX，供 doFinalize 强制对齐（避免 tween 最后一帧 ε 偏差）。
-     */
-    private _preShiftRootsForNewCard(): number {
-        const snap  = this._state.snapshot();
-        const n     = snap.ungroup.length + this._pendingUngroupCount;
-        const cardW = this._layoutCardW();
-
-        // 计算加入新牌后的 totalW（与 _doLayout 公式一致）
-        // 组区：sum(gv.width + GROUP_GAP)，两次 ±GROUP_GAP 相抵，直接用 sum
-        let newTotalW = 0;
-        for (const g of snap.groups) {
-            const gv = this._groupViews.get(g.id);
-            if (gv) newTotalW += gv.width + GROUP_GAP;
-        }
-        newTotalW += n * CARD_SPACING + cardW;
-
-        // 与 _doLayout 使用相同的绝对终点公式，避免从中间动画值出发导致目标偏移
-        const targetX = -newTotalW / 2;
-        // 与 addCard 里 flyNode 的 DROP_DUR 保持一致：flyNode 落地时 preShift 同步完成，
-        // _doLayout 随后对 _ungroupRoot 的 setPosition 才不会被尚在跑的 tween 反复覆盖。
-        const dur  = 0.25;
-        const opts = { easing: 'quadOut' as const };
-
-        for (const root of [this._groupRoot, this._ungroupRoot, this._dragLayer, this._markerOverlayRoot]) {
-            Tween.stopAllByTarget(root);
-            tween(root).to(dur, { position: new Vec3(targetX, 0, 0) }, opts).start();
-        }
-        return targetX;
-    }
-
-    /**
      * 弃牌 / 出牌：从 UNGROUP 区移除一张牌
      */
     removeCard(card: number): void {
+        if (this._spectatorMode) return;
+        // 若被移除的牌正在拖拽中（如服务端代操作打了这张）→ 先取消拖拽
+        if (this._drag?.cardValue === card) this.cancelDrag();
         this._state.removeCard(card);
     }
 
@@ -510,20 +548,23 @@ export class HandCardPanel extends Component {
      * 清空所有手牌（游戏结束 / 房间重置）
      */
     clear(): void {
-        this._groupRoot.setPosition(0, 0, 0);
-        this._ungroupRoot.setPosition(0, 0, 0);
-        this._dragLayer.setPosition(0, 0, 0);
-        this._markerOverlayRoot.setPosition(0, 0, 0);
-        this._ungroupRoot.removeAllChildren();
-        this._dragLayer.removeAllChildren();
-        this._markerOverlayRoot.removeAllChildren();
+        // 重置场景：丢弃任何残留 ceremony，避免 worker 在清空后继续操作已销毁节点
+        this._flushCeremonyQueue();
+        this._state.clear();
+        this._groupRoot?.setPosition(0, 0, 0);
+        this._ungroupRoot?.setPosition(0, 0, 0);
+        this._dragLayer?.setPosition(0, 0, 0);
+        this._markerOverlayRoot?.setPosition(0, 0, 0);
+        this._ungroupRoot?.removeAllChildren();
+        this._dragLayer?.removeAllChildren();
+        this._markerOverlayRoot?.removeAllChildren();
         for (const gv of this._groupViews.values()) {
             gv.setMarkerOverlayParent(null);
-            gv.node.destroy();
+            gv.node?.destroy();
         }
-        this._groupViews.clear();
+        this._groupViews?.clear();
         for (const cn of this._ungroupNodes.values()) cn.node.destroy();
-        this._ungroupNodes.clear();
+        this._ungroupNodes?.clear();
     }
 
     // ── 按钮操作入口（ActionPanel 调用） ─────────────────
@@ -531,6 +572,7 @@ export class HandCardPanel extends Component {
     onGroupBtn(): void {
         // 捕获所有选中节点的世界坐标中心，作为新组的起飞点
         const snap = this._state.snapshot();
+        if (!snap.buttonStates.canGroup) return;
         let sumX = 0, sumY = 0, count = 0;
         for (const gId of snap.selectedGroupIds) {
             const gv = this._groupViews.get(gId);
@@ -543,11 +585,13 @@ export class HandCardPanel extends Component {
         if (count > 0) this._sapawGroupWorldPos = new Vec3(sumX / count, sumY / count, 0);
         // createGroup 内部已调用 _clearSelSilent，选中随之清除
         this._state.createGroup();
+        this._emitGroupsChange();
     }
 
     onUngroupBtn(): void {
         // 捕获被解散组的世界坐标，作为散牌节点的起飞点
         const snap = this._state.snapshot();
+        if (!snap.buttonStates.canUngroup) return;
         const [gId] = Array.from(snap.selectedGroupIds);
         if (gId) {
             const gv = this._groupViews.get(gId);
@@ -555,29 +599,37 @@ export class HandCardPanel extends Component {
         }
         // dissolveGroup 内部已调用 _clearSelSilent，选中随之清除
         this._state.dissolveGroup();
+        this._emitGroupsChange();
     }
 
     /**
-     * Drop 按钮：返回被 Drop 的 GroupData（供 TongitsView 发送服务端请求）
+     * Drop 按钮：只返回被 Drop 的 GroupData（供 TongitsView 发送服务端请求）。
+     * 成功响应后再由 TongitsView 调用 removeTakeCards() 移除，避免请求失败时 UI 少牌。
      */
     onDropBtn(): GroupData | null {
-        // dropGroup 内部已调用 _clearSelSilent + _notify，选中随之清除
-        return this._state.dropGroup();
+        const snap = this._state.snapshot();
+        if (snap.selectedGroupIds.size !== 1 || snap.selectedUngroupCards.size !== 0) return null;
+        const id = Array.from(snap.selectedGroupIds)[0];
+        const group = snap.groups.find(g => g.id === id);
+        if (!group) return null;
+        if (group.type !== GroupType.VALID && group.type !== GroupType.SPECIAL) return null;
+        return group;
     }
 
     /**
-     * Dump 按钮：返回被弃的牌值
+     * Dump 按钮：只返回被弃的牌值，成功响应后再移除。
      */
     onDumpBtn(): number | null {
         const card = this._state.snapshot().buttonStates.selectedSingleCard;
         if (card == null) return null;
-        // removeCard 内部已调用 _clearSelSilent，选中（含其余牌）随之全部清除
-        this._state.removeCard(card);
         return card;
     }
 
     onToggleAutoGroup(): void  { this._state.toggleAutoGroup(); }
     onToggleSortMode():  void  { this._state.toggleSortMode();  }
+
+    /** 由服务端响应设置 autoGroup 开关状态 */
+    setAutoGroupEnabled(v: boolean): void { this._state.setAutoGroupEnabled(v); }
 
     // ── 吃牌模式 API ──────────────────────────────────────
 
@@ -633,11 +685,43 @@ export class HandCardPanel extends Component {
         return all;
     }
 
+    /** 导出当前手牌分组为服务端 Cards[] 结构，用于手动组牌同步。 */
+    getServerGroups(): ServerCards[] {
+        const snap = this._state.snapshot();
+        const result: ServerCards[] = [];
+        if (snap.ungroup.length > 0) {
+            result.push({
+                groupId: 0,
+                handCards: [...snap.ungroup],
+                cardType: 0,
+                cardPoint: calcPoint([...snap.ungroup]),
+            });
+        }
+        let groupId = 1;
+        for (const group of snap.groups) {
+            result.push({
+                groupId: groupId++,
+                handCards: [...group.cards],
+                cardType: this._toServerCardType(group.type),
+                cardPoint: calcPoint([...group.cards]),
+            });
+        }
+        return result;
+    }
+
+    private _emitGroupsChange(): void {
+        if (this._spectatorMode) return;
+        this.onGroupsChange?.(this.getServerGroups());
+    }
+
     /**
      * 吃牌确认后批量移除手牌（支持散牌与牌组）。
      * 牌组处理规则：剩 0 张删组；剩 1 张解散到散牌；剩 2+ 张保留。
      */
     removeTakeCards(cards: number[]): void {
+        if (this._spectatorMode) return;
+        // 若拖拽中的牌在批量移除集合内 → 先取消拖拽
+        if (this._drag && cards.includes(this._drag.cardValue)) this.cancelDrag();
         this._state.removeTakeCards(cards);
     }
 
@@ -661,15 +745,182 @@ export class HandCardPanel extends Component {
         this._dragEnabled = enabled;
     }
 
+    /**
+     * 强制中断当前拖拽（服务端代操作 / 倒计时结束 / 离开自己回合等场景）。
+     * 销毁浮牌节点，清空拖拽状态，再按 _state 重新同步 UI。
+     * 若 _drag 为空则无副作用。
+     */
+    cancelDrag(): void {
+        if (!this._drag) return;
+        if (this._drag.floatNode?.isValid) this._drag.floatNode.destroy();
+        this._drag = null;
+        this._sapawCardValue = -1;
+        // 重新按 _state 同步：若拖拽的牌还在 _state.ungroup（服务端打的不是这张），
+        // _syncUngroupNodes 会在 _drag=null 后正常重建该节点
+        this._onStateChange(this._state.snapshot());
+    }
+
+    /** 当前是否为观战模式 */
+    get isSpectatorMode(): boolean { return this._spectatorMode; }
+
+    /**
+     * 切换观战模式：
+     *   - 排序按钮显隐由 _refreshSortButtons 统一管理（观战隐藏、非观战恢复）
+     *   - 拖拽禁用
+     *   - 后续 dealCards / showCards / addCard 等会按观战分支处理
+     */
+    setSpectatorMode(v: boolean): void {
+        if (this._spectatorMode === v) return;
+        this._spectatorMode = v;
+        this._refreshSortButtons(this._state.snapshot());
+        this.setDragEnabled(!v);
+    }
+
     // ── 状态变化响应 ──────────────────────────────────────
 
     private _onStateChange(snap: HandCardSnapshot): void {
+        if (this._renderLock) {
+            // Worker 持锁期间：状态已 commit 到 _state，但渲染节奏由 ceremony 控制。
+            // 这里只缓存最新 snap，worker 末尾根据 _renderDirty 决定是否统一渲染。
+            this._latestSnap = snap;
+            this._renderDirty = true;
+            // 选中态等 UI 反馈仍要即时（ActionPanel 按钮态依赖 _emitSelection），
+            // 但 _emitSelection 不动节点，安全。
+            this._emitSelection(snap);
+            this._refreshSortButtons(snap);
+            return;
+        }
+        this._render(snap);
+    }
+
+    /**
+     * 实际把 snap 渲染到 DOM：节点增删 + 布局。
+     * 与 _onStateChange 分离，让 ceremony / worker 可以在合适时机直接调用渲染，
+     * 不经事件回路。
+     */
+    private _render(snap: HandCardSnapshot): void {
         this._syncGroupViews(snap.groups, snap.selectedGroupIds);
         this._syncUngroupNodes(snap.ungroup, snap.selectedUngroupCards);
         this._doLayout(snap.groups, snap.ungroup);
         if (this._layoffTipsSet) this.showLayoffTips(this._layoffTipsSet);
         this._emitSelection(snap);
         this._refreshSortButtons(snap);
+    }
+
+    /**
+     * 服务端 groupCards 是权威布局。刷新前取消本地拖拽预览、空槽目标和残留 tween，
+     * 避免旧预览帧把同一组牌继续撑出 1-2 个空位。
+     */
+    private _prepareForAuthoritativeServerLayout(): void {
+        if (this._drag?.floatNode?.isValid) {
+            this._drag.floatNode.destroy();
+        }
+        this._drag = null;
+
+        this._previewTargets.clear();
+        this._containerTargets.clear();
+        this._slotTargetWidths.clear();
+        this._origGroupLocalX.clear();
+        this._groupContainerTargetX.clear();
+        this._sapawCardValue = -1;
+        this._sapawGroupWorldPos = null;
+        this._sapawUngroupWorldPos = null;
+
+        for (const root of [this._groupRoot, this._ungroupRoot, this._dragLayer, this._markerOverlayRoot]) {
+            Tween.stopAllByTarget(root);
+        }
+        for (const gv of this._groupViews.values()) {
+            Tween.stopAllByTarget(gv.node);
+            for (const cn of gv.cardNodes) {
+                Tween.stopAllByTarget(cn.node);
+            }
+        }
+        for (const [, cn] of this._ungroupNodes) {
+            Tween.stopAllByTarget(cn.node);
+        }
+    }
+
+    // ── Ceremony 调度 ─────────────────────────────────────
+
+    /**
+     * 入队一个 ceremony 任务并启动 worker（已运行则不重复启动）。
+     * 返回 Promise，在 ceremony 完成时 resolve（调用方需要 await 时使用）。
+     * 调用方负责在 enqueue 之前完成 _state commit，并自行管理 _renderLock：
+     *   - lock 必须在第一次 commit 之前设上，避免 _onStateChange 抢跑渲染；
+     *   - lock 由 worker 在所有任务跑完时统一释放。
+     */
+    private _enqueueCeremony(body: AnimTaskBody): Promise<void> {
+        return new Promise<void>((resolve) => {
+            this._animQueue.push({ body, done: resolve });
+            void this._runWorker();
+        });
+    }
+
+    /**
+     * Ceremony worker 主循环：串行 pop 队列、播 ceremony。
+     * 单实例（_workerRunning 守卫）。任何 ceremony 失败都被 catch，绝不让 lock 死锁。
+     */
+    private async _runWorker(): Promise<void> {
+        if (this._workerRunning) return;
+        this._workerRunning = true;
+        try {
+            while (this._animQueue.length > 0) {
+                const task = this._animQueue.shift()!;
+                // ceremony 会重建大量节点 / 销毁 _dragLayer，先中断拖拽避免幽灵浮牌与
+                // _drag 状态残留（Phase 4 的 _dragLayer.removeAllChildren 会销毁浮牌）
+                if (this._drag) this.cancelDrag();
+                try {
+                    await this._playCeremony(task.body);
+                } catch (err) {
+                    console.error('[HandCardPanel] ceremony error:', err);
+                } finally {
+                    task.done();
+                }
+            }
+        } finally {
+            // 所有任务播完，释放 lock。
+            // 若 lock 期间有 state 变更（_renderDirty=true），用 _latestSnap 兜底渲染。
+            this._renderLock = false;
+            // ceremony 用大 dur 跑完后，_doLayout 不会消费 _sapawCardValue（仅 dur≤LAYOUT_DUR
+            // 才消费），残留会让下次普通 layout 误把节点重置回旧释放点。worker 收尾统一清零。
+            this._sapawCardValue = -1;
+            if (this._renderDirty && this._latestSnap) {
+                this._render(this._latestSnap);
+            }
+            this._renderDirty = false;
+            this._latestSnap = null;
+            this._workerRunning = false;
+        }
+    }
+
+    /** Ceremony 类型分发 */
+    private async _playCeremony(body: AnimTaskBody): Promise<void> {
+        switch (body.kind) {
+            case 'merge-expand':
+                await this._playMergeExpandCeremony(body);
+                return;
+            case 'drop-only':
+                await this._playDropOnlyCeremony(body);
+                return;
+        }
+    }
+
+    /**
+     * 跳过队列：把当前所有未播 ceremony 丢弃，立刻把 _state 当前快照 instant 渲染。
+     * 用于 showCards / clear / dealCards 等"瞬时同步"场景（重连、初始化、游戏结束等）。
+     * 调用方应自行确保该场景下队列里残留 ceremony 被丢弃是安全的。
+     */
+    private _flushCeremonyQueue(): void {
+        this._animQueue.length = 0;
+        this._renderLock = false;
+        this._renderDirty = false;
+        this._latestSnap = null;
+    }
+
+    private _toServerCardType(type: GroupType): number {
+        if (type === GroupType.SPECIAL) return 2;
+        if (type === GroupType.VALID) return 1;
+        return 0;
     }
 
     /** 构建 SelectionInfo 并触发回调，同时输出调试日志 */
@@ -694,16 +945,10 @@ export class HandCardPanel extends Component {
 
     // ── 排序按钮 ──────────────────────────────────────────
 
-    private async _onAutoSortClick(): Promise<void> {
-        if (this._state.autoGroupEnabled) {
-            // 关闭自动排序：直接切换，无需动画
-            this.onToggleAutoGroup();
-            return;
-        }
-        // 开启自动排序：先收集全部手牌，切换 flag，再执行合并+展开动画重新自动分组
-        const allCards = this.getAllHandCards();
-        this.onToggleAutoGroup();                              // 切 flag → _notify → _doLayout（tween 立即被下方 stop）
-        await this._animateMergeExpand(allCards, true);        // 合并展开，用当前排序规则重新自动分组
+    private _onAutoSortClick(): void {
+        // 发送切换请求到服务端，等服务端返回后再更新本地状态
+        const newIsAuto = !this._state.autoGroupEnabled;
+        Nexus.emit(TongitsEvents.CMD_SWITCH_AUTO_GROUP, { isAuto: newIsAuto });
     }
 
     private _onSortModeClick(): void {
@@ -712,10 +957,19 @@ export class HandCardPanel extends Component {
 
     /** 根据快照刷新排序按钮的视觉状态 */
     private _refreshSortButtons(snap: HandCardSnapshot): void {
-        // 两个按钮互斥：OFF 状态显示 autoSortBtn，ON 状态显示 autoSortActiveNode
-        if (this.autoSortBtn) this.autoSortBtn.node.active = !snap.autoGroupEnabled;
-        if (this.autoSortActiveNode) this.autoSortActiveNode.node.active = snap.autoGroupEnabled;
-
+        // 观战短路：排序按钮全部隐藏，避免被 state 变化重新激活
+        if (this._spectatorMode) {
+            if (this.autoSortBtn?.node)        this.autoSortBtn.node.active = false;
+            if (this.autoSortActiveNode?.node) this.autoSortActiveNode.node.active = false;
+            if (this.sortModeBtn?.node)        this.sortModeBtn.node.active = false;
+            if (this.sortModeLabelNode?.node)  this.sortModeLabelNode.node.active = false;
+            return;
+        }
+        // 非观战：autoSort 两态按钮互斥；sortMode 按钮 + Label 始终显示
+        if (this.autoSortBtn)              this.autoSortBtn.node.active = !snap.autoGroupEnabled;
+        if (this.autoSortActiveNode)       this.autoSortActiveNode.node.active = snap.autoGroupEnabled;
+        if (this.sortModeBtn?.node)        this.sortModeBtn.node.active = true;
+        if (this.sortModeLabelNode?.node)  this.sortModeLabelNode.node.active = true;
         if (this.sortModeLabelNode) {
             this.sortModeLabelNode.string = snap.sortMode === SortMode.BY_RANK ? 'Rank' : 'Suit';
         }
@@ -741,6 +995,17 @@ export class HandCardPanel extends Component {
 
         // 新增 / 更新
         for (const g of groups) {
+            // 拖拽来源组：g.cards 仍含拖拽牌（_state 未改），但 gv.cardNodes 已被
+            // _onCardDragStart 移除该牌。此处过滤一份给 view 层用，避免 init/refresh
+            // 时按 g.cards 长度增节点导致拖拽牌在原组复活。
+            const dragInThisGroup = this._drag
+                && this._drag.sourceKind === 'group'
+                && this._drag.sourceGroupId === g.id
+                && g.cards.includes(this._drag.cardValue);
+            const gForView: GroupData = dragInThisGroup
+                ? { ...g, cards: g.cards.filter(c => c !== this._drag!.cardValue) }
+                : g;
+
             let gv = this._groupViews.get(g.id);
             if (!gv) {
                 const groupNode = this.cardGroupPrefab
@@ -760,11 +1025,11 @@ export class HandCardPanel extends Component {
                     if (!this._dragEnabled) return;
                     this._inTakeMode ? this._onTakeModeGroupClick(id) : this._state.toggleGroup(id);
                 };
-                gv.init(g, (v) => this._createCardNode(v));
+                gv.init(gForView, (v) => this._createCardNode(v));
                 gv.setMarkerOverlayParent(this._markerOverlayRoot);
                 this._groupViews.set(g.id, gv);
             } else {
-                gv.refresh(g, (v) => this._createCardNode(v));
+                gv.refresh(gForView, (v) => this._createCardNode(v));
                 gv.setMarkerOverlayParent(this._markerOverlayRoot);
             }
             gv.setSelected(selectedIds.has(g.id));
@@ -792,6 +1057,8 @@ export class HandCardPanel extends Component {
 
         // 新增牌
         ungroup.forEach((val, i) => {
+            // 拖拽中的牌：节点已在 _dragLayer，跳过重建避免 _ungroupRoot 出现重复牌
+            if (this._drag?.cardValue === val) return;
             if (!this._ungroupNodes.has(val)) {
                 const n  = this._createCardNode(val);
                 const cn = n.getComponent(CardNode) ?? n.addComponent(CardNode);
@@ -841,6 +1108,8 @@ export class HandCardPanel extends Component {
      *   3. 启动各组容器 tween + 散牌 tween
      */
     private _doLayout(groups: readonly GroupData[], ungroup: readonly number[]): void {
+        const instant = this._instantLayout;
+        this._instantLayout = false;
         const dur = this._dealReorderDur;
         this._dealReorderDur = LAYOUT_DUR;
 
@@ -867,7 +1136,7 @@ export class HandCardPanel extends Component {
 
         // ── 2. 容器定位（先于个体 tween，保证起飞点坐标转换正确）──
         const easeQuad = { easing: 'quadOut' as const };
-        if (dur > LAYOUT_DUR) {
+        if (!instant && dur > LAYOUT_DUR) {
             // 展开动画：容器 tween；每帧同步 overlay 上的 groupMarker（与 _groupRoot 同轨，避免全程错位）
             const rootTweenOpts = {
                 easing: 'quadOut' as const,
@@ -894,29 +1163,39 @@ export class HandCardPanel extends Component {
             this._sapawCardValue = -1;
         }
 
-        // ── 4. 各组容器 tween ─────────────────────────────────
+        // ── 4. 各组容器 tween / snap ─────────────────────────
         let curX = 0;
         for (const g of groups) {
             const gv = this._groupViews.get(g.id);
             if (!gv) continue;
             const halfW = gv.width / 2;
             curX += halfW;
-            // 每帧同步：容器与组 x 同时 tween 时，任一次更新后重算 overlay 世界坐标
-            const gvOpts = {
-                easing: 'quadOut' as const,
-                onUpdate: () => { gv.syncMarkerLayout(); },
-            };
-            tween(gv.node)
-                .to(dur, { position: new Vec3(curX, 0, 0) }, gvOpts)
-                .start();
+            if (instant) {
+                gv.node.setPosition(curX, 0, 0);
+                gv.syncMarkerLayout();
+            } else {
+                // 每帧同步：容器与组 x 同时 tween 时，任一次更新后重算 overlay 世界坐标
+                const gvOpts = {
+                    easing: 'quadOut' as const,
+                    onUpdate: () => { gv.syncMarkerLayout(); },
+                };
+                tween(gv.node)
+                    .to(dur, { position: new Vec3(curX, 0, 0) }, gvOpts)
+                    .start();
+            }
             curX += halfW + GROUP_GAP;
         }
 
-        // ── 5. 散牌 tween ─────────────────────────────────────
+        // ── 5. 散牌 tween / snap ─────────────────────────────
         for (let i = 0; i < ungroup.length; i++) {
             const cn = this._ungroupNodes.get(ungroup[i]);
             if (!cn) continue;
-            cn.tweenToX(ungroupStartX + i * CARD_SPACING, dur);
+            const targetCardX = ungroupStartX + i * CARD_SPACING;
+            if (instant) {
+                cn.snapToX(targetCardX);
+            } else {
+                cn.tweenToX(targetCardX, dur);
+            }
         }
     }
 
@@ -1052,30 +1331,46 @@ export class HandCardPanel extends Component {
     }
 
     /**
-     * 合并 + 展开动画（发牌 Phase 4 / 摸牌 autoSort 共用）
+     * Merge-Expand Ceremony（纯视觉，由 worker 调用）
      *
-     * 1. 收集当前所有可见牌节点
-     * 2. 全部 tween 飞向容器中心并缩小消失
-     * 3. 清理旧节点和状态映射
-     * 4. _state.setCards(newCards) → _onStateChange → _doLayout 展开动画
+     * 前置：_state 已 commit 到 task.toSnap，_renderLock=true，
+     *       视觉节点（_groupViews / _ungroupNodes）仍反映 task.fromSnap。
+     * 流程：
+     *   1.（可选）摸牌下落动画（drawnCard 提供时）
+     *      ↳ 同步：所有现有容器同时左移，为新牌腾位
+     *   2. 合并：所有现有可见牌 reparent 到 _ungroupRoot，tween 到 (0,0,0)
+     *   3. 暂停 80ms，触发 onDealMergeComplete
+     *   4. 销毁旧节点
+     *   5. _render(toSnap)：按新状态创建节点 + _doLayout 启动展开 tween
+     *   6. 等展开完成，恢复组标记
      */
-    /**
-     * @param preserveSortMode true 时使用 state 当前排序规则展开（autoSort 触发）；
-     *                         false（默认）时强制 BY_RANK（发牌 / 摸牌 autoGroup 触发）。
-     */
-    private async _animateMergeExpand(newCards: number[], preserveSortMode = false): Promise<void> {
+    private async _playMergeExpandCeremony(task: AnimTaskBody & { kind: 'merge-expand' }): Promise<void> {
         const MERGE_DUR = 0.14;
-        console.log("【展开动画】:newCards",newCards)
-        console.log(typeof newCards)
-        // ── 根容器归零，保持子节点世界坐标不变 ────────────────────────────
-        // 无论 _doLayout 将根节点偏移到何处，合并动画始终收敛到 panel 中心（local 0,0）。
-        // 发牌路径：根节点本就在原点，此处为无操作。
-        // 摸牌路径：根节点已被 _doLayout 偏移，须先归零再收集。
+
+        // ── Phase 1: 摸牌下落（可选）+ 现有牌同时左移 ───────────────
+        let flyNode: Node | null = null;
+        if (task.drawnCard !== undefined) {
+            const DROP_DUR = 0.25;
+            // 加入一张牌后总宽增加 CARD_SPACING，容器向左移半个间距
+            const shiftX = -CARD_SPACING / 2;
+            // 停止容器上残留 tween，确保起始位置稳定
+            for (const root of [this._groupRoot, this._ungroupRoot, this._dragLayer, this._markerOverlayRoot]) {
+                Tween.stopAllByTarget(root);
+            }
+            // 并行：新牌下落 + 所有容器左移
+            const dropPromise = this._playDrawDrop(task.fromSnap, task.drawnCard).then(n => { flyNode = n; });
+            const shiftPromise = Promise.all(
+                ([this._groupRoot, this._ungroupRoot, this._dragLayer, this._markerOverlayRoot] as Node[]).map(root =>
+                    tweenTo(root, DROP_DUR, { position: new Vec3(root.position.x + shiftX, 0, 0) })
+                )
+            );
+            await Promise.all([dropPromise, shiftPromise]);
+        }
+
+        // ── Phase 2: 合并到中心 ─────────────────────────────
         for (const root of [this._groupRoot, this._ungroupRoot, this._dragLayer, this._markerOverlayRoot]) {
             Tween.stopAllByTarget(root);
         }
-        // 停止 gv.node / 组内牌 / 散牌节点上的残留 tween（如 clearSelection 触发的 _doLayout）
-        // 否则这些 tween 会与 merge tween 竞争同一节点的 position，导致牌组不合并
         for (const gv of this._groupViews.values()) {
             Tween.stopAllByTarget(gv.node);
             for (const cn of gv.cardNodes) Tween.stopAllByTarget(cn.node);
@@ -1083,6 +1378,7 @@ export class HandCardPanel extends Component {
         for (const [, cn] of this._ungroupNodes) {
             Tween.stopAllByTarget(cn.node);
         }
+        // 根容器归零，保持子节点世界坐标不变
         for (const root of [this._groupRoot, this._ungroupRoot]) {
             if (root.position.x !== 0 || root.position.y !== 0) {
                 const worldPositions = [...root.children].map(c => c.getWorldPosition().clone());
@@ -1093,18 +1389,21 @@ export class HandCardPanel extends Component {
         this._dragLayer.setPosition(0, 0, 0);
         this._markerOverlayRoot.setPosition(0, 0, 0);
 
-        // 隐藏所有组标记（合并期间不参与动画；展开后随新 CardGroupView 重建）
+        // 隐藏组标记
         for (const gv of this._groupViews.values()) {
             if (gv.groupMarker?.node) gv.groupMarker.node.active = false;
         }
 
-        // ── 收集所有叶子牌节点，统一 re-parent 到 _ungroupRoot ──────────────
-        // 所有牌（散牌 + 组内牌）挂到同一父节点（_ungroupRoot 已归零），
-        // 在完全相同的坐标系下 tween 到 (0,0,0)，无 easing 耦合，收敛点完全一致。
-        // 空容器 gv.node 立即隐藏，避免无牌骨架残留在动画中。
-        const allCardNodes: Node[] = [...this._ungroupRoot.children]; // 散牌（含 flyNode）
-        const containerNodes: Node[] = [];
+        // 把 flyNode（落地后）一并加入合并队列
+        if (flyNode?.isValid) {
+            const wp = flyNode.getWorldPosition().clone();
+            this._ungroupRoot.addChild(flyNode);
+            flyNode.setWorldPosition(wp);
+        }
 
+        // 收集所有叶子牌节点 + 空组容器
+        const allCardNodes: Node[] = [...this._ungroupRoot.children];
+        const containerNodes: Node[] = [];
         for (const gv of this._groupViews.values()) {
             for (const cn of gv.cardNodes) {
                 const wp = cn.node.getWorldPosition().clone();
@@ -1112,7 +1411,7 @@ export class HandCardPanel extends Component {
                 cn.node.setWorldPosition(wp);
                 allCardNodes.push(cn.node);
             }
-            gv.node.active = false; // 空容器立即隐藏
+            gv.node.active = false;
             containerNodes.push(gv.node);
         }
 
@@ -1127,23 +1426,18 @@ export class HandCardPanel extends Component {
             ));
         }
 
-        // 合并完成后短暂停顿，再展开
+        // ── Phase 3: 暂停 ───────────────────────────────────
         await delay(80);
-        // 合并完成，展开前通知外部（ActionPanel 在此时机显示按钮）
         this.onDealMergeComplete?.();
 
+        // ── Phase 4: 清理旧节点 ─────────────────────────────
         for (const gv of this._groupViews.values()) {
             gv.setMarkerOverlayParent(null);
         }
-
-        // 清理状态映射（节点稍后统一销毁）
         this._ungroupNodes.clear();
         this._groupViews.clear();
-
-        // 销毁所有牌节点和空容器
         for (const n of allCardNodes)   { if (n.isValid) n.destroy(); }
         for (const n of containerNodes) { if (n.isValid) n.destroy(); }
-        // 保险：清除容器残余
         this._ungroupRoot.removeAllChildren();
         this._groupRoot.removeAllChildren();
         this._dragLayer.removeAllChildren();
@@ -1153,21 +1447,16 @@ export class HandCardPanel extends Component {
         this._dragLayer.setPosition(0, 0, 0);
         this._markerOverlayRoot.setPosition(0, 0, 0);
 
-
-
-        // 触发展开（_doLayout 使用较长时长产生仪式感）
-        // preserveSortMode=false（发牌/摸牌）固定用 BY_RANK；
-        // preserveSortMode=true（autoSort 切换）沿用玩家当前排序规则
+        // ── Phase 5: 按 toSnap 渲染（创建新节点 + _doLayout 展开 tween） ──
         this._dealReorderDur = DEAL_REORDER_DUR;
-        this._state.setCards(newCards, preserveSortMode ? undefined : SortMode.BY_RANK);
+        this._render(task.toSnap);
 
-        // setCards 触发 _syncGroupViews 会立即挂回 groupMarker，需在展开动画结束后才显示
+        // _syncGroupViews 会立即挂回 groupMarker，需在展开动画结束后才显示
         for (const gv of this._groupViews.values()) {
             if (gv.groupMarker?.node) gv.groupMarker.node.active = false;
         }
-        // 用游戏时间等待展开 tween 完成（避免 setTimeout 真实时钟与游戏 dt 不同步导致 marker 位置偏移）
-        // dummy tween 与布局 tween 同 duration，且布局 tween 先注册，CC3 同帧内按序回调，
-        // resolve() 触发时 gv.node 已到达最终位置。
+
+        // ── Phase 6: 等展开 tween 完成 ──────────────────────
         await new Promise<void>(resolve =>
             tween({ t: 0 })
                 .to(DEAL_REORDER_DUR, { t: 1 })
@@ -1178,6 +1467,75 @@ export class HandCardPanel extends Component {
             if (gv.groupMarker?.node) gv.groupMarker.node.active = true;
             gv.syncMarkerLayout();
         }
+    }
+
+    /**
+     * Drop-Only Ceremony：autoGroup 关闭且无服务端分组时的摸牌路径。
+     *
+     * 并行设计：不使用临时 flyNode。新摸的牌直接以新散牌节点的形式
+     * 从牌堆世界坐标起飞，由 _doLayout 的 tween 一次性完成 X+Y 过渡到散牌区末尾——
+     * 期间左侧已存在的散牌/组也用同一 dur tween 到新位置，做到"下落"与"重排"完全并行。
+     */
+    private async _playDropOnlyCeremony(task: AnimTaskBody & { kind: 'drop-only' }): Promise<void> {
+        // 牌堆顶视觉同步消失
+        this.tableAreaView?.popDeckCard()?.destroy();
+
+        // 新散牌节点的起飞点 = 牌堆世界坐标
+        const deckWorld = this.tableAreaView?.getDeckWorldPos() ?? this.node.getWorldPosition();
+        this._sapawUngroupWorldPos = deckWorld.clone();
+
+        // 用比 LAYOUT_DUR 稍长的 dur，让"从牌堆飞到末尾"的过程视觉清晰
+        const DROP_REORDER_DUR = 0.25;
+        this._dealReorderDur = DROP_REORDER_DUR;
+
+        // _render 触发：
+        //   _syncUngroupNodes 用 _sapawUngroupWorldPos 把新节点放到牌堆位置
+        //   _doLayout         所有散牌（含新牌）+ 容器同时 tween 到 toSnap 目标位置
+        this._render(task.toSnap);
+
+        // 等 tween 跑完再让 worker 进入下一个 ceremony
+        await new Promise<void>(resolve =>
+            tween({ t: 0 })
+                .to(DROP_REORDER_DUR, { t: 1 })
+                .call(() => resolve())
+                .start()
+        );
+    }
+
+    /**
+     * 摸牌下落动画：popDeckCard → 翻面 → 下落到散牌目标位。
+     * 返回落地后的 flyNode（仍挂在 panel 上，未销毁），调用方决定后续处理。
+     */
+    private async _playDrawDrop(fromSnap: HandCardSnapshot, card: number): Promise<Node | null> {
+        const pileTop = this.tableAreaView?.popDeckCard() ?? null;
+        if (!pileTop?.isValid) return null;
+
+        const targetLocalX = this._computeNewCardLocalXFromSnap(fromSnap);
+        const targetLocal  = new Vec3(targetLocalX, 0, 0);
+        const DROP_HEIGHT  = 80;
+        const DROP_DUR     = 0.25;
+
+        this.node.addChild(pileTop);
+        const cn = pileTop.getComponent(CardNode);
+        if (cn) { cn.setCard(card); cn.setFaceDown(false); }
+        pileTop.setPosition(targetLocal.x, targetLocal.y + DROP_HEIGHT, 0);
+
+        await tweenTo(pileTop, DROP_DUR, { position: new Vec3(targetLocal.x, targetLocal.y, 0) }, 'quadOut');
+        return pileTop;
+    }
+
+    /**
+     * 基于 fromSnap（ceremony 开始时的视觉状态）计算新摸牌的目标本地 X。
+     * 读 snap 而不是 _state（_state 已 commit 到 toSnap，节点数仍反映 fromSnap）。
+     */
+    private _computeNewCardLocalXFromSnap(snap: HandCardSnapshot): number {
+        const n = snap.ungroup.length;
+        let GW = 0;
+        for (const g of snap.groups) {
+            const gv = this._groupViews.get(g.id);
+            if (gv) GW += gv.width + GROUP_GAP;
+        }
+        return (GW + n * CARD_SPACING) / 2;
     }
 
     private _worldToLocal(worldPos: Vec3): Vec3 {
@@ -1287,6 +1645,7 @@ export class HandCardPanel extends Component {
 
         // 先提交状态（_onStateChange 同步创建新节点并设好起飞点）
         this._state.moveCard(drag.cardValue, target, drag.hoverIndex);
+        this._emitGroupsChange();
 
         // 清空 Lerp 目标表，停止 update() 差值驱动
         this._previewTargets.clear();

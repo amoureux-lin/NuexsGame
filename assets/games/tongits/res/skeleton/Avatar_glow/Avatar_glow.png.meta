@@ -2,7 +2,7 @@
   "ver": "1.0.27",
   "importer": "image",
   "imported": true,
-  "uuid": "626044c8-8ce7-4946-a04f-30fcae359c7e",
+  "uuid": "e7d17bd1-5eb6-448f-b8de-580a347a5ec6",
   "files": [
     ".json",
     ".png"
@@ -10,14 +10,14 @@
   "subMetas": {
     "6c48a": {
       "importer": "texture",
-      "uuid": "626044c8-8ce7-4946-a04f-30fcae359c7e@6c48a",
+      "uuid": "e7d17bd1-5eb6-448f-b8de-580a347a5ec6@6c48a",
       "displayName": "Avatar_glow",
       "id": "6c48a",
       "name": "texture",
       "userData": {
         "wrapModeS": "clamp-to-edge",
         "wrapModeT": "clamp-to-edge",
-        "imageUuidOrDatabaseUri": "626044c8-8ce7-4946-a04f-30fcae359c7e",
+        "imageUuidOrDatabaseUri": "e7d17bd1-5eb6-448f-b8de-580a347a5ec6",
         "isUuid": true,
         "visible": false,
         "minfilter": "linear",
@@ -34,7 +34,7 @@
     },
     "f9941": {
       "importer": "sprite-frame",
-      "uuid": "626044c8-8ce7-4946-a04f-30fcae359c7e@f9941",
+      "uuid": "e7d17bd1-5eb6-448f-b8de-580a347a5ec6@f9941",
       "displayName": "Avatar_glow",
       "id": "f9941",
       "name": "spriteFrame",
@@ -113,7 +113,7 @@
           ]
         },
         "isUuid": true,
-        "imageUuidOrDatabaseUri": "626044c8-8ce7-4946-a04f-30fcae359c7e@6c48a",
+        "imageUuidOrDatabaseUri": "e7d17bd1-5eb6-448f-b8de-580a347a5ec6@6c48a",
         "atlasUuid": "",
         "trimType": "auto"
       },
@@ -129,6 +129,6 @@
     "type": "sprite-frame",
     "fixAlphaTransparencyArtifacts": false,
     "hasAlpha": true,
-    "redirect": "626044c8-8ce7-4946-a04f-30fcae359c7e@6c48a"
+    "redirect": "e7d17bd1-5eb6-448f-b8de-580a347a5ec6@6c48a"
   }
 }

@@ -1,0 +1,8 @@
+{
+  "title": "神龙传奇",
+  "spin": "开始旋转",
+  "autoSpin": "自动旋转",
+  "balance": "余额：{amount}",
+  "win": "恭喜赢得 {amount}",
+  "richTip": "<color=#ffd966>神龙</color>奖励提升 <b>{multiplier}x</b>"
+}

@@ -10,6 +10,233 @@ import _m0 from "protobufjs";
 
 export const protobufPackage = "common.v1";
 
+export enum ExitRoomIntent {
+  EXIT_ROOM_INTENT_UNSPECIFIED = 0,
+  /** EXIT_ROOM_INTENT_IMMEDIATE - 立即退出 */
+  EXIT_ROOM_INTENT_IMMEDIATE = 1,
+  /** EXIT_ROOM_INTENT_NEXT_HAND_LEAVE - 预约退出 */
+  EXIT_ROOM_INTENT_NEXT_HAND_LEAVE = 2,
+  UNRECOGNIZED = -1,
+}
+
+export function exitRoomIntentFromJSON(object: any): ExitRoomIntent {
+  switch (object) {
+    case 0:
+    case "EXIT_ROOM_INTENT_UNSPECIFIED":
+      return ExitRoomIntent.EXIT_ROOM_INTENT_UNSPECIFIED;
+    case 1:
+    case "EXIT_ROOM_INTENT_IMMEDIATE":
+      return ExitRoomIntent.EXIT_ROOM_INTENT_IMMEDIATE;
+    case 2:
+    case "EXIT_ROOM_INTENT_NEXT_HAND_LEAVE":
+      return ExitRoomIntent.EXIT_ROOM_INTENT_NEXT_HAND_LEAVE;
+    case -1:
+    case "UNRECOGNIZED":
+    default:
+      return ExitRoomIntent.UNRECOGNIZED;
+  }
+}
+
+export function exitRoomIntentToJSON(object: ExitRoomIntent): string {
+  switch (object) {
+    case ExitRoomIntent.EXIT_ROOM_INTENT_UNSPECIFIED:
+      return "EXIT_ROOM_INTENT_UNSPECIFIED";
+    case ExitRoomIntent.EXIT_ROOM_INTENT_IMMEDIATE:
+      return "EXIT_ROOM_INTENT_IMMEDIATE";
+    case ExitRoomIntent.EXIT_ROOM_INTENT_NEXT_HAND_LEAVE:
+      return "EXIT_ROOM_INTENT_NEXT_HAND_LEAVE";
+    case ExitRoomIntent.UNRECOGNIZED:
+    default:
+      return "UNRECOGNIZED";
+  }
+}
+
+/** 预约动作 */
+export enum PendingRoomAction {
+  /** PENDING_ROOM_ACTION_NONE - 无预约动作 */
+  PENDING_ROOM_ACTION_NONE = 0,
+  /** PENDING_ROOM_ACTION_SWITCH_ROOM - 预约换房 */
+  PENDING_ROOM_ACTION_SWITCH_ROOM = 1,
+  /** PENDING_ROOM_ACTION_LEAVE_ROOM - 预约离开 */
+  PENDING_ROOM_ACTION_LEAVE_ROOM = 2,
+  UNRECOGNIZED = -1,
+}
+
+export function pendingRoomActionFromJSON(object: any): PendingRoomAction {
+  switch (object) {
+    case 0:
+    case "PENDING_ROOM_ACTION_NONE":
+      return PendingRoomAction.PENDING_ROOM_ACTION_NONE;
+    case 1:
+    case "PENDING_ROOM_ACTION_SWITCH_ROOM":
+      return PendingRoomAction.PENDING_ROOM_ACTION_SWITCH_ROOM;
+    case 2:
+    case "PENDING_ROOM_ACTION_LEAVE_ROOM":
+      return PendingRoomAction.PENDING_ROOM_ACTION_LEAVE_ROOM;
+    case -1:
+    case "UNRECOGNIZED":
+    default:
+      return PendingRoomAction.UNRECOGNIZED;
+  }
+}
+
+export function pendingRoomActionToJSON(object: PendingRoomAction): string {
+  switch (object) {
+    case PendingRoomAction.PENDING_ROOM_ACTION_NONE:
+      return "PENDING_ROOM_ACTION_NONE";
+    case PendingRoomAction.PENDING_ROOM_ACTION_SWITCH_ROOM:
+      return "PENDING_ROOM_ACTION_SWITCH_ROOM";
+    case PendingRoomAction.PENDING_ROOM_ACTION_LEAVE_ROOM:
+      return "PENDING_ROOM_ACTION_LEAVE_ROOM";
+    case PendingRoomAction.UNRECOGNIZED:
+    default:
+      return "UNRECOGNIZED";
+  }
+}
+
+/** 预约动作响应状态 */
+export enum RoomActionAcceptStatus {
+  /** ROOM_ACTION_ACCEPT_STATUS_UNSPECIFIED - 未指定，通常不应返回给客户端 */
+  ROOM_ACTION_ACCEPT_STATUS_UNSPECIFIED = 0,
+  /** ROOM_ACTION_ACCEPT_STATUS_EXECUTING - 请求已受理并立即执行 */
+  ROOM_ACTION_ACCEPT_STATUS_EXECUTING = 1,
+  /** ROOM_ACTION_ACCEPT_STATUS_DEFERRED - 请求已受理，但需等待当前局结束后再执行 */
+  ROOM_ACTION_ACCEPT_STATUS_DEFERRED = 2,
+  /** ROOM_ACTION_ACCEPT_STATUS_CANCELED - 重复点击同一预约动作，已取消 */
+  ROOM_ACTION_ACCEPT_STATUS_CANCELED = 3,
+  /** ROOM_ACTION_ACCEPT_STATUS_ALREADY_PENDING - 玩家已有一个进行中动作，当前请求未生效 */
+  ROOM_ACTION_ACCEPT_STATUS_ALREADY_PENDING = 4,
+  UNRECOGNIZED = -1,
+}
+
+export function roomActionAcceptStatusFromJSON(object: any): RoomActionAcceptStatus {
+  switch (object) {
+    case 0:
+    case "ROOM_ACTION_ACCEPT_STATUS_UNSPECIFIED":
+      return RoomActionAcceptStatus.ROOM_ACTION_ACCEPT_STATUS_UNSPECIFIED;
+    case 1:
+    case "ROOM_ACTION_ACCEPT_STATUS_EXECUTING":
+      return RoomActionAcceptStatus.ROOM_ACTION_ACCEPT_STATUS_EXECUTING;
+    case 2:
+    case "ROOM_ACTION_ACCEPT_STATUS_DEFERRED":
+      return RoomActionAcceptStatus.ROOM_ACTION_ACCEPT_STATUS_DEFERRED;
+    case 3:
+    case "ROOM_ACTION_ACCEPT_STATUS_CANCELED":
+      return RoomActionAcceptStatus.ROOM_ACTION_ACCEPT_STATUS_CANCELED;
+    case 4:
+    case "ROOM_ACTION_ACCEPT_STATUS_ALREADY_PENDING":
+      return RoomActionAcceptStatus.ROOM_ACTION_ACCEPT_STATUS_ALREADY_PENDING;
+    case -1:
+    case "UNRECOGNIZED":
+    default:
+      return RoomActionAcceptStatus.UNRECOGNIZED;
+  }
+}
+
+export function roomActionAcceptStatusToJSON(object: RoomActionAcceptStatus): string {
+  switch (object) {
+    case RoomActionAcceptStatus.ROOM_ACTION_ACCEPT_STATUS_UNSPECIFIED:
+      return "ROOM_ACTION_ACCEPT_STATUS_UNSPECIFIED";
+    case RoomActionAcceptStatus.ROOM_ACTION_ACCEPT_STATUS_EXECUTING:
+      return "ROOM_ACTION_ACCEPT_STATUS_EXECUTING";
+    case RoomActionAcceptStatus.ROOM_ACTION_ACCEPT_STATUS_DEFERRED:
+      return "ROOM_ACTION_ACCEPT_STATUS_DEFERRED";
+    case RoomActionAcceptStatus.ROOM_ACTION_ACCEPT_STATUS_CANCELED:
+      return "ROOM_ACTION_ACCEPT_STATUS_CANCELED";
+    case RoomActionAcceptStatus.ROOM_ACTION_ACCEPT_STATUS_ALREADY_PENDING:
+      return "ROOM_ACTION_ACCEPT_STATUS_ALREADY_PENDING";
+    case RoomActionAcceptStatus.UNRECOGNIZED:
+    default:
+      return "UNRECOGNIZED";
+  }
+}
+
+/** 自己离开房间的原因 */
+export enum SelfLeftRoomReason {
+  /** SELF_LEFT_ROOM_REASON_UNSPECIFIED - 未指定原因 */
+  SELF_LEFT_ROOM_REASON_UNSPECIFIED = 0,
+  /** SELF_LEFT_ROOM_REASON_ACTIVE_EXIT - 玩家主动立即退出 */
+  SELF_LEFT_ROOM_REASON_ACTIVE_EXIT = 1,
+  /** SELF_LEFT_ROOM_REASON_NEXT_HAND_LEAVE_EXECUTED - 预约离开在当前局结束后执行 */
+  SELF_LEFT_ROOM_REASON_NEXT_HAND_LEAVE_EXECUTED = 2,
+  /** SELF_LEFT_ROOM_REASON_KICKED - 被系统或房间管理逻辑移出房间 */
+  SELF_LEFT_ROOM_REASON_KICKED = 3,
+  UNRECOGNIZED = -1,
+}
+
+export function selfLeftRoomReasonFromJSON(object: any): SelfLeftRoomReason {
+  switch (object) {
+    case 0:
+    case "SELF_LEFT_ROOM_REASON_UNSPECIFIED":
+      return SelfLeftRoomReason.SELF_LEFT_ROOM_REASON_UNSPECIFIED;
+    case 1:
+    case "SELF_LEFT_ROOM_REASON_ACTIVE_EXIT":
+      return SelfLeftRoomReason.SELF_LEFT_ROOM_REASON_ACTIVE_EXIT;
+    case 2:
+    case "SELF_LEFT_ROOM_REASON_NEXT_HAND_LEAVE_EXECUTED":
+      return SelfLeftRoomReason.SELF_LEFT_ROOM_REASON_NEXT_HAND_LEAVE_EXECUTED;
+    case 3:
+    case "SELF_LEFT_ROOM_REASON_KICKED":
+      return SelfLeftRoomReason.SELF_LEFT_ROOM_REASON_KICKED;
+    case -1:
+    case "UNRECOGNIZED":
+    default:
+      return SelfLeftRoomReason.UNRECOGNIZED;
+  }
+}
+
+export function selfLeftRoomReasonToJSON(object: SelfLeftRoomReason): string {
+  switch (object) {
+    case SelfLeftRoomReason.SELF_LEFT_ROOM_REASON_UNSPECIFIED:
+      return "SELF_LEFT_ROOM_REASON_UNSPECIFIED";
+    case SelfLeftRoomReason.SELF_LEFT_ROOM_REASON_ACTIVE_EXIT:
+      return "SELF_LEFT_ROOM_REASON_ACTIVE_EXIT";
+    case SelfLeftRoomReason.SELF_LEFT_ROOM_REASON_NEXT_HAND_LEAVE_EXECUTED:
+      return "SELF_LEFT_ROOM_REASON_NEXT_HAND_LEAVE_EXECUTED";
+    case SelfLeftRoomReason.SELF_LEFT_ROOM_REASON_KICKED:
+      return "SELF_LEFT_ROOM_REASON_KICKED";
+    case SelfLeftRoomReason.UNRECOGNIZED:
+    default:
+      return "UNRECOGNIZED";
+  }
+}
+
+/** 玩家站起原因 */
+export enum StandUpReason {
+  /** STAND_UP_REASON_DEFAULT - 默认原因 */
+  STAND_UP_REASON_DEFAULT = 0,
+  /** STAND_UP_REASON_PLAYER_LESS_COIN - 钱不够被踢下座 */
+  STAND_UP_REASON_PLAYER_LESS_COIN = 1,
+  UNRECOGNIZED = -1,
+}
+
+export function standUpReasonFromJSON(object: any): StandUpReason {
+  switch (object) {
+    case 0:
+    case "STAND_UP_REASON_DEFAULT":
+      return StandUpReason.STAND_UP_REASON_DEFAULT;
+    case 1:
+    case "STAND_UP_REASON_PLAYER_LESS_COIN":
+      return StandUpReason.STAND_UP_REASON_PLAYER_LESS_COIN;
+    case -1:
+    case "UNRECOGNIZED":
+    default:
+      return StandUpReason.UNRECOGNIZED;
+  }
+}
+
+export function standUpReasonToJSON(object: StandUpReason): string {
+  switch (object) {
+    case StandUpReason.STAND_UP_REASON_DEFAULT:
+      return "STAND_UP_REASON_DEFAULT";
+    case StandUpReason.STAND_UP_REASON_PLAYER_LESS_COIN:
+      return "STAND_UP_REASON_PLAYER_LESS_COIN";
+    case StandUpReason.UNRECOGNIZED:
+    default:
+      return "UNRECOGNIZED";
+  }
+}
+
 /** PacketHeader 数据包头（16字节固定） */
 export interface PacketHeader {
   /** 包体长度（不包括包头的16字节） */
@@ -49,7 +276,7 @@ export interface PlayerInfo {
   role: number;
   /** 职位 0: 普通玩家 1: 房主 2: 管理员 */
   post: number;
-  /** 状态 0: 在线 1: 准备 2: 游戏中 3: 离线 4: 离开 */
+  /** 状态 0: 在线 1: 准备 2: 游戏中 3: 离线 4: 离开 5: 已坐下 */
   state: number;
   /** 金币变化量 */
   coinChanged: number;
@@ -63,6 +290,18 @@ export interface PlayerInfo {
   micRequestExpiredTime: number;
   /** 等待玩家准备倒计时的结束时间，单位秒。为0表示没有开启倒计时 */
   waitReadyExpiredTime: number;
+  /** 当前玩家生效中的预约动作 */
+  activePendingAction: PendingRoomAction;
+}
+
+/** 玩家设置 */
+export interface PlayerSettings {
+  numericSettings: { [key: string]: number };
+}
+
+export interface PlayerSettings_NumericSettingsEntry {
+  key: string;
+  value: number;
 }
 
 export interface BarrageInfo {
@@ -403,6 +642,15 @@ export interface OwnerKickOutOfRoomBroadcast {
   bcUid: number;
   /** 被踢出的玩家ID */
   playerId: number;
+}
+
+export interface SystemKickOutOfRoomReq {
+  roomId: number;
+  userId: number;
+}
+
+export interface SystemKickOutOfRoomRes {
+  userId: number;
 }
 
 /**
@@ -759,6 +1007,7 @@ function createBasePlayerInfo(): PlayerInfo {
     nextMicRequestTime: 0,
     micRequestExpiredTime: 0,
     waitReadyExpiredTime: 0,
+    activePendingAction: 0,
   };
 }
 
@@ -805,6 +1054,9 @@ export const PlayerInfo = {
     }
     if (message.waitReadyExpiredTime !== 0) {
       writer.uint32(112).int64(message.waitReadyExpiredTime);
+    }
+    if (message.activePendingAction !== 0) {
+      writer.uint32(120).int32(message.activePendingAction);
     }
     return writer;
   },
@@ -914,6 +1166,13 @@ export const PlayerInfo = {
 
           message.waitReadyExpiredTime = longToNumber(reader.int64() as Long);
           continue;
+        case 15:
+          if (tag !== 120) {
+            break;
+          }
+
+          message.activePendingAction = reader.int32() as any;
+          continue;
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -939,6 +1198,9 @@ export const PlayerInfo = {
       nextMicRequestTime: isSet(object.nextMicRequestTime) ? globalThis.Number(object.nextMicRequestTime) : 0,
       micRequestExpiredTime: isSet(object.micRequestExpiredTime) ? globalThis.Number(object.micRequestExpiredTime) : 0,
       waitReadyExpiredTime: isSet(object.waitReadyExpiredTime) ? globalThis.Number(object.waitReadyExpiredTime) : 0,
+      activePendingAction: isSet(object.activePendingAction)
+        ? pendingRoomActionFromJSON(object.activePendingAction)
+        : 0,
     };
   },
 
@@ -986,6 +1248,9 @@ export const PlayerInfo = {
     if (message.waitReadyExpiredTime !== 0) {
       obj.waitReadyExpiredTime = Math.round(message.waitReadyExpiredTime);
     }
+    if (message.activePendingAction !== 0) {
+      obj.activePendingAction = pendingRoomActionToJSON(message.activePendingAction);
+    }
     return obj;
   },
 
@@ -1008,6 +1273,166 @@ export const PlayerInfo = {
     message.nextMicRequestTime = object.nextMicRequestTime ?? 0;
     message.micRequestExpiredTime = object.micRequestExpiredTime ?? 0;
     message.waitReadyExpiredTime = object.waitReadyExpiredTime ?? 0;
+    message.activePendingAction = object.activePendingAction ?? 0;
+    return message;
+  },
+};
+
+function createBasePlayerSettings(): PlayerSettings {
+  return { numericSettings: {} };
+}
+
+export const PlayerSettings = {
+  encode(message: PlayerSettings, writer: _m0.Writer = _m0.Writer.create()): _m0.Writer {
+    Object.entries(message.numericSettings).forEach(([key, value]) => {
+      PlayerSettings_NumericSettingsEntry.encode({ key: key as any, value }, writer.uint32(10).fork()).ldelim();
+    });
+    return writer;
+  },
+
+  decode(input: _m0.Reader | Uint8Array, length?: number): PlayerSettings {
+    const reader = input instanceof _m0.Reader ? input : _m0.Reader.create(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBasePlayerSettings();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          if (tag !== 10) {
+            break;
+          }
+
+          const entry1 = PlayerSettings_NumericSettingsEntry.decode(reader, reader.uint32());
+          if (entry1.value !== undefined) {
+            message.numericSettings[entry1.key] = entry1.value;
+          }
+          continue;
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skipType(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): PlayerSettings {
+    return {
+      numericSettings: isObject(object.numericSettings)
+        ? Object.entries(object.numericSettings).reduce<{ [key: string]: number }>((acc, [key, value]) => {
+          acc[key] = Number(value);
+          return acc;
+        }, {})
+        : {},
+    };
+  },
+
+  toJSON(message: PlayerSettings): unknown {
+    const obj: any = {};
+    if (message.numericSettings) {
+      const entries = Object.entries(message.numericSettings);
+      if (entries.length > 0) {
+        obj.numericSettings = {};
+        entries.forEach(([k, v]) => {
+          obj.numericSettings[k] = Math.round(v);
+        });
+      }
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<PlayerSettings>, I>>(base?: I): PlayerSettings {
+    return PlayerSettings.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<PlayerSettings>, I>>(object: I): PlayerSettings {
+    const message = createBasePlayerSettings();
+    message.numericSettings = Object.entries(object.numericSettings ?? {}).reduce<{ [key: string]: number }>(
+      (acc, [key, value]) => {
+        if (value !== undefined) {
+          acc[key] = globalThis.Number(value);
+        }
+        return acc;
+      },
+      {},
+    );
+    return message;
+  },
+};
+
+function createBasePlayerSettings_NumericSettingsEntry(): PlayerSettings_NumericSettingsEntry {
+  return { key: "", value: 0 };
+}
+
+export const PlayerSettings_NumericSettingsEntry = {
+  encode(message: PlayerSettings_NumericSettingsEntry, writer: _m0.Writer = _m0.Writer.create()): _m0.Writer {
+    if (message.key !== "") {
+      writer.uint32(10).string(message.key);
+    }
+    if (message.value !== 0) {
+      writer.uint32(16).int64(message.value);
+    }
+    return writer;
+  },
+
+  decode(input: _m0.Reader | Uint8Array, length?: number): PlayerSettings_NumericSettingsEntry {
+    const reader = input instanceof _m0.Reader ? input : _m0.Reader.create(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBasePlayerSettings_NumericSettingsEntry();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          if (tag !== 10) {
+            break;
+          }
+
+          message.key = reader.string();
+          continue;
+        case 2:
+          if (tag !== 16) {
+            break;
+          }
+
+          message.value = longToNumber(reader.int64() as Long);
+          continue;
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skipType(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): PlayerSettings_NumericSettingsEntry {
+    return {
+      key: isSet(object.key) ? globalThis.String(object.key) : "",
+      value: isSet(object.value) ? globalThis.Number(object.value) : 0,
+    };
+  },
+
+  toJSON(message: PlayerSettings_NumericSettingsEntry): unknown {
+    const obj: any = {};
+    if (message.key !== "") {
+      obj.key = message.key;
+    }
+    if (message.value !== 0) {
+      obj.value = Math.round(message.value);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<PlayerSettings_NumericSettingsEntry>, I>>(
+    base?: I,
+  ): PlayerSettings_NumericSettingsEntry {
+    return PlayerSettings_NumericSettingsEntry.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<PlayerSettings_NumericSettingsEntry>, I>>(
+    object: I,
+  ): PlayerSettings_NumericSettingsEntry {
+    const message = createBasePlayerSettings_NumericSettingsEntry();
+    message.key = object.key ?? "";
+    message.value = object.value ?? 0;
     return message;
   },
 };
@@ -3385,6 +3810,137 @@ export const OwnerKickOutOfRoomBroadcast = {
   },
 };
 
+function createBaseSystemKickOutOfRoomReq(): SystemKickOutOfRoomReq {
+  return { roomId: 0, userId: 0 };
+}
+
+export const SystemKickOutOfRoomReq = {
+  encode(message: SystemKickOutOfRoomReq, writer: _m0.Writer = _m0.Writer.create()): _m0.Writer {
+    if (message.roomId !== 0) {
+      writer.uint32(8).int64(message.roomId);
+    }
+    if (message.userId !== 0) {
+      writer.uint32(16).int64(message.userId);
+    }
+    return writer;
+  },
+
+  decode(input: _m0.Reader | Uint8Array, length?: number): SystemKickOutOfRoomReq {
+    const reader = input instanceof _m0.Reader ? input : _m0.Reader.create(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseSystemKickOutOfRoomReq();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          if (tag !== 8) {
+            break;
+          }
+
+          message.roomId = longToNumber(reader.int64() as Long);
+          continue;
+        case 2:
+          if (tag !== 16) {
+            break;
+          }
+
+          message.userId = longToNumber(reader.int64() as Long);
+          continue;
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skipType(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): SystemKickOutOfRoomReq {
+    return {
+      roomId: isSet(object.roomId) ? globalThis.Number(object.roomId) : 0,
+      userId: isSet(object.userId) ? globalThis.Number(object.userId) : 0,
+    };
+  },
+
+  toJSON(message: SystemKickOutOfRoomReq): unknown {
+    const obj: any = {};
+    if (message.roomId !== 0) {
+      obj.roomId = Math.round(message.roomId);
+    }
+    if (message.userId !== 0) {
+      obj.userId = Math.round(message.userId);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<SystemKickOutOfRoomReq>, I>>(base?: I): SystemKickOutOfRoomReq {
+    return SystemKickOutOfRoomReq.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<SystemKickOutOfRoomReq>, I>>(object: I): SystemKickOutOfRoomReq {
+    const message = createBaseSystemKickOutOfRoomReq();
+    message.roomId = object.roomId ?? 0;
+    message.userId = object.userId ?? 0;
+    return message;
+  },
+};
+
+function createBaseSystemKickOutOfRoomRes(): SystemKickOutOfRoomRes {
+  return { userId: 0 };
+}
+
+export const SystemKickOutOfRoomRes = {
+  encode(message: SystemKickOutOfRoomRes, writer: _m0.Writer = _m0.Writer.create()): _m0.Writer {
+    if (message.userId !== 0) {
+      writer.uint32(8).int64(message.userId);
+    }
+    return writer;
+  },
+
+  decode(input: _m0.Reader | Uint8Array, length?: number): SystemKickOutOfRoomRes {
+    const reader = input instanceof _m0.Reader ? input : _m0.Reader.create(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseSystemKickOutOfRoomRes();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          if (tag !== 8) {
+            break;
+          }
+
+          message.userId = longToNumber(reader.int64() as Long);
+          continue;
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skipType(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): SystemKickOutOfRoomRes {
+    return { userId: isSet(object.userId) ? globalThis.Number(object.userId) : 0 };
+  },
+
+  toJSON(message: SystemKickOutOfRoomRes): unknown {
+    const obj: any = {};
+    if (message.userId !== 0) {
+      obj.userId = Math.round(message.userId);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<SystemKickOutOfRoomRes>, I>>(base?: I): SystemKickOutOfRoomRes {
+    return SystemKickOutOfRoomRes.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<SystemKickOutOfRoomRes>, I>>(object: I): SystemKickOutOfRoomRes {
+    const message = createBaseSystemKickOutOfRoomRes();
+    message.userId = object.userId ?? 0;
+    return message;
+  },
+};
+
 function createBaseOwnerKickOffSeatReq(): OwnerKickOffSeatReq {
   return { playerId: 0 };
 }
@@ -3786,6 +4342,10 @@ function longToNumber(long: Long): number {
 if (_m0.util.Long !== Long) {
   _m0.util.Long = Long as any;
   _m0.configure();
+}
+
+function isObject(value: any): boolean {
+  return typeof value === "object" && value !== null;
 }
 
 function isSet(value: any): boolean {

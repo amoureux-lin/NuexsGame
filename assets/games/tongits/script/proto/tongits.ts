@@ -7,7 +7,7 @@
 /* eslint-disable */
 import Long from "long";
 import _m0 from "protobufjs";
-import { PlayerInfo } from "db://assets/script/proto/game_common_room";
+import {PlayerInfo, PlayerSettings} from "db://assets/script/proto/game_common_room";
 
 export const protobufPackage = "tongits.v1";
 
@@ -37,7 +37,7 @@ export interface TongitsPlayerInfo {
   isDealer: boolean;
   /** 已经打出的牌组 (明牌) */
   displayedMelds: Meld[];
-  /** 自己的手牌 */
+  /** 自己的手牌 老 */
   handCards: number[];
   /** 是否可以发起挑战 */
   isFight: boolean;
@@ -51,6 +51,10 @@ export interface TongitsPlayerInfo {
   isWin: boolean;
   /** 点数 */
   cardPoint: number;
+  /** 自动组牌 */
+  isAuto: boolean;
+  /** 自己的手牌 新 */
+  groupCards: Cards[];
 }
 
 export interface TongitsBasePlayerInfo {
@@ -163,7 +167,11 @@ export interface JoinRoomRes {
     | TongitsPlayerInfo
     | undefined;
   /** 游戏信息 */
-  gameInfo: GameInfo | undefined;
+  gameInfo:
+    | GameInfo
+    | undefined;
+  /** 玩家设置 */
+  playerSettings: PlayerSettings | undefined;
 }
 
 /**
@@ -226,6 +234,8 @@ export interface DrawCardRes {
   hasTongits: boolean;
   /** 手牌数量 (对其他玩家可见) */
   handCardCount: number;
+  /** 自己的手牌  自己会有这个值 */
+  groupCards: Cards[];
 }
 
 /**
@@ -239,6 +249,8 @@ export interface DrawCardBroadcast {
   drawnCard: number;
   /** 手牌数量 (对其他玩家可见) */
   handCardCount: number;
+  /** 自己的手牌  自己会有这个值 */
+  groupCards: Cards[];
 }
 
 /**
@@ -432,6 +444,8 @@ export interface ChallengeRes {
 export interface ChallengeBroadcast {
   playerId: number;
   basePlayers: TongitsBasePlayerInfo[];
+  /** 点数 */
+  cardPoint: number;
   userId: number;
 }
 
@@ -489,6 +503,8 @@ export interface ActionChangeBroadcast {
   isFight: boolean;
   /** 1:不可操作, 2:select, 3:Action */
   status: number;
+  /** 自己的手牌 */
+  groupCards: Cards[];
   /** 通知玩家id */
   userId: number;
 }
@@ -581,6 +597,63 @@ export interface TongitsHistoryInfo {
   potReward: number;
   /** 总计 */
   totalReward: number;
+}
+
+/**
+ * 游戏即将开始倒计时 (满2人触发)
+ * MessageType: TONGITS_GAME_READY_BROADCAST (3035)
+ */
+export interface GameReadyBroadcast {
+  /** 倒计时秒数 (如: 3) */
+  countdownSeconds: number;
+  /** 绝对开始时间戳 */
+  startTime: number;
+}
+
+/**
+ * 开启/关闭自动组牌
+ * MessageType: TONGITS_SWITCH_AUTO_GROUP_CARDS_REQ  (3036)
+ */
+export interface SwitchAutoGroupCardsReq {
+  isAuto: boolean;
+}
+
+/**
+ * 开启/关闭自动组牌
+ * MessageType: TONGITS_SWITCH_AUTO_GROUP_CARDS_RES (3037)
+ */
+export interface SwitchAutoGroupCardsRes {
+  isAuto: boolean;
+  /** 自己的手牌 */
+  groupCards: Cards[];
+}
+
+/**
+ * 玩家手动组牌
+ * MessageType: TONGITS_GAME_PLAYER_GROUP_CARDS_REQ (3038)
+ */
+export interface GamePlayerGroupCardsReq {
+  /** 需要变化的牌组列表  组成新的group 不需要传参 */
+  targetGroupCards: Cards[];
+}
+
+/**
+ * 玩家手动组牌
+ * MessageType: TONGITS_GAME_PLAYER_GROUP_CARDS_RES (3039)
+ */
+export interface GamePlayerGroupCardsRes {
+  groupCards: Cards[];
+}
+
+export interface Cards {
+  /** 牌组id   0是散牌  1 ... 是牌组 */
+  groupId: number;
+  /** 牌组手牌 */
+  handCards: number[];
+  /** 牌型 0 无效牌型 1 有效牌型 2特殊牌型 */
+  cardType: number;
+  /** 牌组点数 */
+  cardPoint: number;
 }
 
 function createBaseEmptyRes(): EmptyRes {
@@ -743,6 +816,8 @@ function createBaseTongitsPlayerInfo(): TongitsPlayerInfo {
     status: 0,
     isWin: false,
     cardPoint: 0,
+    isAuto: false,
+    groupCards: [],
   };
 }
 
@@ -782,6 +857,12 @@ export const TongitsPlayerInfo = {
     }
     if (message.cardPoint !== 0) {
       writer.uint32(88).int32(message.cardPoint);
+    }
+    if (message.isAuto !== false) {
+      writer.uint32(96).bool(message.isAuto);
+    }
+    for (const v of message.groupCards) {
+      Cards.encode(v!, writer.uint32(106).fork()).ldelim();
     }
     return writer;
   },
@@ -880,6 +961,20 @@ export const TongitsPlayerInfo = {
 
           message.cardPoint = reader.int32();
           continue;
+        case 12:
+          if (tag !== 96) {
+            break;
+          }
+
+          message.isAuto = reader.bool();
+          continue;
+        case 13:
+          if (tag !== 106) {
+            break;
+          }
+
+          message.groupCards.push(Cards.decode(reader, reader.uint32()));
+          continue;
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -906,6 +1001,10 @@ export const TongitsPlayerInfo = {
       status: isSet(object.status) ? globalThis.Number(object.status) : 0,
       isWin: isSet(object.isWin) ? globalThis.Boolean(object.isWin) : false,
       cardPoint: isSet(object.cardPoint) ? globalThis.Number(object.cardPoint) : 0,
+      isAuto: isSet(object.isAuto) ? globalThis.Boolean(object.isAuto) : false,
+      groupCards: globalThis.Array.isArray(object?.groupCards)
+        ? object.groupCards.map((e: any) => Cards.fromJSON(e))
+        : [],
     };
   },
 
@@ -944,6 +1043,12 @@ export const TongitsPlayerInfo = {
     if (message.cardPoint !== 0) {
       obj.cardPoint = Math.round(message.cardPoint);
     }
+    if (message.isAuto !== false) {
+      obj.isAuto = message.isAuto;
+    }
+    if (message.groupCards?.length) {
+      obj.groupCards = message.groupCards.map((e) => Cards.toJSON(e));
+    }
     return obj;
   },
 
@@ -965,6 +1070,8 @@ export const TongitsPlayerInfo = {
     message.status = object.status ?? 0;
     message.isWin = object.isWin ?? false;
     message.cardPoint = object.cardPoint ?? 0;
+    message.isAuto = object.isAuto ?? false;
+    message.groupCards = object.groupCards?.map((e) => Cards.fromPartial(e)) || [];
     return message;
   },
 };
@@ -1782,6 +1889,7 @@ function createBaseJoinRoomRes(): JoinRoomRes {
     speakers: [],
     self: undefined,
     gameInfo: undefined,
+    playerSettings: undefined,
   };
 }
 
@@ -1807,6 +1915,9 @@ export const JoinRoomRes = {
     }
     if (message.gameInfo !== undefined) {
       GameInfo.encode(message.gameInfo, writer.uint32(58).fork()).ldelim();
+    }
+    if (message.playerSettings !== undefined) {
+      PlayerSettings.encode(message.playerSettings, writer.uint32(66).fork()).ldelim();
     }
     return writer;
   },
@@ -1867,6 +1978,13 @@ export const JoinRoomRes = {
 
           message.gameInfo = GameInfo.decode(reader, reader.uint32());
           continue;
+        case 8:
+          if (tag !== 66) {
+            break;
+          }
+
+          message.playerSettings = PlayerSettings.decode(reader, reader.uint32());
+          continue;
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1891,6 +2009,7 @@ export const JoinRoomRes = {
         : [],
       self: isSet(object.self) ? TongitsPlayerInfo.fromJSON(object.self) : undefined,
       gameInfo: isSet(object.gameInfo) ? GameInfo.fromJSON(object.gameInfo) : undefined,
+      playerSettings: isSet(object.playerSettings) ? PlayerSettings.fromJSON(object.playerSettings) : undefined,
     };
   },
 
@@ -1917,6 +2036,9 @@ export const JoinRoomRes = {
     if (message.gameInfo !== undefined) {
       obj.gameInfo = GameInfo.toJSON(message.gameInfo);
     }
+    if (message.playerSettings !== undefined) {
+      obj.playerSettings = PlayerSettings.toJSON(message.playerSettings);
+    }
     return obj;
   },
 
@@ -1937,6 +2059,9 @@ export const JoinRoomRes = {
       : undefined;
     message.gameInfo = (object.gameInfo !== undefined && object.gameInfo !== null)
       ? GameInfo.fromPartial(object.gameInfo)
+      : undefined;
+    message.playerSettings = (object.playerSettings !== undefined && object.playerSettings !== null)
+      ? PlayerSettings.fromPartial(object.playerSettings)
       : undefined;
     return message;
   },
@@ -2251,7 +2376,7 @@ export const DrawCardReq = {
 };
 
 function createBaseDrawCardRes(): DrawCardRes {
-  return { drawnCard: 0, hasTongits: false, handCardCount: 0 };
+  return { drawnCard: 0, hasTongits: false, handCardCount: 0, groupCards: [] };
 }
 
 export const DrawCardRes = {
@@ -2264,6 +2389,9 @@ export const DrawCardRes = {
     }
     if (message.handCardCount !== 0) {
       writer.uint32(24).int32(message.handCardCount);
+    }
+    for (const v of message.groupCards) {
+      Cards.encode(v!, writer.uint32(34).fork()).ldelim();
     }
     return writer;
   },
@@ -2296,6 +2424,13 @@ export const DrawCardRes = {
 
           message.handCardCount = reader.int32();
           continue;
+        case 4:
+          if (tag !== 34) {
+            break;
+          }
+
+          message.groupCards.push(Cards.decode(reader, reader.uint32()));
+          continue;
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -2310,6 +2445,9 @@ export const DrawCardRes = {
       drawnCard: isSet(object.drawnCard) ? globalThis.Number(object.drawnCard) : 0,
       hasTongits: isSet(object.hasTongits) ? globalThis.Boolean(object.hasTongits) : false,
       handCardCount: isSet(object.handCardCount) ? globalThis.Number(object.handCardCount) : 0,
+      groupCards: globalThis.Array.isArray(object?.groupCards)
+        ? object.groupCards.map((e: any) => Cards.fromJSON(e))
+        : [],
     };
   },
 
@@ -2324,6 +2462,9 @@ export const DrawCardRes = {
     if (message.handCardCount !== 0) {
       obj.handCardCount = Math.round(message.handCardCount);
     }
+    if (message.groupCards?.length) {
+      obj.groupCards = message.groupCards.map((e) => Cards.toJSON(e));
+    }
     return obj;
   },
 
@@ -2335,12 +2476,13 @@ export const DrawCardRes = {
     message.drawnCard = object.drawnCard ?? 0;
     message.hasTongits = object.hasTongits ?? false;
     message.handCardCount = object.handCardCount ?? 0;
+    message.groupCards = object.groupCards?.map((e) => Cards.fromPartial(e)) || [];
     return message;
   },
 };
 
 function createBaseDrawCardBroadcast(): DrawCardBroadcast {
-  return { playerId: 0, userId: 0, drawnCard: 0, handCardCount: 0 };
+  return { playerId: 0, userId: 0, drawnCard: 0, handCardCount: 0, groupCards: [] };
 }
 
 export const DrawCardBroadcast = {
@@ -2356,6 +2498,9 @@ export const DrawCardBroadcast = {
     }
     if (message.handCardCount !== 0) {
       writer.uint32(32).int32(message.handCardCount);
+    }
+    for (const v of message.groupCards) {
+      Cards.encode(v!, writer.uint32(42).fork()).ldelim();
     }
     return writer;
   },
@@ -2395,6 +2540,13 @@ export const DrawCardBroadcast = {
 
           message.handCardCount = reader.int32();
           continue;
+        case 5:
+          if (tag !== 42) {
+            break;
+          }
+
+          message.groupCards.push(Cards.decode(reader, reader.uint32()));
+          continue;
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -2410,6 +2562,9 @@ export const DrawCardBroadcast = {
       userId: isSet(object.userId) ? globalThis.Number(object.userId) : 0,
       drawnCard: isSet(object.drawnCard) ? globalThis.Number(object.drawnCard) : 0,
       handCardCount: isSet(object.handCardCount) ? globalThis.Number(object.handCardCount) : 0,
+      groupCards: globalThis.Array.isArray(object?.groupCards)
+        ? object.groupCards.map((e: any) => Cards.fromJSON(e))
+        : [],
     };
   },
 
@@ -2427,6 +2582,9 @@ export const DrawCardBroadcast = {
     if (message.handCardCount !== 0) {
       obj.handCardCount = Math.round(message.handCardCount);
     }
+    if (message.groupCards?.length) {
+      obj.groupCards = message.groupCards.map((e) => Cards.toJSON(e));
+    }
     return obj;
   },
 
@@ -2439,6 +2597,7 @@ export const DrawCardBroadcast = {
     message.userId = object.userId ?? 0;
     message.drawnCard = object.drawnCard ?? 0;
     message.handCardCount = object.handCardCount ?? 0;
+    message.groupCards = object.groupCards?.map((e) => Cards.fromPartial(e)) || [];
     return message;
   },
 };
@@ -3821,7 +3980,7 @@ export const ChallengeRes = {
 };
 
 function createBaseChallengeBroadcast(): ChallengeBroadcast {
-  return { playerId: 0, basePlayers: [], userId: 0 };
+  return { playerId: 0, basePlayers: [], cardPoint: 0, userId: 0 };
 }
 
 export const ChallengeBroadcast = {
@@ -3831,6 +3990,9 @@ export const ChallengeBroadcast = {
     }
     for (const v of message.basePlayers) {
       TongitsBasePlayerInfo.encode(v!, writer.uint32(18).fork()).ldelim();
+    }
+    if (message.cardPoint !== 0) {
+      writer.uint32(24).int32(message.cardPoint);
     }
     if (message.userId !== 0) {
       writer.uint32(32).int64(message.userId);
@@ -3859,6 +4021,13 @@ export const ChallengeBroadcast = {
 
           message.basePlayers.push(TongitsBasePlayerInfo.decode(reader, reader.uint32()));
           continue;
+        case 3:
+          if (tag !== 24) {
+            break;
+          }
+
+          message.cardPoint = reader.int32();
+          continue;
         case 4:
           if (tag !== 32) {
             break;
@@ -3881,6 +4050,7 @@ export const ChallengeBroadcast = {
       basePlayers: globalThis.Array.isArray(object?.basePlayers)
         ? object.basePlayers.map((e: any) => TongitsBasePlayerInfo.fromJSON(e))
         : [],
+      cardPoint: isSet(object.cardPoint) ? globalThis.Number(object.cardPoint) : 0,
       userId: isSet(object.userId) ? globalThis.Number(object.userId) : 0,
     };
   },
@@ -3892,6 +4062,9 @@ export const ChallengeBroadcast = {
     }
     if (message.basePlayers?.length) {
       obj.basePlayers = message.basePlayers.map((e) => TongitsBasePlayerInfo.toJSON(e));
+    }
+    if (message.cardPoint !== 0) {
+      obj.cardPoint = Math.round(message.cardPoint);
     }
     if (message.userId !== 0) {
       obj.userId = Math.round(message.userId);
@@ -3906,6 +4079,7 @@ export const ChallengeBroadcast = {
     const message = createBaseChallengeBroadcast();
     message.playerId = object.playerId ?? 0;
     message.basePlayers = object.basePlayers?.map((e) => TongitsBasePlayerInfo.fromPartial(e)) || [];
+    message.cardPoint = object.cardPoint ?? 0;
     message.userId = object.userId ?? 0;
     return message;
   },
@@ -4217,7 +4391,7 @@ export const RoomResetBroadcast = {
 };
 
 function createBaseActionChangeBroadcast(): ActionChangeBroadcast {
-  return { actionPlayerId: 0, countdown: 0, isFight: false, status: 0, userId: 0 };
+  return { actionPlayerId: 0, countdown: 0, isFight: false, status: 0, groupCards: [], userId: 0 };
 }
 
 export const ActionChangeBroadcast = {
@@ -4233,6 +4407,9 @@ export const ActionChangeBroadcast = {
     }
     if (message.status !== 0) {
       writer.uint32(32).int32(message.status);
+    }
+    for (const v of message.groupCards) {
+      Cards.encode(v!, writer.uint32(42).fork()).ldelim();
     }
     if (message.userId !== 0) {
       writer.uint32(88).int64(message.userId);
@@ -4275,6 +4452,13 @@ export const ActionChangeBroadcast = {
 
           message.status = reader.int32();
           continue;
+        case 5:
+          if (tag !== 42) {
+            break;
+          }
+
+          message.groupCards.push(Cards.decode(reader, reader.uint32()));
+          continue;
         case 11:
           if (tag !== 88) {
             break;
@@ -4297,6 +4481,9 @@ export const ActionChangeBroadcast = {
       countdown: isSet(object.countdown) ? globalThis.Number(object.countdown) : 0,
       isFight: isSet(object.isFight) ? globalThis.Boolean(object.isFight) : false,
       status: isSet(object.status) ? globalThis.Number(object.status) : 0,
+      groupCards: globalThis.Array.isArray(object?.groupCards)
+        ? object.groupCards.map((e: any) => Cards.fromJSON(e))
+        : [],
       userId: isSet(object.userId) ? globalThis.Number(object.userId) : 0,
     };
   },
@@ -4315,6 +4502,9 @@ export const ActionChangeBroadcast = {
     if (message.status !== 0) {
       obj.status = Math.round(message.status);
     }
+    if (message.groupCards?.length) {
+      obj.groupCards = message.groupCards.map((e) => Cards.toJSON(e));
+    }
     if (message.userId !== 0) {
       obj.userId = Math.round(message.userId);
     }
@@ -4330,6 +4520,7 @@ export const ActionChangeBroadcast = {
     message.countdown = object.countdown ?? 0;
     message.isFight = object.isFight ?? false;
     message.status = object.status ?? 0;
+    message.groupCards = object.groupCards?.map((e) => Cards.fromPartial(e)) || [];
     message.userId = object.userId ?? 0;
     return message;
   },
@@ -5062,6 +5253,453 @@ export const TongitsHistoryInfo = {
     message.normalReward = object.normalReward ?? 0;
     message.potReward = object.potReward ?? 0;
     message.totalReward = object.totalReward ?? 0;
+    return message;
+  },
+};
+
+function createBaseGameReadyBroadcast(): GameReadyBroadcast {
+  return { countdownSeconds: 0, startTime: 0 };
+}
+
+export const GameReadyBroadcast = {
+  encode(message: GameReadyBroadcast, writer: _m0.Writer = _m0.Writer.create()): _m0.Writer {
+    if (message.countdownSeconds !== 0) {
+      writer.uint32(8).int32(message.countdownSeconds);
+    }
+    if (message.startTime !== 0) {
+      writer.uint32(16).int64(message.startTime);
+    }
+    return writer;
+  },
+
+  decode(input: _m0.Reader | Uint8Array, length?: number): GameReadyBroadcast {
+    const reader = input instanceof _m0.Reader ? input : _m0.Reader.create(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseGameReadyBroadcast();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          if (tag !== 8) {
+            break;
+          }
+
+          message.countdownSeconds = reader.int32();
+          continue;
+        case 2:
+          if (tag !== 16) {
+            break;
+          }
+
+          message.startTime = longToNumber(reader.int64() as Long);
+          continue;
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skipType(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): GameReadyBroadcast {
+    return {
+      countdownSeconds: isSet(object.countdownSeconds) ? globalThis.Number(object.countdownSeconds) : 0,
+      startTime: isSet(object.startTime) ? globalThis.Number(object.startTime) : 0,
+    };
+  },
+
+  toJSON(message: GameReadyBroadcast): unknown {
+    const obj: any = {};
+    if (message.countdownSeconds !== 0) {
+      obj.countdownSeconds = Math.round(message.countdownSeconds);
+    }
+    if (message.startTime !== 0) {
+      obj.startTime = Math.round(message.startTime);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<GameReadyBroadcast>, I>>(base?: I): GameReadyBroadcast {
+    return GameReadyBroadcast.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<GameReadyBroadcast>, I>>(object: I): GameReadyBroadcast {
+    const message = createBaseGameReadyBroadcast();
+    message.countdownSeconds = object.countdownSeconds ?? 0;
+    message.startTime = object.startTime ?? 0;
+    return message;
+  },
+};
+
+function createBaseSwitchAutoGroupCardsReq(): SwitchAutoGroupCardsReq {
+  return { isAuto: false };
+}
+
+export const SwitchAutoGroupCardsReq = {
+  encode(message: SwitchAutoGroupCardsReq, writer: _m0.Writer = _m0.Writer.create()): _m0.Writer {
+    if (message.isAuto !== false) {
+      writer.uint32(8).bool(message.isAuto);
+    }
+    return writer;
+  },
+
+  decode(input: _m0.Reader | Uint8Array, length?: number): SwitchAutoGroupCardsReq {
+    const reader = input instanceof _m0.Reader ? input : _m0.Reader.create(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseSwitchAutoGroupCardsReq();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          if (tag !== 8) {
+            break;
+          }
+
+          message.isAuto = reader.bool();
+          continue;
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skipType(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): SwitchAutoGroupCardsReq {
+    return { isAuto: isSet(object.isAuto) ? globalThis.Boolean(object.isAuto) : false };
+  },
+
+  toJSON(message: SwitchAutoGroupCardsReq): unknown {
+    const obj: any = {};
+    if (message.isAuto !== false) {
+      obj.isAuto = message.isAuto;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<SwitchAutoGroupCardsReq>, I>>(base?: I): SwitchAutoGroupCardsReq {
+    return SwitchAutoGroupCardsReq.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<SwitchAutoGroupCardsReq>, I>>(object: I): SwitchAutoGroupCardsReq {
+    const message = createBaseSwitchAutoGroupCardsReq();
+    message.isAuto = object.isAuto ?? false;
+    return message;
+  },
+};
+
+function createBaseSwitchAutoGroupCardsRes(): SwitchAutoGroupCardsRes {
+  return { isAuto: false, groupCards: [] };
+}
+
+export const SwitchAutoGroupCardsRes = {
+  encode(message: SwitchAutoGroupCardsRes, writer: _m0.Writer = _m0.Writer.create()): _m0.Writer {
+    if (message.isAuto !== false) {
+      writer.uint32(8).bool(message.isAuto);
+    }
+    for (const v of message.groupCards) {
+      Cards.encode(v!, writer.uint32(18).fork()).ldelim();
+    }
+    return writer;
+  },
+
+  decode(input: _m0.Reader | Uint8Array, length?: number): SwitchAutoGroupCardsRes {
+    const reader = input instanceof _m0.Reader ? input : _m0.Reader.create(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseSwitchAutoGroupCardsRes();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          if (tag !== 8) {
+            break;
+          }
+
+          message.isAuto = reader.bool();
+          continue;
+        case 2:
+          if (tag !== 18) {
+            break;
+          }
+
+          message.groupCards.push(Cards.decode(reader, reader.uint32()));
+          continue;
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skipType(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): SwitchAutoGroupCardsRes {
+    return {
+      isAuto: isSet(object.isAuto) ? globalThis.Boolean(object.isAuto) : false,
+      groupCards: globalThis.Array.isArray(object?.groupCards)
+        ? object.groupCards.map((e: any) => Cards.fromJSON(e))
+        : [],
+    };
+  },
+
+  toJSON(message: SwitchAutoGroupCardsRes): unknown {
+    const obj: any = {};
+    if (message.isAuto !== false) {
+      obj.isAuto = message.isAuto;
+    }
+    if (message.groupCards?.length) {
+      obj.groupCards = message.groupCards.map((e) => Cards.toJSON(e));
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<SwitchAutoGroupCardsRes>, I>>(base?: I): SwitchAutoGroupCardsRes {
+    return SwitchAutoGroupCardsRes.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<SwitchAutoGroupCardsRes>, I>>(object: I): SwitchAutoGroupCardsRes {
+    const message = createBaseSwitchAutoGroupCardsRes();
+    message.isAuto = object.isAuto ?? false;
+    message.groupCards = object.groupCards?.map((e) => Cards.fromPartial(e)) || [];
+    return message;
+  },
+};
+
+function createBaseGamePlayerGroupCardsReq(): GamePlayerGroupCardsReq {
+  return { targetGroupCards: [] };
+}
+
+export const GamePlayerGroupCardsReq = {
+  encode(message: GamePlayerGroupCardsReq, writer: _m0.Writer = _m0.Writer.create()): _m0.Writer {
+    for (const v of message.targetGroupCards) {
+      Cards.encode(v!, writer.uint32(10).fork()).ldelim();
+    }
+    return writer;
+  },
+
+  decode(input: _m0.Reader | Uint8Array, length?: number): GamePlayerGroupCardsReq {
+    const reader = input instanceof _m0.Reader ? input : _m0.Reader.create(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseGamePlayerGroupCardsReq();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          if (tag !== 10) {
+            break;
+          }
+
+          message.targetGroupCards.push(Cards.decode(reader, reader.uint32()));
+          continue;
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skipType(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): GamePlayerGroupCardsReq {
+    return {
+      targetGroupCards: globalThis.Array.isArray(object?.targetGroupCards)
+        ? object.targetGroupCards.map((e: any) => Cards.fromJSON(e))
+        : [],
+    };
+  },
+
+  toJSON(message: GamePlayerGroupCardsReq): unknown {
+    const obj: any = {};
+    if (message.targetGroupCards?.length) {
+      obj.targetGroupCards = message.targetGroupCards.map((e) => Cards.toJSON(e));
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<GamePlayerGroupCardsReq>, I>>(base?: I): GamePlayerGroupCardsReq {
+    return GamePlayerGroupCardsReq.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<GamePlayerGroupCardsReq>, I>>(object: I): GamePlayerGroupCardsReq {
+    const message = createBaseGamePlayerGroupCardsReq();
+    message.targetGroupCards = object.targetGroupCards?.map((e) => Cards.fromPartial(e)) || [];
+    return message;
+  },
+};
+
+function createBaseGamePlayerGroupCardsRes(): GamePlayerGroupCardsRes {
+  return { groupCards: [] };
+}
+
+export const GamePlayerGroupCardsRes = {
+  encode(message: GamePlayerGroupCardsRes, writer: _m0.Writer = _m0.Writer.create()): _m0.Writer {
+    for (const v of message.groupCards) {
+      Cards.encode(v!, writer.uint32(10).fork()).ldelim();
+    }
+    return writer;
+  },
+
+  decode(input: _m0.Reader | Uint8Array, length?: number): GamePlayerGroupCardsRes {
+    const reader = input instanceof _m0.Reader ? input : _m0.Reader.create(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseGamePlayerGroupCardsRes();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          if (tag !== 10) {
+            break;
+          }
+
+          message.groupCards.push(Cards.decode(reader, reader.uint32()));
+          continue;
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skipType(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): GamePlayerGroupCardsRes {
+    return {
+      groupCards: globalThis.Array.isArray(object?.groupCards)
+        ? object.groupCards.map((e: any) => Cards.fromJSON(e))
+        : [],
+    };
+  },
+
+  toJSON(message: GamePlayerGroupCardsRes): unknown {
+    const obj: any = {};
+    if (message.groupCards?.length) {
+      obj.groupCards = message.groupCards.map((e) => Cards.toJSON(e));
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<GamePlayerGroupCardsRes>, I>>(base?: I): GamePlayerGroupCardsRes {
+    return GamePlayerGroupCardsRes.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<GamePlayerGroupCardsRes>, I>>(object: I): GamePlayerGroupCardsRes {
+    const message = createBaseGamePlayerGroupCardsRes();
+    message.groupCards = object.groupCards?.map((e) => Cards.fromPartial(e)) || [];
+    return message;
+  },
+};
+
+function createBaseCards(): Cards {
+  return { groupId: 0, handCards: [], cardType: 0, cardPoint: 0 };
+}
+
+export const Cards = {
+  encode(message: Cards, writer: _m0.Writer = _m0.Writer.create()): _m0.Writer {
+    if (message.groupId !== 0) {
+      writer.uint32(8).int32(message.groupId);
+    }
+    writer.uint32(18).fork();
+    for (const v of message.handCards) {
+      writer.int32(v);
+    }
+    writer.ldelim();
+    if (message.cardType !== 0) {
+      writer.uint32(24).int32(message.cardType);
+    }
+    if (message.cardPoint !== 0) {
+      writer.uint32(32).int32(message.cardPoint);
+    }
+    return writer;
+  },
+
+  decode(input: _m0.Reader | Uint8Array, length?: number): Cards {
+    const reader = input instanceof _m0.Reader ? input : _m0.Reader.create(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseCards();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          if (tag !== 8) {
+            break;
+          }
+
+          message.groupId = reader.int32();
+          continue;
+        case 2:
+          if (tag === 16) {
+            message.handCards.push(reader.int32());
+
+            continue;
+          }
+
+          if (tag === 18) {
+            const end2 = reader.uint32() + reader.pos;
+            while (reader.pos < end2) {
+              message.handCards.push(reader.int32());
+            }
+
+            continue;
+          }
+
+          break;
+        case 3:
+          if (tag !== 24) {
+            break;
+          }
+
+          message.cardType = reader.int32();
+          continue;
+        case 4:
+          if (tag !== 32) {
+            break;
+          }
+
+          message.cardPoint = reader.int32();
+          continue;
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skipType(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): Cards {
+    return {
+      groupId: isSet(object.groupId) ? globalThis.Number(object.groupId) : 0,
+      handCards: globalThis.Array.isArray(object?.handCards)
+        ? object.handCards.map((e: any) => globalThis.Number(e))
+        : [],
+      cardType: isSet(object.cardType) ? globalThis.Number(object.cardType) : 0,
+      cardPoint: isSet(object.cardPoint) ? globalThis.Number(object.cardPoint) : 0,
+    };
+  },
+
+  toJSON(message: Cards): unknown {
+    const obj: any = {};
+    if (message.groupId !== 0) {
+      obj.groupId = Math.round(message.groupId);
+    }
+    if (message.handCards?.length) {
+      obj.handCards = message.handCards.map((e) => Math.round(e));
+    }
+    if (message.cardType !== 0) {
+      obj.cardType = Math.round(message.cardType);
+    }
+    if (message.cardPoint !== 0) {
+      obj.cardPoint = Math.round(message.cardPoint);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<Cards>, I>>(base?: I): Cards {
+    return Cards.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<Cards>, I>>(object: I): Cards {
+    const message = createBaseCards();
+    message.groupId = object.groupId ?? 0;
+    message.handCards = object.handCards?.map((e) => e) || [];
+    message.cardType = object.cardType ?? 0;
+    message.cardPoint = object.cardPoint ?? 0;
     return message;
   },
 };

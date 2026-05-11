@@ -14,7 +14,7 @@
  *   - right 玩家（rtl=true） ：Anchor (1,   1)，右边缘起点，RTL
  */
 
-import { _decorator, Component, Node, Prefab, instantiate, Vec3, tween, Tween, UITransform, UIOpacity, sp } from 'cc';
+import { _decorator, Component, Node, Prefab, instantiate, Vec3, tween, Tween, UITransform, UIOpacity, sp, view } from 'cc';
 import { CardNode, DEFAULT_CARD_W, DEFAULT_CARD_H, CARD_SPACING } from '../handcard/CardNode';
 import { HandDisplayPanel }                                        from '../handcard/HandDisplayPanel';
 import { FlyUtil } from '../../../utils/FlyUtil';
@@ -23,8 +23,6 @@ import type { GroupData } from '../../../utils/GroupAlgorithm';
 
 const { ccclass, property } = _decorator;
 
-/** 牌区内每张牌的缩放比例 */
-const CARD_SCALE = 0.4;
 
 /** 飞入动画时长（秒） */
 const FLY_DUR = 0.3;
@@ -77,6 +75,14 @@ export class PlayerMeldField extends Component {
     @property({ tooltip: '行与行之间的垂直间距（px）' })
     rowSpacing: number = 8;
 
+    @property({ tooltip: '最大行数（0 = 不限制；left/right 玩家建议设 2，末行允许超出）' })
+    maxRows: number = 2;
+
+    @property({ tooltip: '牌面缩放比例（自己与对手可分别设置）' })
+    cardScale: number = 0.4;
+
+    @property({ tooltip: '牌组内相邻牌中心间距（px，0 = 跟随 cardScale 自动计算）' })
+    cardSpacing: number = 20;
 
     meldTipOffsetY: number = 30;
 
@@ -106,6 +112,9 @@ export class PlayerMeldField extends Component {
 
     // ── 生命周期 ──────────────────────────────────────────
 
+    /** 设计分辨率宽度（横屏，fitHeight 模式下此值为基准） */
+    designWidth: number = 1334;
+
     protected onLoad(): void {
         if (this.bgNode) this.bgNode.active = false;
 
@@ -117,6 +126,39 @@ export class PlayerMeldField extends Component {
                 this._rawCardH = tf.height;
             }
             n.destroy();
+        }
+
+        // fitHeight 横屏自适应：根据实际可见宽度与设计宽度的比例调整 contentNode 和 bgNode 宽度
+        this._adaptWidth();
+    }
+
+    /**
+     * fitHeight 横屏自适应：按可见宽度与设计宽度的比例，
+     * 等比缩放 PlayerMeldField 节点本身及其子节点宽度。
+     */
+    private _adaptWidth(): void {
+        if (this.singleRow) return;
+        const visibleSize = view.getVisibleSize();
+        const ratio = visibleSize.width / this.designWidth;
+
+        // 1. PlayerMeldField 节点本身变宽
+        const selfTf = this.node.getComponent(UITransform);
+        if (selfTf) {
+            selfTf.width = selfTf.width * ratio;
+        }
+
+        // 2. contentNode 跟随
+        const contentTf = this.contentNode?.getComponent(UITransform);
+        if (contentTf) {
+            contentTf.width = contentTf.width * ratio;
+        }
+
+        // 3. bgNode 跟随
+        if (this.bgNode) {
+            const bgTf = this.bgNode.getComponent(UITransform);
+            if (bgTf) {
+                bgTf.width = bgTf.width * ratio;
+            }
         }
     }
 
@@ -135,11 +177,11 @@ export class PlayerMeldField extends Component {
     private get _innerW(): number { return this._contentW - this.padding * 2; }
 
     /** 缩放后单张牌宽 */
-    private get _cw(): number { return this._rawCardW * CARD_SCALE; }
+    private get _cw(): number { return this._rawCardW * this.cardScale; }
     /** 缩放后相邻牌中心间距 */
-    private get _step(): number { return CARD_SPACING  * CARD_SCALE; }
+    private get _step(): number { return this.cardSpacing > 0 ? this.cardSpacing : CARD_SPACING * this.cardScale; }
     /** 缩放后单张牌高 */
-    private get _ch(): number { return this._rawCardH * CARD_SCALE; }
+    private get _ch(): number { return this._rawCardH * this.cardScale; }
 
     private _blockW(cardCount: number): number {
         return this._cw + this._step * (cardCount - 1);
@@ -178,14 +220,17 @@ export class PlayerMeldField extends Component {
      *
      * @param meld         牌组数据
      * @param fromWorldPos 飞入起始世界坐标（传入时播放飞入 + 展开动画）
+     * @param instant      true 时跳过所有动画与光效（重连 / 后台 / 中途进入用）
      */
-    addMeld(meld: Meld, fromWorldPos?: Vec3): void {
+    addMeld(meld: Meld, fromWorldPos?: Vec3, instant: boolean = false): void {
         if (!meld || meld.cards.length === 0) return;
         if (this._placedIds.has(meld.meldId)) return;
+        // 始终按点数从小到大排序，不依赖服务端顺序
+        meld = { ...meld, cards: [...meld.cards].sort((a, b) => (a % 100) - (b % 100)) };
         this._placedIds.add(meld.meldId);
 
         const bw        = this._blockW(meld.cards.length);
-        const blockNode = this._createBlock(meld, !!fromWorldPos);
+        const blockNode = this._createBlock(meld, !instant && !!fromWorldPos);
         this._fitBlock(blockNode, bw);
         this._blocks.set(meld.meldId, blockNode);
         this._meldData.set(meld.meldId, [...meld.cards]);
@@ -195,7 +240,10 @@ export class PlayerMeldField extends Component {
             this._highlightCards.set(meld.meldId, meld.highlightCards);
         }
 
-        if (fromWorldPos) {
+        if (instant) {
+            // 位置已由 _createBlock + _fitBlock 摆好，直接应用高亮，不播任何动画/光效
+            this._applyHighlight(meld.meldId, blockNode);
+        } else if (fromWorldPos) {
             this._animateMeldFlyIn(blockNode, fromWorldPos, meld.cards.length, () => {
                 this._applyHighlight(meld.meldId, blockNode);
             });
@@ -262,10 +310,10 @@ export class PlayerMeldField extends Component {
         return world;
     }
 
-    /** 全量重建（重连 / 游戏恢复时调用） */
+    /** 全量重建（重连 / 游戏恢复时调用），无动画无光效 */
     setMelds(melds: Meld[]): void {
         this.clear();
-        for (const m of melds) this.addMeld(m);
+        for (const m of melds) this.addMeld(m, undefined, true);
     }
 
     /** 清空所有展示节点与状态（含手牌展示） */
@@ -378,8 +426,9 @@ export class PlayerMeldField extends Component {
      * @param insertIndex  插入位置（0-based，超出范围自动 clamp 到末尾）
      * @param fromWorldPos 新牌飞入起始世界坐标（不传则直接出现在目标位置）
      * @param fromScale    起始缩放（默认 1；他人补牌从 cardCountNode 飞出时应传 0.3）
+     * @param instant      true 时跳过所有 tween / skeleton 光效（后台/重连用）
      */
-    layOffToMeld(meldId: number, newCard: number, insertIndex: number, fromWorldPos?: Vec3, fromScale: number = 1): void {
+    layOffToMeld(meldId: number, newCard: number, fromWorldPos?: Vec3, fromScale: number = 1, instant: boolean = false): void {
         const blockNode = this._blocks.get(meldId);
         if (!blockNode || !blockNode.isValid) return;
 
@@ -411,10 +460,15 @@ export class PlayerMeldField extends Component {
             const card = cardChildren[i];
             if (!card) continue;
             card.getComponent(CardNode)?.setMasked(true);
-            tween(card)
-                .delay((i - clampedIdx) * CARD_STAGGER)
-                .to(CARD_DUR, { position: new Vec3(cw / 2 + (i + 1) * step, 0, 0) }, { easing: 'quadOut' })
-                .start();
+            const targetX = cw / 2 + (i + 1) * step;
+            if (instant) {
+                card.setPosition(targetX, 0, 0);
+            } else {
+                tween(card)
+                    .delay((i - clampedIdx) * CARD_STAGGER)
+                    .to(CARD_DUR, { position: new Vec3(targetX, 0, 0) }, { easing: 'quadOut' })
+                    .start();
+            }
         }
         // clampedIdx 之前的既有牌也要显示遮罩
         for (let i = 0; i < clampedIdx; i++) {
@@ -427,13 +481,17 @@ export class PlayerMeldField extends Component {
         cn.setCard(newCard);
         cn.setFaceDown(false);
         cn.onClick = null;
-        n.setScale(CARD_SCALE, CARD_SCALE, 1);
+        n.setScale(this.cardScale, this.cardScale, 1);
         blockNode.addChild(n);
         n.setSiblingIndex(clampedIdx);
 
         const finalX = cw / 2 + clampedIdx * step;
 
-        if (fromWorldPos) {
+        if (instant) {
+            // 后台/重连：直接落位，无飞牌、无 ban 光效
+            n.setPosition(finalX, 0, 0);
+            cn.setMasked(true);
+        } else if (fromWorldPos) {
             // 先放到目标本地坐标，读取世界坐标作为飞行终点，再移到起始位置
             n.setPosition(finalX, 0, 0);
             const toPos = n.worldPosition.clone();
@@ -454,7 +512,7 @@ export class PlayerMeldField extends Component {
                             const curIdx  = cards.indexOf(newCard);
                             const correctX = cw / 2 + (curIdx >= 0 ? curIdx : clampedIdx) * step;
                             n.setPosition(correctX, 0, 0);
-                            n.setScale(CARD_SCALE, CARD_SCALE, 1);
+                            n.setScale(this.cardScale, this.cardScale, 1);
                             n.angle = 0;
                             cn.setMasked(true);
                             this._playLayoffBan(blockNode, cards.length);
@@ -463,7 +521,7 @@ export class PlayerMeldField extends Component {
                 });
                 // 并行缩放至正常牌大小
                 tween(n)
-                    .to(FLY_DUR, { scale: new Vec3(CARD_SCALE, CARD_SCALE, 1) }, { easing: 'quadOut' })
+                    .to(FLY_DUR, { scale: new Vec3(this.cardScale, this.cardScale, 1) }, { easing: 'quadOut' })
                     .start();
             };
 
@@ -487,14 +545,19 @@ export class PlayerMeldField extends Component {
 
         // RTL：block 右边缘锚定，block 向左扩展，所以 blockNode 自身左移 step
         if (this.rtl) {
-            tween(blockNode)
-                .to(REFLOW_DUR, { position: new Vec3(blockNode.position.x - step, 0, 0) }, { easing: 'quadOut' })
-                .start();
+            const targetBlockX = blockNode.position.x - step;
+            if (instant) {
+                blockNode.setPosition(targetBlockX, 0, 0);
+            } else {
+                tween(blockNode)
+                    .to(REFLOW_DUR, { position: new Vec3(targetBlockX, 0, 0) }, { easing: 'quadOut' })
+                    .start();
+            }
         }
 
-        if (this.singleRow) {
-            // 单行模式：仅平移后续块，不处理溢出
-            this._shiftBlocksAfter(blockNode, step, REFLOW_DUR);
+        if (this.singleRow || (this.maxRows > 0 && rowIdx >= this.maxRows - 1)) {
+            // 单行模式 或 已是末行：仅平移后续块，不换行（末行允许超出）
+            this._shiftBlocksAfter(blockNode, step, REFLOW_DUR, instant);
             return;
         }
 
@@ -517,29 +580,39 @@ export class PlayerMeldField extends Component {
         const shiftDir = this.rtl ? -1 : 1;
         for (const b of blocksAfter) {
             if (overflowNodes.includes(b)) continue;
-            tween(b)
-                .to(REFLOW_DUR, { position: new Vec3(b.position.x + shiftDir * step, 0, 0) }, { easing: 'quadOut' })
-                .start();
+            const targetX = b.position.x + shiftDir * step;
+            if (instant) {
+                b.setPosition(targetX, 0, 0);
+            } else {
+                tween(b)
+                    .to(REFLOW_DUR, { position: new Vec3(targetX, 0, 0) }, { easing: 'quadOut' })
+                    .start();
+            }
         }
 
         // 溢出块依次移到下一行
         for (const b of overflowNodes) {
-            this._moveBlockToNextRow(b, rowIdx + 1, REFLOW_DUR);
+            this._moveBlockToNextRow(b, rowIdx + 1, REFLOW_DUR, instant);
         }
     }
 
     // ── 私有：补牌重排 ────────────────────────────────────
 
     /** 单行模式：平移 blockNode 之后的所有兄弟节点 */
-    private _shiftBlocksAfter(blockNode: Node, delta: number, dur: number): void {
+    private _shiftBlocksAfter(blockNode: Node, delta: number, dur: number, instant: boolean = false): void {
         const siblings = blockNode.parent!.children;
         const idx      = siblings.indexOf(blockNode);
         const dir      = this.rtl ? -1 : 1;
         for (let i = idx + 1; i < siblings.length; i++) {
             const b = siblings[i];
-            tween(b)
-                .to(dur, { position: new Vec3(b.position.x + dir * delta, 0, 0) }, { easing: 'quadOut' })
-                .start();
+            const targetX = b.position.x + dir * delta;
+            if (instant) {
+                b.setPosition(targetX, 0, 0);
+            } else {
+                tween(b)
+                    .to(dur, { position: new Vec3(targetX, 0, 0) }, { easing: 'quadOut' })
+                    .start();
+            }
         }
     }
 
@@ -547,9 +620,14 @@ export class PlayerMeldField extends Component {
      * 将 blockNode 移到第 nextRowIdx 行（若不存在则新建），
      * 保留视觉位置后 tween 到目标坐标；若目标行也溢出则递归。
      */
-    private _moveBlockToNextRow(blockNode: Node, nextRowIdx: number, dur: number): void {
-        const nextRow = nextRowIdx < this._rows.length
-            ? this._rows[nextRowIdx]
+    private _moveBlockToNextRow(blockNode: Node, nextRowIdx: number, dur: number, instant: boolean = false): void {
+        // 已达最大行数：clamp 到末行，末行允许超出
+        const clampedIdx = (this.maxRows > 0 && nextRowIdx >= this.maxRows)
+            ? this.maxRows - 1
+            : nextRowIdx;
+
+        const nextRow = clampedIdx < this._rows.length
+            ? this._rows[clampedIdx]
             : this._newRow();
 
         const bW    = this._blockW(this._cardCountForBlock(blockNode));
@@ -559,22 +637,27 @@ export class PlayerMeldField extends Component {
             ? -(this.padding + off + bW)
             :   this.padding + off;
 
-        // reparent 保持视觉位置，再 tween 到目标本地坐标
+        // reparent 保持视觉位置，再 tween / setPosition 到目标本地坐标
         const wp = blockNode.worldPosition.clone();
         nextRow.node.addChild(blockNode);
         blockNode.setWorldPosition(wp);
-        tween(blockNode)
-            .to(dur, { position: new Vec3(targetX, 0, 0) }, { easing: 'quadOut' })
-            .start();
+        if (instant) {
+            blockNode.setPosition(targetX, 0, 0);
+        } else {
+            tween(blockNode)
+                .to(dur, { position: new Vec3(targetX, 0, 0) }, { easing: 'quadOut' })
+                .start();
+        }
 
         nextRow.usedWidth += extra + bW;
 
-        // 若目标行也溢出，将其末尾 block 继续下移
-        if (nextRow.usedWidth > this._innerW + 0.5 && nextRow.node.children.length > 1) {
+        // 若目标行也溢出，将其末尾 block 继续下移（末行不再递归）
+        const isLastRow = this.maxRows > 0 && clampedIdx >= this.maxRows - 1;
+        if (!isLastRow && nextRow.usedWidth > this._innerW + 0.5 && nextRow.node.children.length > 1) {
             const last  = nextRow.node.children[nextRow.node.children.length - 1];
             const lastW = this._blockW(this._cardCountForBlock(last));
             nextRow.usedWidth -= (lastW + this.blockSpacing);
-            this._moveBlockToNextRow(last, nextRowIdx + 1, dur);
+            this._moveBlockToNextRow(last, clampedIdx + 1, dur, instant);
         }
     }
 
@@ -625,6 +708,11 @@ export class PlayerMeldField extends Component {
                 this._placeInRow(row, blockNode, bw);
                 return;
             }
+        }
+        // 已达最大行数：强制放入末行（允许超出，不新建行）
+        if (this.maxRows > 0 && this._rows.length >= this.maxRows) {
+            this._placeInRow(this._rows[this._rows.length - 1], blockNode, bw);
+            return;
         }
         this._placeInRow(this._newRow(), blockNode, bw);
     }
@@ -688,7 +776,7 @@ export class PlayerMeldField extends Component {
             cn.setFaceDown(false);
             cn.onClick = null;
 
-            n.setScale(CARD_SCALE, CARD_SCALE, 1);
+            n.setScale(this.cardScale, this.cardScale, 1);
             n.setPosition(stacked ? cw / 2 : cw / 2 + i * step, 0, 0);
             n.setSiblingIndex(i);
             blockNode.addChild(n);
@@ -762,8 +850,8 @@ export class PlayerMeldField extends Component {
         });
 
         // 同步：每张牌错开放大再回弹（children 此时只有 CardNode，索引安全）
-        const normal = new Vec3(CARD_SCALE, CARD_SCALE, 1);
-        const pop    = new Vec3(CARD_SCALE * 1.3, CARD_SCALE * 1.3, 1);
+        const normal = new Vec3(this.cardScale, this.cardScale, 1);
+        const pop    = new Vec3(this.cardScale * 1.3, this.cardScale * 1.3, 1);
         for (let i = 0; i < cardCount; i++) {
             const card = blockNode.children[i];
             tween(card)

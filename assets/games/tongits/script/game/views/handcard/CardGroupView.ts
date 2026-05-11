@@ -20,7 +20,7 @@
  * 创建后调用 init() 完成初始化。
  */
 
-import { _decorator, Component, Node, Label, UITransform, Color, SpriteFrame, Sprite, Vec3 } from 'cc';
+import { _decorator, Component, Node, Label, UITransform, Color, SpriteFrame, Sprite, Vec3, Tween } from 'cc';
 import { GroupData, GroupType } from '../../../utils/GroupAlgorithm';
 import { CardNode, CARD_SPACING, DEFAULT_CARD_H, DEFAULT_CARD_W, getCardContentSize } from './CardNode';
 
@@ -203,8 +203,9 @@ export class CardGroupView extends Component {
             } else {
                 this._cardNodes[i].node.setSiblingIndex(i + FIXED_CHILD_COUNT);
             }
+            Tween.stopAllByTarget(this._cardNodes[i].node);
+            this._cardNodes[i].snapToX(this._cardLocalX(i, groupData.cards.length));
         }
-        this._relayout(false);
 
         // 更新根节点尺寸 + 背景尺寸
         this.node.getComponent(UITransform)?.setContentSize(

@@ -44,7 +44,7 @@ const BG_LOOP = 'bg_loop';  // 循环等待
 const BG_WIN  = 'bg_win';   // 赢牌退出（单次）→ 隐藏
 const BG_OUT2 = 'bg_out2';  // 输牌退出（单次）→ 隐藏
 
-// ── fxSkeleton 动画名 ────────────────────────────────────
+// ── fxSkeleton 动画名（实际播放时追加方向后缀 _M/_L/_R） ──
 const FX_FIGHT_IN       = 'idle_fight_in';
 const FX_FIGHT_LOOP     = 'idle_fight_loop';
 const FX_CHALLENGE_IN   = 'idle_challenge_in';
@@ -54,6 +54,13 @@ const FX_SURRENDER_LOOP = 'idle_surrender_loop';
 const FX_BURNED_IN      = 'idle_burned_in';
 const FX_BURNED_LOOP    = 'idle_burned_loop';
 const FX_WIN            = '';   // 赢牌 fx（后续补充）
+
+// ── 方向后缀映射 ─────────────────────────────────────────
+const ALIGNMENT_SUFFIX: Record<FightZoneAlignment, string> = {
+    [FightZoneAlignment.BOTTOM]: '_M',
+    [FightZoneAlignment.LEFT]:   '_L',
+    [FightZoneAlignment.RIGHT]:  '_R',
+};
 
 @ccclass('FightZone')
 export class FightZone extends Component {
@@ -201,7 +208,6 @@ export class FightZone extends Component {
             sk.setAnimation(0, BG_OUT2, false);
         }
         sk.setCompleteListener(() => {
-            console.log(`[FightZone] playShowdownResult complete  isWin=${isWin} status=${this._zoneStatus} node=${this.node.name}`);
             sk.setCompleteListener(null);
             this.onShowdownComplete?.();
         });
@@ -299,14 +305,19 @@ export class FightZone extends Component {
 
     // ── 私有：fxSkeleton ──────────────────────────────────
 
+    /** 根据 alignment 为 fx 动画名追加方向后缀 */
+    private _fxName(name: string): string {
+        return name + ALIGNMENT_SUFFIX[this.alignment];
+    }
+
     /** inAnim（单次）→ loopAnim（循环）；inAnim 为空则跳过 */
     private _playFxIntroLoop(inAnim: string, loopAnim: string): void {
         const sk = this.fxSkeleton;
         if (!sk || !inAnim) return;
         sk.node.active = true;
         sk.setCompleteListener(null);
-        sk.setAnimation(0, inAnim,    false);
-        sk.addAnimation(0, loopAnim,  true, 0);
+        sk.setAnimation(0, this._fxName(inAnim),    false);
+        sk.addAnimation(0, this._fxName(loopAnim),  true, 0);
     }
 
     /** 播放 fx 单次动画后隐藏（animName 为空则跳过，赢牌 fx 备用） */
@@ -315,7 +326,7 @@ export class FightZone extends Component {
         if (!sk || !animName) return;
         sk.node.active = true;
         sk.setCompleteListener(null);
-        sk.setAnimation(0, animName, false);
+        sk.setAnimation(0, this._fxName(animName), false);
         sk.setCompleteListener(() => {
             if (sk.isValid) {
                 sk.node.active = false;

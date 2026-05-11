@@ -2,6 +2,8 @@ import { _decorator, AudioClip, Font, Prefab, sp, SpriteFrame } from 'cc';
 import {logger, Nexus} from 'db://nexus-framework/index';
 import { BaseGameEntry, CommonLoadDirItem } from 'db://assets/script/base/BaseGameEntry';
 import { BaseGameEvents } from 'db://assets/script/base/BaseGameEvents';
+import { PendingRoomAction } from 'db://assets/script/proto/game_common_room';
+import { classifyWsError } from 'db://assets/script/base/errors';
 import { TongitsUI, TongitsUIPanelConfig } from './config/TongitsUIConfig';
 import { TongitsController } from './game/TongitsController';
 import { TongitsModel } from './game/TongitsModel';
@@ -38,14 +40,26 @@ export class TongitsEntry extends BaseGameEntry {
         ];
     }
 
-    protected async joinRoom(params?: Record<string, unknown>): Promise<void> {
+    /** 网络层：只发请求拿响应，不应用到 model。失败统一归类为 NetworkError / ProtocolError */
+    protected override async fetchJoinRoom(params?: Record<string, unknown>): Promise<JoinRoomRes> {
         const roomId = Number(params?.room_id ?? Nexus.data.get<number>('room_id') ?? 0);
-        Nexus.data.set('room_id', roomId);
-        const res = await Nexus.net.wsRequest<JoinRoomRes>(
-            MessageType.TONGITS_JOIN_ROOM_REQ,
-            { roomId },
-        );
-        console.log('joinRoomRes:', res);
+        try {
+            const res = await Nexus.net.wsRequest<JoinRoomRes>(
+                MessageType.TONGITS_JOIN_ROOM_REQ,
+                { roomId },
+            );
+            console.log('joinRoomRes:', res);
+            return res;
+        } catch (raw) {
+            // wsRequest 抛出可能是字符串(timeout/disconnected)或 Error('server:code')
+            // 归类后由基类按 retryable 决定是否重试
+            throw classifyWsError(raw);
+        }
+    }
+
+    /** 状态层：把响应应用到 Model。同步执行，抛错=bug，不重试 */
+    protected override applyJoinRoom(res: JoinRoomRes): void {
+        Nexus.data.set('room_id', res?.roomInfo?.roomId || 0);
         this._model!.joinRoom(res);
     }
 
@@ -57,14 +71,15 @@ export class TongitsEntry extends BaseGameEntry {
             coin: 100000, seat, role: 2, post, state: 1,
             coinChanged: 0, micAllowStatus: 0, micOn: false,
             nextMicRequestTime: 0, micRequestExpiredTime: 0, waitReadyExpiredTime: 0,
+            activePendingAction: PendingRoomAction.PENDING_ROOM_ACTION_NONE,
         });
 
         const mkTongitsPlayer = (userId: number, isDealer = false, post = 0, seat = 0): TongitsPlayerInfo => ({
             playerInfo: mkPlayer(userId, post, seat),
             handCardCount: 0, isDealer,
-            displayedMelds: [], handCards: [],
+            displayedMelds: [], groupCards: [],handCards:[],
             isFight: false, countdown: 25,
-            changeStatus: 1, status: 1, isWin: false, cardPoint: 0,
+            changeStatus: 1, status: 1, isWin: false, cardPoint: 0, isAuto: false,
         });
 
         const res: JoinRoomRes = {
@@ -77,6 +92,7 @@ export class TongitsEntry extends BaseGameEntry {
             watchers: [], playersCount: 3, speakers: [],
             self: mkTongitsPlayer(SELF_ID, false, 1, 1),
             gameInfo: undefined,
+            playerSettings: undefined,
         };
 
         this._model!.joinRoom(res);
@@ -94,7 +110,8 @@ export class TongitsEntry extends BaseGameEntry {
     protected override async resyncRoom(): Promise<void> {
         this._model?.freeze();
         try {
-            await this.joinRoom();
+            // super.resyncRoom 走 joinRoomFlow（fetch + apply），retry/错误分类全部交给基类
+            await super.resyncRoom();
         } finally {
             this._model?.unfreeze();
         }

@@ -1,0 +1,9 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.methods = void 0;
+exports.load = load;
+exports.unload = unload;
+exports.methods = {};
+function load() { }
+function unload() { }
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoibWFpbi1yb290LWZhbGxiYWNrLmpzIiwic291cmNlUm9vdCI6IiIsInNvdXJjZXMiOlsiLi4vc291cmNlL21haW4tcm9vdC1mYWxsYmFjay50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiOzs7QUFFQSxvQkFBeUI7QUFFekIsd0JBQTJCO0FBSmQsUUFBQSxPQUFPLEdBQStDLEVBQUUsQ0FBQztBQUV0RSxTQUFnQixJQUFJLEtBQUksQ0FBQztBQUV6QixTQUFnQixNQUFNLEtBQUksQ0FBQyIsInNvdXJjZXNDb250ZW50IjpbImV4cG9ydCBjb25zdCBtZXRob2RzOiB7IFtrZXk6IHN0cmluZ106ICguLi5hcmdzOiBhbnlbXSkgPT4gYW55IH0gPSB7fTtcblxuZXhwb3J0IGZ1bmN0aW9uIGxvYWQoKSB7fVxuXG5leHBvcnQgZnVuY3Rpb24gdW5sb2FkKCkge31cbiJdfQ==

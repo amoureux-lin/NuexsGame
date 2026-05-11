@@ -110,12 +110,12 @@
       "a": 255
     },
     "_skeletonData": {
-      "__uuid__": "cb283ccc-ba94-40a7-b224-6e75c6f2fcf5",
+      "__uuid__": "128e394e-499a-42f1-8b39-a2458dfa713f",
       "__expectedType__": "sp.SkeletonData"
     },
     "defaultSkin": "default",
-    "defaultAnimation": "<None>",
-    "_premultipliedAlpha": true,
+    "defaultAnimation": "",
+    "_premultipliedAlpha": false,
     "_timeScale": 1,
     "_preCacheMode": 0,
     "_cacheMode": 0,

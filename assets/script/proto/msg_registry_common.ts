@@ -2,7 +2,7 @@
  * 由构建脚本根据 proto 生成，请勿手改。
  */
 import type { MessageMapping } from 'db://nexus-framework/index';
-import { ServerClosedBroadcast, UserOfflineBroadcast, JoinRoomBroadcast, PlayerExitRoomReq, PlayerExitRoomRes, LeaveRoomBroadcast, PlayerSitDownReq, PlayerSitDownRes, SitDownBroadcast, PlayerStandUpReq, PlayerStandUpRes, StandUpBroadcast, PlayerReadyGameReq, PlayerReadyGameRes, ReadyBroadcast, UserInfoUpdateBroadcast, GetHistorySummaryReq, GetHistorySummaryRes } from './game_common_player';
+import { ServerClosedBroadcast, UserOfflineBroadcast, JoinRoomBroadcast, PlayerExitRoomReq, PlayerExitRoomRes, LeaveRoomBroadcast, SelfLeftRoomBroadcast, PlayerSwitchRoomReq, PlayerSwitchRoomRes, SwitchRoomBroadcast, PlayerSitDownReq, PlayerSitDownRes, SitDownBroadcast, PlayerStandUpReq, PlayerStandUpRes, StandUpBroadcast, PlayerReadyGameReq, PlayerReadyGameRes, ReadyBroadcast, UserInfoUpdateBroadcast, PlayerSettingsReq, PlayerSettingsRes, GetHistorySummaryReq, GetHistorySummaryRes } from './game_common_player';
 import { SendBarrageReq, SendBarrageRes, SendBarrageBroadcast, ApplyAllowMicReq, ApplyAllowMicRes, ApplyAllowMicBroadcast, ApproveAllowMicReq, ApproveAllowMicRes, ApproveAllowMicBroadcast, AllowMicChangedBroadcast, OpenMicReq, OpenMicRes, OpenMicBroadcast, AllowMicReq, AllowMicRes, AllowMicBroadcast, AgreeAllowMicReq, AgreeAllowMicRes, AgreeAllowMicBroadcast, ApplyAllowMicListReq, ApplyAllowMicListRes, OwnerCloseMicReq, OwnerCloseMicRes, OwnerCloseMicBroadcast, RoomNewOwnerBroadcast, PlayerListReq, PlayerListRes, SetRoomModeReq, SetRoomModeRes, SetRoomModeBroadcast, OwnerKickOutOfRoomReq, OwnerKickOutOfRoomRes, OwnerKickOutOfRoomBroadcast, OwnerKickOffSeatReq, OwnerKickOffSeatRes, OwnerKickOffSeatBroadcast, OwnerChangeScoreReq, OwnerChangeScoreRes, OwnerChangeScoreBroadcast } from './game_common_room';
 import { ConnectedMessage, PingMessage, PongMessage, TestMessage } from './gateway';
 import { MessageType } from './message_type';
@@ -42,6 +42,26 @@ export const COMMON_MSG_REGISTRY: Record<number, MessageMapping> = {
         decode: (buf) => LeaveRoomBroadcast.decode(buf),
         encode: (msg) => finish(LeaveRoomBroadcast.encode(msg as LeaveRoomBroadcast)),
         name: 'LeaveRoomBroadcast',
+    },
+    [MessageType.COMMON_SELF_LEFT_ROOM_BROADCAST]: {
+        decode: (buf) => SelfLeftRoomBroadcast.decode(buf),
+        encode: (msg) => finish(SelfLeftRoomBroadcast.encode(msg as SelfLeftRoomBroadcast)),
+        name: 'SelfLeftRoomBroadcast',
+    },
+    [MessageType.COMMON_PLAYER_SWITCH_ROOM_REQ]: {
+        decode: (buf) => PlayerSwitchRoomReq.decode(buf),
+        encode: (msg) => finish(PlayerSwitchRoomReq.encode(msg as PlayerSwitchRoomReq)),
+        name: 'PlayerSwitchRoomReq',
+    },
+    [MessageType.COMMON_PLAYER_SWITCH_ROOM_RES]: {
+        decode: (buf) => PlayerSwitchRoomRes.decode(buf),
+        encode: (msg) => finish(PlayerSwitchRoomRes.encode(msg as PlayerSwitchRoomRes)),
+        name: 'PlayerSwitchRoomRes',
+    },
+    [MessageType.COMMON_SWITCH_ROOM_BROADCAST]: {
+        decode: (buf) => SwitchRoomBroadcast.decode(buf),
+        encode: (msg) => finish(SwitchRoomBroadcast.encode(msg as SwitchRoomBroadcast)),
+        name: 'SwitchRoomBroadcast',
     },
     [MessageType.COMMON_PLAYER_SIT_DOWN_REQ]: {
         decode: (buf) => PlayerSitDownReq.decode(buf),
@@ -92,6 +112,16 @@ export const COMMON_MSG_REGISTRY: Record<number, MessageMapping> = {
         decode: (buf) => UserInfoUpdateBroadcast.decode(buf),
         encode: (msg) => finish(UserInfoUpdateBroadcast.encode(msg as UserInfoUpdateBroadcast)),
         name: 'UserInfoUpdateBroadcast',
+    },
+    [MessageType.COMMON_PLAYER_SETTINGS_REQ]: {
+        decode: (buf) => PlayerSettingsReq.decode(buf),
+        encode: (msg) => finish(PlayerSettingsReq.encode(msg as PlayerSettingsReq)),
+        name: 'PlayerSettingsReq',
+    },
+    [MessageType.COMMON_PLAYER_SETTINGS_RES]: {
+        decode: (buf) => PlayerSettingsRes.decode(buf),
+        encode: (msg) => finish(PlayerSettingsRes.encode(msg as PlayerSettingsRes)),
+        name: 'PlayerSettingsRes',
     },
     [MessageType.COMMON_GET_HISTORY_SUMMARY_REQ]: {
         decode: (buf) => GetHistorySummaryReq.decode(buf),

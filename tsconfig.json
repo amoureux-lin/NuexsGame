@@ -4,8 +4,8 @@
 
   /* Add your custom configuration here. */
   "compilerOptions": {
-    "target": "es2016",
-    "module": "es2016",
+    "target": "es2019",
+    "module": "es2017",
     "strict": false,
     "allowSyntheticDefaultImports": true
   }

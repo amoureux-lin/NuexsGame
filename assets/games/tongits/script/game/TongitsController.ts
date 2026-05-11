@@ -9,6 +9,8 @@ import type {
     DiscardCardReq,
     TakeCardReq,
     ChallengeReq,
+    SwitchAutoGroupCardsReq,
+    GamePlayerGroupCardsReq,
     GameResultDetailsRes,
     DrawCardRes,
     MeldCardRes,
@@ -16,9 +18,14 @@ import type {
     TakeCardRes,
     LayOffCardRes,
     ChallengeRes,
+    SwitchAutoGroupCardsRes,
+    GamePlayerGroupCardsRes,
+    Cards,
     JoinRoomRes,
 } from '../proto/tongits';
 import {TongitsUI} from "db://assets/games/tongits/script/config/TongitsUIConfig";
+import type {MenuPanelParams} from "db://assets/script/prefabs/MenuPanel";
+import {GameEvents} from "db://assets/script/config/GameEvents";
 
 /**
  * Tongits Controller：
@@ -50,6 +57,9 @@ export class TongitsController extends BaseGameController {
         this.handle(TongitsEvents.CMD_START_GAME, () => this.onStartGame());
         this.handle(TongitsEvents.CMD_TONGITS_CLICK, () => this.onTongitsClick());
         this.handle(TongitsEvents.CMD_RESULT_DETAILS, () => this.onResultDetails());
+
+        this.handle<{ isAuto: boolean }>(TongitsEvents.CMD_SWITCH_AUTO_GROUP, (d) => this.onSwitchAutoGroup(d));
+        this.handle<{ targetGroupCards: Cards[] }>(TongitsEvents.CMD_PLAYER_GROUP_CARDS, (d) => this.onPlayerGroupCards(d));
 
         this.handle(TongitsEvents.CMD_OPEN_MOCK,     () => this.onOpenMock());
         this.handle(TongitsEvents.CMD_REFRESH_ROOM,  () => this.onRefreshRoom());
@@ -120,10 +130,44 @@ export class TongitsController extends BaseGameController {
         await this.safeRequest(MessageType.TONGITS_WIN_CLICK_REQ, {});
     }
 
+    private async onSwitchAutoGroup(data: { isAuto: boolean }): Promise<void> {
+        const req: SwitchAutoGroupCardsReq = { isAuto: data.isAuto };
+        const res = await this.safeRequest<SwitchAutoGroupCardsRes>(
+            MessageType.TONGITS_SWITCH_AUTO_GROUP_CARDS_REQ, req,
+        );
+        if (res) (this._model as TongitsModel).applySwitchAutoGroupRes(res);
+    }
+
+    private async onPlayerGroupCards(data: { targetGroupCards: Cards[] }): Promise<void> {
+        const req: GamePlayerGroupCardsReq = { targetGroupCards: data.targetGroupCards };
+        const res = await this.safeRequest<GamePlayerGroupCardsRes>(
+            MessageType.TONGITS_GAME_PLAYER_GROUP_CARDS_REQ, req,
+        );
+        if (res) (this._model as TongitsModel).applyPlayerGroupCardsRes(res);
+    }
+
     private async onResultDetails(): Promise<void> {
         const res = await this.safeRequest<GameResultDetailsRes>(
             MessageType.TONGITS_GAME_RESULT_DETAILS_REQ, {},
         );
         if (res) Nexus.emit(TongitsEvents.RESULT_DETAILS, res);
+    }
+
+    //菜单参数
+    protected getMenuParams(): MenuPanelParams {
+        return {
+            cardColorChecked: true,
+            onHistory: () => {
+                Nexus.ui.show(TongitsUI.RECORD_VIEW, { model: this._model as TongitsModel });
+            },
+            onRule: () => {
+                Nexus.ui.show(TongitsUI.RULE_VIEW);
+            },
+            onCardColor: (isChecked) => {
+                console.log("点击 CardColor", isChecked);
+                let _cardThemeIndex = isChecked ? 0 : 1;
+                Nexus.emit(GameEvents.CMD_SWITCH_CARD_THEME, { index: _cardThemeIndex });
+            },
+        };
     }
 }

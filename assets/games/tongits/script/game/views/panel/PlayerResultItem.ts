@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, Sprite, SpriteFrame, Label } from 'cc';
+import { _decorator, Component, Node, Sprite, SpriteFrame, Label, Color } from 'cc';
 import { Nexus } from 'db://nexus-framework/index';
 import type { PlayerResult } from '../../../proto/tongits';
 import type { SeatSnapshot } from '../player/PlayerSeatManager';
@@ -17,9 +17,7 @@ const { ccclass, property } = _decorator;
  *   ├── meIcon             自己标志
  *   ├── winBonusLabel      赢时金额 Label（+xxx，赢时显示）
  *   ├── loseBonusLabel     输时金额 Label（-xxx，输时显示）
- *   └── messageBubble      消息气泡容器（默认隐藏）
- *       ├── winBubbleBg    赢时气泡背景（isWinner=true 时显示）
- *       ├── loseBubbleBg   输时气泡背景（isWinner=false 时显示）
+ *   └── messageBubble      消息气泡容器（Sprite，背景由 winBubbleBg/loseBubbleBg SpriteFrame 切换）
  *       └── messageLabel   消息文本
  */
 @ccclass('PlayerResultItem')
@@ -43,14 +41,20 @@ export class PlayerResultItem extends Component {
     @property({ type: Node, tooltip: '消息气泡容器节点（默认隐藏）' })
     messageBubble: Node | null = null;
 
-    @property({ type: Node, tooltip: '气泡赢时背景（isWinner=true 时显示）' })
-    winBubbleBg: Node | null = null;
+    @property({ type: SpriteFrame, tooltip: '气泡赢时背景 SpriteFrame' })
+    winBubbleBg: SpriteFrame | null = null;
 
-    @property({ type: Node, tooltip: '气泡输时背景（isWinner=false 时显示）' })
-    loseBubbleBg: Node | null = null;
+    @property({ type: SpriteFrame, tooltip: '气泡输时背景 SpriteFrame' })
+    loseBubbleBg: SpriteFrame | null = null;
 
     @property({ type: Label, tooltip: '消息气泡内的文本 Label' })
     messageLabel: Label | null = null;
+
+    @property({ tooltip: '气泡文本赢时颜色' })
+    winMessageColor: Color = new Color(255, 255, 255, 255);
+
+    @property({ tooltip: '气泡文本输时颜色' })
+    loseMessageColor: Color = new Color(255, 255, 255, 255);
 
     // ── 私有状态 ─────────────────────────────────────────
 
@@ -112,9 +116,14 @@ export class PlayerResultItem extends Component {
      */
     showMessage(text: string): void {
         if (!this.messageBubble) return;
-        if (this.messageLabel)  this.messageLabel.string = text;
-        if (this.winBubbleBg)   this.winBubbleBg.active  = this._isWinner;
-        if (this.loseBubbleBg)  this.loseBubbleBg.active = !this._isWinner;
+        if (this.messageLabel) {
+            this.messageLabel.string = text;
+            this.messageLabel.color  = this._isWinner ? this.winMessageColor : this.loseMessageColor;
+        }
+        const bubbleSprite = this.messageBubble.getComponent(Sprite);
+        if (bubbleSprite) {
+            bubbleSprite.spriteFrame = this._isWinner ? this.winBubbleBg : this.loseBubbleBg;
+        }
         this.messageBubble.active = true;
         this.unschedule(this._hideBubble);
         this.scheduleOnce(this._hideBubble, 3);

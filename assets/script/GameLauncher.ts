@@ -5,10 +5,12 @@ import { bundles } from './config/BundleConfig';
 import { CommonUI, UIPanelConfig } from './config/UIConfig';
 import { COMMON_MSG_REGISTRY } from './proto/msg_registry_common';
 import { WsDelegate } from './net/WsDelegate';
-import { GameNetworkHostKind, initHostKind } from './config/GameNetworkConfig';
+import { NetHost, initHost } from './config/NetworkConfig';
+import { WebSDK } from './lib/websdk/WebSDK';
+import { WebSDKBridge } from './lib/websdk/WebSDKBridge';
 
 /** 默认服务器环境（无 URL ?env= 参数时生效） */
-const DEFAULT_HOST_KIND = GameNetworkHostKind.dev;
+const DEFAULT_HOST_KIND = NetHost.dev;
 
 const { ccclass, property } = _decorator;
 
@@ -50,7 +52,7 @@ export class GameLauncher extends Component {
             version: '1.0.0',
             debug: false,
             enableLobby: false,  // 不填 entryBundle 时：true → 进 lobby，false → 进第一个 subgame
-            defaultLanguage: 'zh_CN',
+            defaultLanguage: 'en_US',
             languages: ['zh_CN', 'en_US'],
             networkTimeout: 10000,
             bundles: bundles,
@@ -60,7 +62,11 @@ export class GameLauncher extends Component {
         Nexus.proto.registerCommon(COMMON_MSG_REGISTRY);
 
         // 解析并固定当前环境（URL ?env= 优先，否则用 DEFAULT_HOST_KIND）
-        initHostKind(DEFAULT_HOST_KIND);
+        initHost(DEFAULT_HOST_KIND);
+
+        // 初始化 WebSDK（postMessage 通讯桥接）+ 业务桥接层
+        WebSDK.getInstance().init();
+        WebSDKBridge.getInstance().init();
 
         // ?mock=true：纯本地 mock 模式，跳过 WS 连接
         if (getQueryParams()['mock'] === 'true') {

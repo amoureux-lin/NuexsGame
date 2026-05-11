@@ -28,6 +28,8 @@ export const TongitsEvents = {
     BEFORE_RESULT: 'tongits:beforeResult',
     /** 游戏结算 */
     GAME_RESULT: 'tongits:gameResult',
+    /** 游戏即将开始倒计时（满人触发） */
+    GAME_READY: 'tongits:gameReady',
     /** 房间重置 */
     ROOM_RESET: 'tongits:roomReset',
     /** 结算详情（主动请求返回） */
@@ -70,6 +72,11 @@ export const TongitsEvents = {
     CMD_RESULT_DETAILS: 'tongits:cmd:resultDetails',
     /** 回前台/重连后主动拉取最新房间状态（3001→3002） */
     CMD_REFRESH_ROOM: 'tongits:cmd:refreshRoom',
+    /** 切换自动组牌响应 */
+    SWITCH_AUTO_GROUP_RES: 'tongits:switchAutoGroupRes',
+    /** 手动组牌响应 */
+    PLAYER_GROUP_CARDS_RES: 'tongits:playerGroupCardsRes',
+
     /** 手牌分组（本地操作） */
     CMD_GROUP: 'tongits:cmd:group',
     /** 手牌取消分组（本地操作） */
@@ -80,4 +87,8 @@ export const TongitsEvents = {
     CMD_DUMP_BTN: 'tongits:cmd:dumpBtn',
     /** Sapaw 按钮点击（UI信号，TongitsView 自动选目标后再发 CMD_LAY_OFF） */
     CMD_SAPAW_BTN: 'tongits:cmd:sapawBtn',
+    /** 切换自动组牌，data: { isAuto: boolean } */
+    CMD_SWITCH_AUTO_GROUP: 'tongits:cmd:switchAutoGroup',
+    /** 手动组牌，data: { targetGroupCards: Cards[] } */
+    CMD_PLAYER_GROUP_CARDS: 'tongits:cmd:playerGroupCards',
 } as const;

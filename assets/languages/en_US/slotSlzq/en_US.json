@@ -1,0 +1,8 @@
+{
+  "title": "Dragon Legend",
+  "spin": "Spin",
+  "autoSpin": "Auto Spin",
+  "balance": "Balance: {amount}",
+  "win": "You won {amount}",
+  "richTip": "<color=#ffd966>Dragon</color> bonus boosted <b>{multiplier}x</b>"
+}

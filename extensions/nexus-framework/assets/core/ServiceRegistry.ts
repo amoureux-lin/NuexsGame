@@ -8,13 +8,28 @@ export class ServiceRegistry {
     private static _order: ServiceBase[] = [];
 
     /** 按 token 注册服务实例，并记录生命周期顺序。 */
-    static register<T extends ServiceBase>(token: ServiceToken<T>, impl: T): void {
+    static register<T extends ServiceBase>(token: ServiceToken<T>, impl: T, options?: { replace?: boolean }): void {
         if (ServiceRegistry._map.has(token)) {
-            throw new Error(`[Nexus] Service already registered: ${token.name}`);
+            if (!options?.replace) {
+                throw new Error(`[Nexus] Service already registered: ${token.name}`);
+            }
+            ServiceRegistry.unregister(token);
         }
 
         ServiceRegistry._map.set(token, impl);
         ServiceRegistry._order.push(impl);
+    }
+
+    /** 反注册指定服务；一般用于 init 前替换默认服务。 */
+    static unregister<T extends ServiceBase>(token: ServiceToken<T>): void {
+        const service = ServiceRegistry._map.get(token);
+        if (!service) return;
+
+        ServiceRegistry._map.delete(token);
+        const idx = ServiceRegistry._order.indexOf(service);
+        if (idx >= 0) {
+            ServiceRegistry._order.splice(idx, 1);
+        }
     }
 
     /** 通过 token 获取已注册的服务实例。 */

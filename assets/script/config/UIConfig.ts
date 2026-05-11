@@ -11,6 +11,7 @@ export const CommonUI = {
     ALERT: 'alert',
     NET_LOADING: 'netLoading',
     SETTING: 'settingView',
+    MENU_PANEL: 'menuPanel',
 } as const;
 
 /** 公共面板配置表：查表 UIPanelConfig[CommonUI.ALERT] */
@@ -24,12 +25,21 @@ export const UIPanelConfig: Record<string, UIPanelOptions> = {
     [CommonUI.NET_LOADING]: {
         layer: UILayer.POPUP,
         prefab: 'prefabs/netLoading',
+        mask: true,
+        maskClose: false,
     },
     [CommonUI.SETTING]: {
         layer: UILayer.POPUP,
         prefab: 'prefabs/settingView',
         mask: true,
-    }
+    },
+    [CommonUI.MENU_PANEL]: {
+        layer: UILayer.POPUP,
+        prefab: 'prefabs/menuPanel',
+        mask: true,
+        maskClose: true,
+        maskColor:"00000000"
+    },
 
 };
 

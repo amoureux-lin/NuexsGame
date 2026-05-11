@@ -16,8 +16,9 @@
 import { _decorator, Component, Label, Node, Sprite, SpriteFrame, UIOpacity, sp, tween, Tween } from 'cc';
 import { Nexus } from 'db://nexus-framework/index';
 import { HandDisplayPanel } from '../handcard/HandDisplayPanel';
-import type { TongitsPlayerInfo } from '../../../proto/tongits';
-import type { GroupData } from '../../../utils/GroupAlgorithm';
+import type { TongitsPlayerInfo, Cards } from '../../../proto/tongits';
+import { GroupData, GroupType } from '../../../utils/GroupAlgorithm';
+import { flattenCards } from '../../TongitsModel';
 
 const { ccclass, property } = _decorator;
 
@@ -52,10 +53,11 @@ export class TongitsPanel extends Component {
 
     /**
      * 显示结算面板：激活节点，刷新玩家信息，播放 appear → loop，展示手牌。
-     * @param winner 赢家 TongitsPlayerInfo
-     * @param groups 服务端分组数据（不传则 HandDisplayPanel 自动分组）
+     * @param winner       赢家 TongitsPlayerInfo
+     * @param displayCards 服务端原始数据合并后的 Cards[]（含手牌组 + displayedMelds）；
+     *                     由 TongitsModel.buildShowdownDisplay 构造。不传时退化为只展示手牌组。
      */
-    show(winner: TongitsPlayerInfo, groups?: GroupData[]): void {
+    show(winner: TongitsPlayerInfo, displayCards?: Cards[]): void {
         this._cancelAutoHide();
         this._avatarCancelled = false;
         this.node.active = true;
@@ -64,7 +66,11 @@ export class TongitsPanel extends Component {
         this._setOpacity(this.playerInfoNode, 0);
         if (this.playerInfoNode) this.playerInfoNode.active = true;
         this.handDisplay?.clear();
-        this.handDisplay?.show(winner.handCards ?? [], groups, false);
+        // 把 Cards[] 拆成 HandDisplayPanel 需要的 (number[], GroupData[])
+        const cardsSrc  = displayCards ?? winner.groupCards ?? [];
+        const flatCards = flattenCards(cardsSrc);
+        const groups    = TongitsPanel._cardsToGroups(cardsSrc);
+        this.handDisplay?.show(flatCards, groups, false);
         this._setOpacity(this.handDisplay?.node ?? null, 0);
 
         this._refreshPlayerInfo(winner);
@@ -185,5 +191,28 @@ export class TongitsPanel extends Component {
         if (!node) return;
         const uo = node.getComponent(UIOpacity) ?? node.addComponent(UIOpacity);
         uo.opacity = opacity;
+    }
+
+    /**
+     * 把 proto Cards[] 转换为 HandDisplayPanel 需要的 GroupData[]：
+     *   - cardType > 0（VALID/SPECIAL）→ 作为 group
+     *   - cardType === 0（散牌组）→ 跳过，HandDisplayPanel 自动按未分组渲染
+     */
+    private static _cardsToGroups(cards: readonly Cards[] | undefined): GroupData[] {
+        if (!cards || cards.length === 0) return [];
+        const result: GroupData[] = [];
+        for (const c of cards) {
+            const ct = c.cardType ?? 0;
+            if (ct === 0) continue;
+            const handCards = c.handCards ?? [];
+            if (handCards.length === 0) continue;
+            result.push({
+                id:     `c_${c.groupId ?? result.length}`,
+                cards:  [...handCards],
+                type:   ct === 2 ? GroupType.SPECIAL : GroupType.VALID,
+                isAuto: false,
+            });
+        }
+        return result;
     }
 }

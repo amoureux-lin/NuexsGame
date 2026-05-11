@@ -33,7 +33,7 @@
             "_value": true
           },
           "sorting-2d": {
-            "_value": false
+            "_value": true
           },
           "rich-text": {
             "_value": true
@@ -79,7 +79,7 @@
             "_value": false
           },
           "physics-2d": {
-            "_value": false,
+            "_value": true,
             "_option": "physics-2d-builtin"
           },
           "physics-2d-box2d": {
@@ -122,7 +122,7 @@
             "_value": true
           },
           "video": {
-            "_value": true
+            "_value": false
           },
           "webview": {
             "_value": false
@@ -207,13 +207,14 @@
           "marionette",
           "mask",
           "particle-2d",
+          "physics-2d-builtin",
           "rich-text",
           "skeletal-animation",
+          "sorting-2d",
           "spine-3.8",
           "tween",
           "ui",
           "ui-skew",
-          "video",
           "websocket"
         ],
         "noDeprecatedFeatures": {
@@ -222,5 +223,8 @@
         }
       }
     }
+  },
+  "macroConfig": {
+    "ENABLE_TRANSPARENT_CANVAS": true
   }
 }

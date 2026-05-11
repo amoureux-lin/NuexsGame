@@ -1,0 +1,10 @@
+{
+  "__version__": "1.0.0",
+  "i18n": {
+    "editorLanguage": "en_US",
+    "languages": [
+      "en_US",
+      "zh_CN"
+    ]
+  }
+}

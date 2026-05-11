@@ -259,6 +259,16 @@ export class TongitsResultPanel extends Component {
     }
 
     /**
+     * 根据 userId 获取对应 playerItem 的节点（供 emoji 播放定位）。
+     * 找不到返回 null。
+     */
+    getPlayerItemNode(userId: number): Node | null {
+        const idx = this._snapshotUserIds.indexOf(userId);
+        if (idx < 0) return null;
+        return this.playerItems[idx]?.node ?? null;
+    }
+
+    /**
      * 向指定玩家的座位浮层显示消息气泡，3s 后自动隐藏。
      * show() 调用后 _snapshotUserIds 已按 playerItems 顺序填好。
      * @param userId 目标玩家 userId
@@ -344,9 +354,6 @@ export class TongitsResultPanel extends Component {
         this._totalDuration = endTimestamp > 0
             ? Math.max(1, (endTimestamp - Date.now()) / 1000)
             : 1;
-        console.log("1111111:",Date.now())
-        console.log("1111112:",endTimestamp)
-        console.log("1111113:",endTimestamp - Date.now())
         this._countdownRunning = endTimestamp > Date.now();
 
         // 立即刷新一次，防止首帧残留

@@ -105,7 +105,8 @@ export class FightPanel extends Component {
     onPlayerChallenge(userId: number): void {
         this.node.active = true;
         this.fightBg.active = true;
-        this._getZone(userId)?.playChallenge();
+        const zone = this._getZone(userId);
+        zone?.playChallenge();
     }
 
     /**
@@ -114,18 +115,19 @@ export class FightPanel extends Component {
      * @param endTimestamp 倒计时结束的 Unix 时间戳（ms）
      */
     showResponsePanel(points: number, endTimestamp: number): void {
+        this.responsePanel.node.active = true;
         this.responsePanel?.show(points, endTimestamp);
     }
 
     /** 某玩家接受了挑战，播放接受动画 */
     onPlayerAccept(userId: number): void {
-        console.log(`${userId} accepted 播放接受动画`);
+        this.node.active = true;
         this._getZone(userId)?.playAccept();
     }
 
     /** 某玩家折牌，播放折牌动画 */
     onPlayerFold(userId: number): void {
-        console.log(`${userId} 播放折牌动画`)
+        this.node.active = true;
         this._getZone(userId)?.playFold();
     }
 

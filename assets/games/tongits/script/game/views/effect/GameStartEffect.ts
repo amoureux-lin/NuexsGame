@@ -69,6 +69,17 @@ export class GameStartEffect extends Component {
             });
     }
 
+    /**
+     * 直接显示底池金额（不播放开场动画）。
+     * 用于重连 / 中途进入还原 UI 时同步显示已积累的底池数字。
+     */
+    setPotAmount(potAmount: number): void {
+        this.node.active = true;
+        if (this.potAmountLabel) {
+            this.potAmountLabel.string = String(Math.floor(potAmount));
+        }
+    }
+
     // ── 暂存：Phase1 落地后停留在中心的金币 ─────────────────
     private _stagedCoins: Node[] = [];
 

@@ -13,5 +13,55 @@
         "w": 0
       }
     }
+  },
+  "textureCompressConfig": {
+    "userPreset": {
+      "27YPmHiNROBrSLy0WOzuw0": null,
+      "11CiuD8iRD4aWc1y52tgNG": null,
+      "74trAMe2xMeZKqbyvG3nTD": {
+        "name": "custom",
+        "options": {
+          "web": {
+            "astc_4x4": {
+              "quality": "fast"
+            },
+            "png": {
+              "quality": 80
+            }
+          }
+        }
+      }
+    }
+  },
+  "bundleConfig": {
+    "custom": {
+      "default": {
+        "displayName": "i18n:builder.asset_bundle.defaultConfig",
+        "configs": {
+          "native": {
+            "preferredOptions": {
+              "isRemote": false,
+              "compressionType": "merge_all_json"
+            }
+          },
+          "web": {
+            "preferredOptions": {
+              "isRemote": false,
+              "compressionType": "merge_all_json"
+            },
+            "fallbackOptions": {
+              "compressionType": "merge_dep"
+            }
+          },
+          "miniGame": {
+            "fallbackOptions": {
+              "isRemote": false,
+              "compressionType": "merge_all_json"
+            },
+            "configMode": "fallback"
+          }
+        }
+      }
+    }
   }
 }

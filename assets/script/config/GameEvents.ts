@@ -6,6 +6,10 @@ const GameEventDefines = {
     HTTP_GENERATE_TOKEN: "/auth/v1/game/get-token-dev", // test get token
     HTTP_GAME_CONFIG: "/api/v1/get_game_config", //获取
 
+    // ---------- BI 上报路径（域名由 getResolvedBiHostUrl() 提供） ----------
+    /** BI 业务事件上报（GAME_LOAD_COMPLETE 等） */
+    HTTP_REPORT_BI_EVENT: "/bi/v1/report/event",
+
     /** 进房成功（正常进入与断线重连共用） */
     GAME_JOIN_SUCCESS: 'GAME.JOIN.SUCCESS',
     /** 进房失败 */
@@ -26,10 +30,22 @@ const GameEventDefines = {
     CMD_VIEW_PLAYER_INFO: 'game:cmd:viewPlayerInfo',
     /** 打开设置面板 */
     CMD_OPEN_SETTINGS: 'game:cmd:openSettings',
+    /** 打开菜单面板 */
+    CMD_OPEN_MENU: 'game:cmd:openMenu',
     /** 返回大厅 */
     CMD_BACK_LOBBY: 'game:cmd:backLobby',
     /** 切换牌面主题，data: { index: number }（0=默认，1=备用） */
     CMD_SWITCH_CARD_THEME: 'game:cmd:switchCardTheme',
+
+    // ---------- WebSDK → 游戏 事件 ----------
+    /** 播放表情/文字气泡，data: { userId: number, type: number, content: string } */
+    PLAY_EMOJI: 'game:playEmoji',
+    /** 平台请求关闭游戏（W2C_EXIT_GAME 入站后由 WebSDKBridge 转发） */
+    CMD_PLATFORM_EXIT: 'game:cmd:platformExit',
+    /** 平台请求预约离开（W2C_PLAYER_PENDING_LEAVE 入站后由 WebSDKBridge 转发） */
+    CMD_PLATFORM_PENDING_LEAVE: 'game:cmd:platformPendingLeave',
+    /** 平台请求换房（W2C_PLAYER_SWITCH_ROOM 入站后由 WebSDKBridge 转发） */
+    CMD_PLATFORM_SWITCH_ROOM: 'game:cmd:platformSwitchRoom',
 } as const;
 
 /**

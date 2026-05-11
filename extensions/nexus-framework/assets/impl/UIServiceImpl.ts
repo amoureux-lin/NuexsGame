@@ -49,6 +49,7 @@ export class UIServiceImpl extends IUIService {
     private _maskPrefab: Prefab | null = null;
     private readonly _loadingSet    = new Set<string>();
     private readonly _pendingHide   = new Set<string>();
+    private readonly _pendingShows  = new Map<string, Promise<Node>>();
     /** 模态栈：记录带遮罩面板的打开顺序，用于刷新遮罩可见性 */
     private readonly _modalStack: string[] = [];
     /** 导航栈：记录 showWithStack 推入的面板顺序，用于 back() 返回上一层 */
@@ -89,6 +90,17 @@ export class UIServiceImpl extends IUIService {
     }
 
     setRoot(root: Node): void {
+        if (this._root && this._root !== root) {
+            for (const layer of this._layers.values()) {
+                if (layer.isValid) layer.destroy();
+            }
+            this._layers.clear();
+        } else if (this._root === root) {
+            for (const layer of this._layers.values()) {
+                if (layer.isValid) layer.destroy();
+            }
+            this._layers.clear();
+        }
         this._root = root;
         director.addPersistRootNode(root);
         this.buildLayers();
@@ -145,61 +157,21 @@ export class UIServiceImpl extends IUIService {
             return existing.node;
         }
 
-        if (this._loadingSet.has(name)) return new Node();
+        if (this._loadingSet.has(name)) {
+            const pending = this._pendingShows.get(name);
+            if (pending) return pending;
+            throw new Error(`[Nexus] Panel is already loading: ${name}`);
+        }
 
         this._loadingSet.add(name);
-        let prefab: Prefab;
+        const pendingShow = this._showNewPanel(name, cfg, targetLayer, needMask, params);
+        this._pendingShows.set(name, pendingShow);
         try {
-            const prefabNameOrPath = cfg?.prefab ?? name;
-            const bundleOverride   = cfg?.bundle;
-            prefab = await this.loadPrefab(prefabNameOrPath, bundleOverride);
+            return await pendingShow;
         } finally {
+            this._pendingShows.delete(name);
             this._loadingSet.delete(name);
         }
-
-        if (this._pendingHide.has(name)) {
-            this._pendingHide.delete(name);
-            return new Node();
-        }
-
-        const layerNode = this.getLayerNode(targetLayer);
-
-        // 创建遮罩节点（mask: true 时加载 mask prefab）
-        let maskNode: Node | null = null;
-        if (needMask) {
-            maskNode = await this._createMask(name, cfg);
-            if (maskNode) {
-                this._applyMaskColor(maskNode, cfg?.maskColor);
-                layerNode.addChild(maskNode);
-            }
-        }
-
-        // 创建面板节点
-        const node = instantiate(prefab!);
-        layerNode.addChild(node);
-
-        const record: PanelRecord = {
-            node, layer: targetLayer, maskNode,
-            animState: 'idle', pendingHide: false, pendingShow: null,
-        };
-        this._panels.set(name, record);
-        this.dispatch(node, 'onShow', params, name, maskNode);
-
-        // 播放显示动画
-        record.animState = 'showing';
-        await this._playShowAnimation(node);
-        record.animState = 'idle';
-
-        // 动画结束后检查是否有待执行的 hide
-        if (record.pendingHide) {
-            record.pendingHide = false;
-            this.hide(name);
-            return node;
-        }
-
-        if (needMask) this._pushModal(name);
-
-        return node;
     }
 
     async hide(name: string): Promise<void> {
@@ -294,24 +266,99 @@ export class UIServiceImpl extends IUIService {
         }
 
         // ── 加载 prefab ─────────────────────────────────────────
-        if (this._loadingSet.has(name)) return new Node();
+        if (this._loadingSet.has(name)) {
+            const pending = this._pendingShows.get(name);
+            if (pending) return pending;
+            throw new Error(`[Nexus] Panel is already loading: ${name}`);
+        }
         this._loadingSet.add(name);
-        let prefab: Prefab;
+        const pendingShow = this._showNewPanelInNode(name, cfg, parentNode, params);
+        this._pendingShows.set(name, pendingShow);
         try {
-            const prefabNameOrPath = cfg?.prefab ?? name;
-            const bundleOverride   = cfg?.bundle;
-            prefab = await this.loadPrefab(prefabNameOrPath, bundleOverride);
+            return await pendingShow;
         } finally {
+            this._pendingShows.delete(name);
             this._loadingSet.delete(name);
         }
+    }
+
+    private async _showNewPanel(
+        name: string,
+        cfg: UIPanelOptions | undefined,
+        targetLayer: UILayer,
+        needMask: boolean,
+        params?: unknown,
+    ): Promise<Node> {
+        const prefabNameOrPath = cfg?.prefab ?? name;
+        const bundleOverride   = cfg?.bundle;
+        const prefab = await this.loadPrefab(prefabNameOrPath, bundleOverride);
 
         if (this._pendingHide.has(name)) {
             this._pendingHide.delete(name);
-            return new Node();
+            const cancelled = new Node(`[CancelledPanel:${name}]`);
+            cancelled.destroy();
+            return cancelled;
+        }
+
+        const layerNode = this.getLayerNode(targetLayer);
+
+        // 创建遮罩节点（mask: true 时加载 mask prefab）
+        let maskNode: Node | null = null;
+        if (needMask) {
+            maskNode = await this._createMask(name, cfg);
+            if (maskNode) {
+                this._applyMaskColor(maskNode, cfg?.maskColor);
+                layerNode.addChild(maskNode);
+            }
+        }
+
+        // 创建面板节点
+        const node = instantiate(prefab);
+        layerNode.addChild(node);
+
+        const record: PanelRecord = {
+            node, layer: targetLayer, maskNode,
+            animState: 'idle', pendingHide: false, pendingShow: null,
+        };
+        this._panels.set(name, record);
+        this.dispatch(node, 'onShow', params, name, maskNode);
+
+        // 播放显示动画
+        record.animState = 'showing';
+        await this._playShowAnimation(node);
+        record.animState = 'idle';
+
+        // 动画结束后检查是否有待执行的 hide
+        if (record.pendingHide) {
+            record.pendingHide = false;
+            this.hide(name);
+            return node;
+        }
+
+        if (needMask) this._pushModal(name);
+
+        return node;
+    }
+
+    private async _showNewPanelInNode(
+        name: string,
+        cfg: UIPanelOptions | undefined,
+        parentNode: Node,
+        params?: unknown,
+    ): Promise<Node> {
+        const prefabNameOrPath = cfg?.prefab ?? name;
+        const bundleOverride   = cfg?.bundle;
+        const prefab = await this.loadPrefab(prefabNameOrPath, bundleOverride);
+
+        if (this._pendingHide.has(name)) {
+            this._pendingHide.delete(name);
+            const cancelled = new Node(`[CancelledPanel:${name}]`);
+            cancelled.destroy();
+            return cancelled;
         }
 
         // ── 挂载到指定父节点 ────────────────────────────────────
-        const node = instantiate(prefab!);
+        const node = instantiate(prefab);
         parentNode.addChild(node);
 
         const record: PanelRecord = {
@@ -393,6 +440,7 @@ export class UIServiceImpl extends IUIService {
         this._panelConfigs.clear();
         this._loadingSet.clear();
         this._pendingHide.clear();
+        this._pendingShows.clear();
         this._loadingPanelName = null;
         this._maskPanelName = null;
         // 释放缓存的 mask prefab 资源
@@ -473,12 +521,10 @@ export class UIServiceImpl extends IUIService {
         const node = instantiate(this._maskPrefab);
         node.name = `__mask_${panelName}__`;
 
-        // maskClose: 点击遮罩关闭面板
-        if (cfg?.maskClose) {
-            node.on(Node.EventType.TOUCH_END, () => {
-                this.hide(panelName);
-            });
-        }
+        // 遮罩始终拦截触摸，防止事件穿透到下层
+        node.on(Node.EventType.TOUCH_END, () => {
+            if (cfg?.maskClose) this.hide(panelName);
+        });
 
         return node;
     }

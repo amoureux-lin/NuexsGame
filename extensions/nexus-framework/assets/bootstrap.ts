@@ -25,26 +25,54 @@ import {
     IToastService,
     IUIService,
 } from './services/contracts';
+import type { ServiceBase } from './core/ServiceBase';
+
+export interface BootstrapNexusOptions {
+    replaceExisting?: boolean;
+    services?: {
+        event?: IEventService;
+        storage?: IStorageService;
+        data?: IDataStoreService;
+        asset?: IAssetService;
+        bundle?: IBundleService;
+        ui?: IUIService;
+        audio?: IAudioService;
+        pool?: IObjectPoolService;
+        toast?: IToastService;
+        configs?: IConfigService;
+        i18n?: II18nService;
+        net?: INetService;
+    };
+}
 
 /**
  * 注册框架内置服务。
  * 可重复调用；已注册时直接跳过。
  */
-export function bootstrapNexus(): void {
-    if (ServiceRegistry.has(IEventService)) {
+export function bootstrapNexus(options: BootstrapNexusOptions = {}): void {
+    if (ServiceRegistry.has(IEventService) && !options.replaceExisting) {
         return;
     }
 
-    ServiceRegistry.register(IEventService, new EventServiceImpl());
-    ServiceRegistry.register(IStorageService, new StorageServiceImpl());
-    ServiceRegistry.register(IDataStoreService, new DataStoreServiceImpl());
-    ServiceRegistry.register(IAssetService, new AssetServiceImpl());
-    ServiceRegistry.register(IBundleService, new BundleServiceImpl());
-    ServiceRegistry.register(IUIService, new UIServiceImpl());
-    ServiceRegistry.register(IAudioService, new AudioServiceImpl());
-    ServiceRegistry.register(IObjectPoolService, new ObjectPoolServiceImpl());
-    ServiceRegistry.register(IToastService, new ToastServiceImpl());
-    ServiceRegistry.register(IConfigService, new ConfigServiceImpl());
-    // ServiceRegistry.register(II18nService, new I18nServiceImpl());
-    ServiceRegistry.register(INetService, new NetServiceImpl());
+    registerDefault(IEventService, options.services?.event ?? new EventServiceImpl(), options.replaceExisting);
+    registerDefault(IStorageService, options.services?.storage ?? new StorageServiceImpl(), options.replaceExisting);
+    registerDefault(IDataStoreService, options.services?.data ?? new DataStoreServiceImpl(), options.replaceExisting);
+    registerDefault(IAssetService, options.services?.asset ?? new AssetServiceImpl(), options.replaceExisting);
+    registerDefault(IBundleService, options.services?.bundle ?? new BundleServiceImpl(), options.replaceExisting);
+    registerDefault(IUIService, options.services?.ui ?? new UIServiceImpl(), options.replaceExisting);
+    registerDefault(IAudioService, options.services?.audio ?? new AudioServiceImpl(), options.replaceExisting);
+    registerDefault(IObjectPoolService, options.services?.pool ?? new ObjectPoolServiceImpl(), options.replaceExisting);
+    registerDefault(IToastService, options.services?.toast ?? new ToastServiceImpl(), options.replaceExisting);
+    registerDefault(IConfigService, options.services?.configs ?? new ConfigServiceImpl(), options.replaceExisting);
+    registerDefault(II18nService, options.services?.i18n ?? new I18nServiceImpl(), options.replaceExisting);
+    registerDefault(INetService, options.services?.net ?? new NetServiceImpl(), options.replaceExisting);
+}
+
+function registerDefault<T extends ServiceBase>(
+    token: abstract new (...args: any[]) => T,
+    impl: T,
+    replaceExisting = false,
+): void {
+    if (ServiceRegistry.has(token) && !replaceExisting) return;
+    ServiceRegistry.register(token, impl, { replace: replaceExisting });
 }

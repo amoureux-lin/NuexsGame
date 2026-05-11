@@ -15,6 +15,14 @@ import {
 } from './GroupAlgorithm';
 import { SortMode, sortCards, compareCards, calcPoint } from './CardDef';
 
+/** 服务端牌组结构（与 proto Cards 对齐） */
+export interface ServerCards {
+    groupId: number;
+    handCards: number[];
+    cardType: number;   // 0=无效 1=有效 2=特殊
+    cardPoint: number;
+}
+
 export type { GroupData, GroupType };
 export { SortMode };
 
@@ -62,6 +70,8 @@ export class HandCardState {
     private _ungroup:   number[]    = [];
     private _sortMode:  SortMode    = SortMode.BY_RANK;
     private _autoGroupEnabled       = true;
+    /** 上一次开启 autoGroup 时使用的排序方式，关闭时按此模式重排 */
+    private _lastAutoSortMode: SortMode = SortMode.BY_RANK;
 
     private _selectedGroupIds     = new Set<string>();
     private _selectedUngroupCards = new Set<number>();
@@ -159,6 +169,49 @@ export class HandCardState {
         this._notify();
     }
 
+    /**
+     * 按服务端下发的 Cards[] 分组初始化手牌，跳过本地 autoGroup。
+     * groupId=0 视为散牌，其余为牌组。
+     * cardType: 0=INVALID, 1=VALID, 2=SPECIAL
+     */
+    setCardsWithServerGroups(serverCards: ServerCards[]): void {
+        this._clearSelSilent();
+        this._groups  = [];
+        this._ungroup = [];
+
+        for (const sc of serverCards) {
+            if (sc.groupId === 0) {
+                this._ungroup.push(...sc.handCards);
+            } else {
+                // 牌组：映射服务端 cardType → 客户端 GroupType
+                let type: GroupType;
+                switch (sc.cardType) {
+                    case 2:  type = GroupType.SPECIAL; break;
+                    case 1:  type = GroupType.VALID;   break;
+                    default: type = GroupType.INVALID;  break;
+                }
+                const sortMode = this._autoGroupEnabled ? this._sortMode : this._lastAutoSortMode;
+                this._groups.push({
+                    id:     newGroupId(),
+                    cards:  sortCards(sc.handCards, sortMode),
+                    type,
+                    isAuto: true,
+                });
+            }
+        }
+        // 开启时按当前 sortMode 重排，关闭时按上次开启时的 mode 重排
+        const sortMode = this._autoGroupEnabled ? this._sortMode : this._lastAutoSortMode;
+        this._ungroup = sortCards(this._ungroup, sortMode);
+        this._notify();
+    }
+
+    clear(): void {
+        this._clearSelSilent();
+        this._groups = [];
+        this._ungroup = [];
+        this._notify();
+    }
+
     // ── 单张牌增删 ────────────────────────────────────────
 
     /**
@@ -180,11 +233,35 @@ export class HandCardState {
     }
 
     /**
-     * 弃牌：从 UNGROUP 区移除一张牌（不触发 autoGroup）
+     * 弃牌 / 出牌：移除一张牌。优先在散牌区查找；散牌区没有时按 removeTakeCards
+     * 的规则处理 group：剩 0 删组，剩 1 解散到散牌，剩 2+ 保留并重判牌型。
+     * 不触发 autoGroup。
      */
     removeCard(card: number): void {
         this._clearSelSilent();
+
+        const before = this._ungroup.length;
         this._ungroup = this._ungroup.filter(c => c !== card);
+
+        // 散牌区找不到 → 在 group 内查找并按 take 规则处理
+        if (this._ungroup.length === before) {
+            for (let i = 0; i < this._groups.length; i++) {
+                const g = this._groups[i];
+                if (!g.cards.includes(card)) continue;
+                const remaining = g.cards.filter(c => c !== card);
+                if (remaining.length === 0) {
+                    this._groups.splice(i, 1);
+                } else if (remaining.length === 1) {
+                    this._ungroup = sortCards([...this._ungroup, ...remaining], this._sortMode);
+                    this._groups.splice(i, 1);
+                } else {
+                    g.cards = remaining;
+                    g.type  = judgeGroupType(remaining);
+                }
+                break; // 一张牌只可能在一个组里
+            }
+        }
+
         this._notify();
     }
 
@@ -218,8 +295,9 @@ export class HandCardState {
                 this._ungroup = sortCards([...this._ungroup, ...remaining], this._sortMode);
                 removedGroupIds.push(g.id);
             } else {
-                // 2+ 张 → 保留牌组，更新牌列表；不重新计算类型，由后续 autoSort 或用户手动处理
+                // 2+ 张 → 保留牌组，更新牌列表并重算牌型
                 g.cards = remaining;
+                g.type  = judgeGroupType(remaining);
             }
         }
         this._groups = this._groups.filter(g => !removedGroupIds.includes(g.id));
@@ -245,10 +323,10 @@ export class HandCardState {
         const removeCards = new Set(this._selectedUngroupCards);
         this._ungroup = this._ungroup.filter(c => !removeCards.has(c));
 
-        // 创建新组（组内牌固定用 BY_RANK 排序，与散牌排序模式无关）
+        // 创建新组：组内按当前 sortMode 排序，与散牌 / 其他组保持一致
         const newGroup: GroupData = {
             id:     newGroupId(),
-            cards:  sortCards(selCards, SortMode.BY_RANK),
+            cards:  sortCards(selCards, this._sortMode),
             type:   judgeGroupType(selCards),
             isAuto: false,
         };
@@ -363,6 +441,13 @@ export class HandCardState {
         this._notify();
     }
 
+    /** 由服务端响应设置 autoGroup 状态，触发 notify 更新按钮显示 */
+    setAutoGroupEnabled(v: boolean): void {
+        if (v) this._lastAutoSortMode = this._sortMode;
+        this._autoGroupEnabled = v;
+        this._notify();
+    }
+
     get autoGroupEnabled(): boolean { return this._autoGroupEnabled; }
 
     // ── 排序模式切换 ──────────────────────────────────────
@@ -371,7 +456,8 @@ export class HandCardState {
         this._sortMode = this._sortMode === SortMode.BY_RANK
             ? SortMode.BY_SUIT
             : SortMode.BY_RANK;
-        // 只切换规则，不重排牌；实际排序由 autoSort 触发时执行
+        // 只切换规则，不重排现有牌——本次设置仅用于后续自动排序时机
+        // （服务端推送 setCardsWithServerGroups / 摸牌 setCards / autoGroup / createGroup 等）
         this._notify();
     }
 

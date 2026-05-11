@@ -24,6 +24,9 @@ export class WaitingPanel extends Component {
     @property({ type: Button, tooltip: '费用/底注按钮（仅房主可见）' })
     costBtn: Button = null!;
 
+    @property({ type: Label, tooltip: '费用/底注按钮 文字金额' })
+    costLabel: Label = null!;
+
     @property({ type: Button, tooltip: '准备按钮（非房主 + 已入座 + 未准备时显示）' })
     readyBtn: Button = null!;
 
@@ -33,7 +36,11 @@ export class WaitingPanel extends Component {
     @property({ type: Button, tooltip: '取消准备按钮（非房主 + 已入座 + 已准备时显示）' })
     cancelReadyBtn: Button = null!;
 
+    @property({ type: Label, tooltip: '游戏即将开始倒计时文字（独立于按钮，居中显示）' })
+    gameStartCountdownLabel: Label = null!;
+
     private _countdown: CountdownHandle | null = null;
+    private _gameStartCountdown: CountdownHandle | null = null;
 
     // ── 公开方法（由 TongitsView 驱动） ──────────────────
 
@@ -43,18 +50,32 @@ export class WaitingPanel extends Component {
         this._setActive(this.readyBtn,       false);
         this._setActive(this.cancelReadyBtn, false);
         this._stopCountdown();
+        this._stopGameStartCountdown();
     }
 
-    refresh(self: TongitsPlayerInfo | null, isOwner: boolean): void {
+    refresh(self: TongitsPlayerInfo | null, isOwner: boolean, baseScore: number = 0): void {
         const isSeated = (self?.playerInfo?.seat ?? 0) > 0;
         const isReady  = (self?.playerInfo?.state ?? 0) === PLAYER_STATE.READY;
         const expiredTime = self?.playerInfo?.waitReadyExpiredTime ?? 0;
 
-        if (isOwner) {
-            this._setActive(this.startGameBtn,   true);
-            this._setActive(this.costBtn,        true);
+        // costLabel 始终展示房间底分（不依赖坐姿和角色）
+        if (this.costLabel) this.costLabel.string = String(baseScore);
+
+        // 观战（未坐下）：所有按钮全部隐藏，房主同样不显示开始/底注
+        if (!isSeated) {
+            this._setActive(this.startGameBtn,   false);
+            this._setActive(this.costBtn,        false);
             this._setActive(this.readyBtn,       false);
             this._setActive(this.cancelReadyBtn, false);
+            this._stopCountdown();
+            return;
+        }
+
+        if (isOwner) {
+            // this._setActive(this.startGameBtn,   true);
+            // this._setActive(this.costBtn,        true);
+            // this._setActive(this.readyBtn,       false);
+            // this._setActive(this.cancelReadyBtn, false);
             this._stopCountdown();
         } else {
             this._setActive(this.startGameBtn,   false);
@@ -68,12 +89,52 @@ export class WaitingPanel extends Component {
                 this._stopCountdown();
             }
         }
+    }
 
+    /**
+     * 游戏即将开始倒计时（满人后服务端下发 GameReadyBroadcast）。
+     * 隐藏所有操作按钮，在独立的 gameStartCountdownLabel 上显示倒计时。
+     * @param countdownSeconds 倒计时总秒数（如 3）
+     * @param startTime        绝对开始时间戳（Unix 秒）
+     */
+    showGameStartCountdown(countdownSeconds: number, startTime: number): void {
+        // 隐藏所有操作按钮，进入纯倒计时状态
         this._setActive(this.startGameBtn,   false);
-        this._setActive(this.costBtn,        true);
+        this._setActive(this.costBtn,        false);
         this._setActive(this.readyBtn,       false);
         this._setActive(this.cancelReadyBtn, false);
         this._stopCountdown();
+        this._stopGameStartCountdown();
+
+        // 显示倒计时 Label
+        if (this.gameStartCountdownLabel) {
+            // 需求先不显示
+            // this.gameStartCountdownLabel.node.active = true;
+            this.gameStartCountdownLabel.string = `${countdownSeconds}`;
+        }
+
+        // createCountdown 接收秒级时间戳，startTime 已是 Unix 秒，直接传入
+        this._gameStartCountdown = Nexus.time.createCountdown(startTime, {
+            onTick: (remaining) => {
+                if (this.gameStartCountdownLabel) {
+                    this.gameStartCountdownLabel.string = `${remaining}`;
+                }
+            },
+            onComplete: () => {
+                this._stopGameStartCountdown();
+            },
+        });
+    }
+
+    private _stopGameStartCountdown(): void {
+        if (this._gameStartCountdown) {
+            this._gameStartCountdown.stop();
+            this._gameStartCountdown = null;
+        }
+        if (this.gameStartCountdownLabel) {
+            this.gameStartCountdownLabel.string = '';
+            this.gameStartCountdownLabel.node.active = false;
+        }
     }
 
     // ── 生命周期 ─────────────────────────────────────────

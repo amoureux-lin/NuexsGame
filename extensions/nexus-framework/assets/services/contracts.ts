@@ -1,5 +1,6 @@
 import type { Asset, Node, Prefab } from 'cc';
 import { ServiceBase } from '../core/ServiceBase';
+import type { BundleOrientation } from '../core/NexusConfig';
 
 export enum UILayer {
     SCENE = 0,
@@ -83,6 +84,13 @@ export interface DecodedPacket {
  * WS 委托接口：协议编解码 + 收发拦截 + 连接状态感知，统一由业务实现。
  * 框架通过此接口与业务协议完全解耦。
  */
+/** WS 关闭事件摘要信息 */
+export interface WsCloseInfo {
+    code: number;
+    reason: string;
+    wasClean: boolean;
+}
+
 export interface IWsDelegate {
     // ── Codec ─────────────────────────────────────────────────────────────
 
@@ -128,13 +136,13 @@ export interface IWsDelegate {
 
     /** 连接建立成功 */
     onConnected?(): void;
-    /** 连接断开 */
-    onDisconnected?(): void;
+    /** 连接断开（重连耗尽），closeInfo 为最后一次关闭的信息 */
+    onDisconnected?(closeInfo?: WsCloseInfo): void;
     /**
      * 正在重连；attemptsLeft 为剩余次数，0 表示不再重连。
-     * -1 永久重连时传入 -1。
+     * -1 永久重连时传入 -1。closeInfo 为本次关闭的信息。
      */
-    onReconnecting?(attemptsLeft: number): void;
+    onReconnecting?(attemptsLeft: number, closeInfo?: WsCloseInfo): void;
     /** 连接发生错误 */
     onConnectError?(error: unknown): void;
 }
@@ -188,8 +196,8 @@ export abstract class IBundleService extends ServiceBase {
     abstract load(bundleName: string): Promise<void>;
     /** 进入指定 Bundle，并执行切换流程。 */
     abstract enter(bundleName: string, params?: Record<string, unknown>): Promise<void>;
-    /** 由 Entry 在加载完成后主动调用，加载并切换到当前 Bundle 的主场景。 */
-    abstract runScene(): Promise<void>;
+    /** 由 Entry 在加载完成后主动调用，加载并切换到当前 Bundle 的主场景；owner 用于防止过期 Entry 误触发切场景。 */
+    abstract runScene(owner?: object): Promise<void>;
     /** @deprecated 已废弃，无需调用。 */
     abstract loadFinish(): void;
     /** 退出当前 Bundle。 */
@@ -200,6 +208,8 @@ export abstract class IBundleService extends ServiceBase {
     abstract isLoaded(bundleName: string): boolean;
     /** 当前激活的 Bundle 名称。 */
     abstract get current(): string;
+    /** 当前已经应用到运行时的横竖屏方向。 */
+    abstract get orientation(): BundleOrientation;
 }
 
 export abstract class IUIService extends ServiceBase {
@@ -278,6 +288,13 @@ export abstract class INetService extends ServiceBase {
     abstract wsRequest<T = unknown>(msgType: number, body: unknown, timeoutMs?: number): Promise<T>;
     /** 当前 WebSocket 是否已连接。 */
     abstract isConnected(): boolean;
+    /**
+     * 动态设置 WS 重连次数上限。
+     *   n > 0  — 最多重连 n 次（连上后重置）
+     *   n = 0  — 禁止重连
+     *   n = -1 — 无限重连
+     */
+    abstract setReconnectLimit(n: number): void;
     /** 取消所有进行中的 HTTP 请求（abort XHR）。 */
     abstract cancelAllHttpRequests(): void;
     /** 取消所有等待响应的 WS 请求（reject pending promises）。 */
@@ -374,11 +391,20 @@ export abstract class II18nService extends ServiceBase {
     abstract t(key: string, params?: Record<string, unknown>): string;
     /** 切换当前语言。 */
     abstract switchLanguage(lang: string): Promise<void>;
+    /** 加载公共多语言文本。 */
+    abstract loadCommonTranslations(): Promise<void>;
+    /** 加载指定业务 bundle 的多语言文本，并覆盖 common 中的同名 key。 */
+    abstract loadBundleTranslations(bundleName: string): Promise<void>;
     /** 当前语言代码。 */
     abstract get language(): string;
 }
 
 export abstract class IAssetService extends ServiceBase {
+    /**
+     * 同步获取已加载的资源。
+     * 不传 bundle 时先从当前 bundle 找，再回退到 common，都没有则返回 null。
+     */
+    abstract get<T extends Asset>(path: string, type?: AssetCtor<T>, bundle?: string): T | null;
     /** 加载单个资源。 */
     abstract load<T extends Asset>(bundle: string, path: string, type?: AssetCtor<T>): Promise<T>;
     /**

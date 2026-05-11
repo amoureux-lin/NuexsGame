@@ -67,6 +67,10 @@ export class NetServiceImpl extends INetService {
         return this._ws.isConnected();
     }
 
+    setReconnectLimit(n: number): void {
+        this._ws.setReconnectLimit(n);
+    }
+
     cancelAllHttpRequests(): void {
         this._http.cancelAllHttpRequests();
     }

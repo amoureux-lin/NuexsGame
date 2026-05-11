@@ -38,7 +38,8 @@ export class BaseLoadingView extends Component {
      * 子类覆写以调整权重，例如资源包很大时可以把 BUNDLE_RESOURCES 区间拉宽。
      */
     protected stageRanges: Record<LoadingStage, [number, number]> = {
-        [LoadingStage.COMMON_RESOURCES]: [0,   30],
+        [LoadingStage.COMMON_RESOURCES]: [0,   25],
+        [LoadingStage.I18N]:             [25,  30],
         [LoadingStage.BUNDLE_RESOURCES]: [30,  70],
         [LoadingStage.CONNECTING]:       [70,  85],
         [LoadingStage.JOINING]:          [85, 100],
@@ -50,9 +51,8 @@ export class BaseLoadingView extends Component {
     private _waitingDone = false;
 
     onLoad(): void {
-        console.log("BaseLoadingView")
         if (this.progressBar) this.progressBar.progress = 0;
-        if (this.tipLabel) this.tipLabel.string = '';
+        if (this.tipLabel) this.tipLabel.string = Nexus.i18n.t('loading.common');
         if (this.percentLabel) this.percentLabel.string = '0%';
     }
 
@@ -89,6 +89,11 @@ export class BaseLoadingView extends Component {
     protected onDisplayUpdate(_clamped: number): void {}
 
     // ── 公开接口（供 BaseGameEntry 直接调用）────────────────────
+
+    /** 仅更新提示文字，不影响进度条（供重连等场景使用） */
+    public setTip(tip: string): void {
+        if (this.tipLabel?.isValid) this.tipLabel.string = tip;
+    }
 
     /**
      * BaseGameEntry 调用此方法推送进度，避免经过事件系统导致 @ccclass

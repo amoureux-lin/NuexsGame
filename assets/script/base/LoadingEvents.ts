@@ -5,6 +5,7 @@
  */
 export enum LoadingStage {
     COMMON_RESOURCES = 'loading:common',
+    I18N             = 'loading:i18n',
     BUNDLE_RESOURCES = 'loading:bundle',
     CONNECTING       = 'loading:connecting',
     JOINING          = 'loading:joining',

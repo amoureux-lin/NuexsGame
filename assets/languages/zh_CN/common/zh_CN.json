@@ -1,0 +1,39 @@
+{
+  "menu.sound": "声音",
+  "menu.history": "历史记录",
+  "menu.rule": "规则",
+  "menu.cardColor": "牌色切换",
+  "menu.setting": "设置",
+
+  "game.ready": "准备",
+  "game.start": "开始游戏",
+  "game.waiting": "等待中...",
+
+  "loading.common": "加载公共资源...",
+  "loading.config": "加载配置文件...",
+  "loading.i18n": "加载多语言...",
+  "loading.bundle": "加载游戏资源...",
+  "loading.connect": "连接服务器...",
+  "loading.join": "加入房间...",
+  "loading.enter": "进入游戏...",
+  "loading.reconnecting": "网络不稳定，重连中(剩余{left}次)...",
+  "loading.connect_failed": "连接失败",
+  "loading.disconnect": "连接断开",
+  "loading.server_closed": "服务器维护中，请稍后再试",
+
+  "room.kicked": "您已被移出房间",
+  "room.left": "您已离开房间",
+
+  "common.confirm": "确认",
+  "common.cancel": "取消",
+  "common.close": "关闭",
+  "common.ok": "好的",
+  "common.loading": "加载中...",
+  "common.network_error": "网络异常，请重试",
+  "common.system_prompt": "系统提示",
+  "common.recharge": "充值",
+  "common.recharge_content": "余额不足，请充值",
+  "common.room_host_left": "房主已离开，您已成为新房主",
+
+  "error.unknown": "未知错误: {code}"
+}

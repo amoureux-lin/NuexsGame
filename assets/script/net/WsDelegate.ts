@@ -7,12 +7,14 @@
  * - onServerError：错误码统一弹窗处理
  * - 连接状态回调：Loading UI 反馈
  */
-import type { DecodedPacket, IWsDelegate, WsSendContext } from 'db://nexus-framework/index';
+import type { DecodedPacket, IWsDelegate, WsSendContext, WsCloseInfo } from 'db://nexus-framework/index';
 import { Nexus } from 'db://nexus-framework/index';
 import { MessageType } from '../proto/message_type';
 import type { PingMessage, PongMessage } from '../proto/gateway';
 import { CommonUI } from '../config/UIConfig';
 import { ErrorCodeHandler } from './ErrorCodeHandler';
+import { ClientTraceReporter, ClientTracePhase } from '../lib/report/ClientTraceReporter';
+import type { BaseLoadingView } from '../base/BaseLoadingView';
 
 const HEADER_SIZE = 16;
 const HEARTBEAT_RES = MessageType.GATEWAY_PONG_RES;
@@ -131,9 +133,12 @@ export class WsDelegate implements IWsDelegate {
         if ((pkt.errorCode ?? 0) !== 0) {
             const code = pkt.errorCode!;
             ErrorCodeHandler.handle(code);
+            // 带 requestId 的包是某个 wsRequest 的响应；即使错误展示类型是 silent，
+            // 也必须 reject，避免空 RES 被当作成功结果继续更新本地 Model。
+            if (pkt.requestId) return new Error(`server:${code}`);
             return ErrorCodeHandler.shouldReject(code)
                 ? new Error(`server:${code}`)
-                : undefined;
+                : true;
         }
 
         console.log('【ws】收到消息：', pkt.msgType, pkt);
@@ -143,25 +148,64 @@ export class WsDelegate implements IWsDelegate {
 
     onConnected(): void {
         console.log('【ws】连接成功');
-        Nexus.ui.hideLoading();
+        ClientTraceReporter.getInstance().step(ClientTracePhase.WS_CONNECT, { ok: true });
+        // 游戏中重连成功才隐藏 netLoading；进房阶段由 BaseLoadingView 覆盖
+        if (!Nexus.data.get('_entering')) {
+            Nexus.ui.hideLoading();
+        }
     }
 
-    onDisconnected(): void {
+    onDisconnected(closeInfo?: WsCloseInfo): void {
         console.log('【ws】连接断开，重连次数耗尽');
-        Nexus.ui.hideLoading();
+        const closeMeta = closeInfo ? { code: closeInfo.code, reason: closeInfo.reason, wasClean: closeInfo.wasClean } : undefined;
+        const trace = ClientTraceReporter.getInstance();
+        trace.step(ClientTracePhase.WS_GIVE_UP, {
+            ok: false,
+            detail: 'reconnect_exhausted',
+            meta: closeMeta,
+        });
+        trace.fail({
+            category: 'ws_disconnect',
+            code: String(closeInfo?.code ?? 'unknown'),
+            message: closeInfo?.reason || '重连次数耗尽',
+            meta: closeMeta,
+        });
+        if (Nexus.data.get('_entering')) {
+            // 进房阶段：更新 loading 文字为连接失败
+            const loadingView = Nexus.data.get<BaseLoadingView>('_loadingView');
+            loadingView?.setTip(Nexus.i18n.t('loading.connect_failed'));
+        } else {
+            // 游戏中断线：隐藏 netLoading
+            Nexus.ui.hideLoading();
+        }
         Nexus.ui.show(CommonUI.ALERT, {
-            content: '连接断开',
+            content: Nexus.i18n.t('loading.disconnect'),
             showIcon: true,
-            confirmText: '知道了',
+            confirmText: Nexus.i18n.t('common.confirm'),
         });
     }
 
-    onReconnecting(attemptsLeft: number): void {
+    onReconnecting(attemptsLeft: number, closeInfo?: WsCloseInfo): void {
         console.log(`重连中，剩余 ${attemptsLeft} 次`);
-        Nexus.ui.showLoading(`重连中，剩余 ${attemptsLeft} 次`)
+        const closeMeta = closeInfo ? { code: closeInfo.code, reason: closeInfo.reason, wasClean: closeInfo.wasClean } : undefined;
+        ClientTraceReporter.getInstance().step(ClientTracePhase.WS_CLOSE, {
+            ok: false,
+            detail: `reconnecting, left: ${attemptsLeft}`,
+            meta: closeMeta,
+        });
+        const tip = Nexus.i18n.t('loading.reconnecting', { left: attemptsLeft });
+        if (Nexus.data.get('_entering')) {
+            // 进房阶段：只更新 BaseLoadingView 文字，不弹 netLoading
+            const loadingView = Nexus.data.get<BaseLoadingView>('_loadingView');
+            loadingView?.setTip(tip);
+        } else {
+            // 游戏中：弹 netLoading
+            Nexus.ui.showLoading(tip);
+        }
     }
 
     onConnectError(error: unknown): void {
         console.warn('[WsDelegate] 连接错误：', error);
+        ClientTraceReporter.getInstance().step(ClientTracePhase.WS_CLOSE, { ok: false, detail: String(error) });
     }
 }

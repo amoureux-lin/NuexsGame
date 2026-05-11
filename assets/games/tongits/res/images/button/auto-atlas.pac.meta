@@ -8,7 +8,7 @@
   ],
   "subMetas": {},
   "userData": {
-    "maxWidth": 1024,
+    "maxWidth": 512,
     "maxHeight": 1024,
     "padding": 2,
     "allowRotation": true,
@@ -18,13 +18,14 @@
     "format": "png",
     "quality": 80,
     "contourBleed": true,
-    "paddingBleed": true,
+    "paddingBleed": false,
     "filterUnused": true,
     "removeTextureInBundle": true,
     "removeImageInBundle": true,
     "removeSpriteAtlasInBundle": true,
     "compressSettings": {
-      "useCompressTexture": false
+      "useCompressTexture": false,
+      "presetId": "74trAMe2xMeZKqbyvG3nTD"
     },
     "textureSetting": {
       "wrapModeS": "repeat",

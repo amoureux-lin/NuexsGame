@@ -97,11 +97,18 @@ export class PlayerSeatManager extends Component {
      * 根据玩家列表和自身 userId 刷新所有座位。
      * 内部自行计算视角排列（逆时针，自己始终在下方）。
      *
-     * @param players    当前房间所有在座玩家列表
-     * @param selfUserId 本地玩家 userId（旁观者传 perspectiveId 或首个玩家 id）
+     * @param players      当前房间所有在座玩家列表
+     * @param selfUserId   本地玩家真实 userId（用于决定 isSelf flag：kickBtn / cardCountNode / pointNode 显隐）
+     * @param viewId       视角中心 userId（决定座位环绕的中心；缺省时与 selfUserId 同；观战时为被观察者 userId）
+     * @param isSelfSeated 本地玩家是否已坐下（影响"未坐下时空座优先底部"的视角逻辑；缺省 true）
      */
-    refreshFromPlayers(players: TongitsPlayerInfo[], selfUserId: number): void {
-        const positions = this._buildPositions(players, selfUserId);
+    refreshFromPlayers(
+        players: TongitsPlayerInfo[],
+        selfUserId: number,
+        viewId: number = selfUserId,
+        isSelfSeated: boolean = true,
+    ): void {
+        const positions = this._buildPositions(players, selfUserId, viewId, isSelfSeated);
         const seats = [this.seatBottom, this.seatRight, this.seatLeft];
         const zones = [this.fightZoneBottom, this.fightZoneRight, this.fightZoneLeft];
         for (let i = 0; i < seats.length; i++) {
@@ -222,13 +229,17 @@ export class PlayerSeatManager extends Component {
      * 将玩家列表映射到三个显示位置。
      *
      * 算法：
-     *   1. 找到 selfUserId 对应的 seat（服务端座位号 1-based）
-     *   2. 从该 seat 出发，按逆时针（seat+0, seat+1, seat+2 mod maxSeat）排列
-     *   3. 若 selfUserId 不在座位上（纯旁观）：空座优先放 index 0，有人座按原序排列
+     *   1. 用 viewId 找视角中心 seat → 按逆时针 (seat+0, seat+1, seat+2) % max 排列
+     *   2. 自己未坐下：强制走"空座优先"，即使有 _selfSeat 缓存也忽略
+     *   3. 自己已坐下但本次 players 不含自己（部分广播）：用 _selfSeat 缓存维持相对布局
+     *   4. 兜底：空座优先
+     *   5. isSelf flag 始终用 selfUserId 比对（不是 viewId）
      */
     private _buildPositions(
         players: TongitsPlayerInfo[],
         selfUserId: number,
+        viewId: number,
+        isSelfSeated: boolean,
     ): Array<{ player: TongitsPlayerInfo | null; seat: number; isSelf: boolean }> {
 
         const MAX_SEATS = 3;
@@ -240,22 +251,28 @@ export class PlayerSeatManager extends Component {
             if (seat && seat > 0) seatMap.set(seat, p);
         }
 
-        // 确定视角起始 seat
-        const selfPlayer = players.find(p => p.playerInfo?.userId === selfUserId);
-        const selfSeat = selfPlayer?.playerInfo?.seat ?? 0;
+        // 确定视角起始 seat（用 viewId）
+        const viewPlayer = players.find(p => p.playerInfo?.userId === viewId);
+        const viewSeat = viewPlayer?.playerInfo?.seat ?? 0;
 
-        if (selfSeat > 0) {
-            this._selfSeat = selfSeat;   // 缓存，供后续局部数据更新时使用
-            return this._buildBySeat(selfSeat, MAX_SEATS, seatMap, selfUserId);
+        if (viewSeat > 0) {
+            this._selfSeat = viewSeat;   // 缓存，供后续局部数据更新时使用
+            return this._buildBySeat(viewSeat, MAX_SEATS, seatMap, selfUserId);
         }
 
-        // self 不在本次数据中（如 onBeforeResult 只含部分玩家）：
+        // 自己未坐下：强制空座优先（站起 / 进房等待 / 纯旁观），并清掉缓存避免后续误用
+        if (!isSelfSeated) {
+            this._selfSeat = 0;
+            return this._buildSpectator(MAX_SEATS, seatMap, selfUserId);
+        }
+
+        // 自己已坐下但本次 players 不含自己（如 onBeforeResult 只含部分玩家）：
         // 用缓存的 seat 保持相对布局，不回退到绝对顺序
         if (this._selfSeat > 0) {
             return this._buildBySeat(this._selfSeat, MAX_SEATS, seatMap, selfUserId);
         }
 
-        // 纯旁观者（游戏外）：空座优先
+        // 兜底：空座优先
         return this._buildSpectator(MAX_SEATS, seatMap, selfUserId);
     }
 

@@ -12,6 +12,19 @@
     },
     "description": "i18n:nexus-framework.description",
     "main": "./dist/main.js",
+    "panels": {
+        "i18n": {
+            "title": "nexus-framework/i18n",
+            "main": "./dist/panels/i18n/index.js",
+            "type": "dockable",
+            "size": {
+                "width": 520,
+                "height": 640,
+                "min-width": 360,
+                "min-height": 420
+            }
+        }
+    },
     "devDependencies": {
         "@cocos/creator-types": "^3.8.7",
         "@types/node": "^18.17.1",
@@ -23,17 +36,111 @@
                 "path": "./assets"
             }
         },
+        "builder": "./dist/builder.js",
+        "scene": {
+            "script": "./dist/scene/index.js"
+        },
         "menu": [
             {
-                "path": "i18n:nexus-framework",
-                "label": "i18n:nexus-framework.show_log",
-                "message": "show-log"
+                "path": "nexus-framework/i18n",
+                "label": "i18n",
+                "message": "open-i18n-panel"
             }
         ],
         "messages": {
             "show-log": {
                 "methods": [
                     "showLog"
+                ]
+            },
+            "open-i18n-panel": {
+                "methods": [
+                    "openI18nPanel"
+                ]
+            },
+            "query-i18n-panel-state": {
+                "methods": [
+                    "queryI18nPanelState"
+                ]
+            },
+            "set-editor-language": {
+                "methods": [
+                    "setEditorLanguage"
+                ]
+            },
+            "set-i18n-languages": {
+                "methods": [
+                    "setI18nLanguages"
+                ]
+            },
+            "scene:ready": {
+                "methods": [
+                    "onSceneReady"
+                ]
+            },
+            "sync-current-scene": {
+                "methods": [
+                    "syncCurrentScene"
+                ]
+            },
+            "sync-orientation": {
+                "methods": [
+                    "syncOrientation"
+                ]
+            },
+            "sync-nexus-settings": {
+                "methods": [
+                    "syncNexusSettings"
+                ]
+            },
+            "query-i18n-text": {
+                "methods": [
+                    "queryI18nText"
+                ]
+            },
+            "query-i18n-editor-state": {
+                "methods": [
+                    "queryI18nEditorState"
+                ]
+            },
+            "parse-i18n-sprite-asset": {
+                "methods": [
+                    "parseI18nSpriteAsset"
+                ]
+            },
+            "query-i18n-sprite-asset": {
+                "methods": [
+                    "queryI18nSpriteAsset"
+                ]
+            },
+            "parse-i18n-asset": {
+                "methods": [
+                    "parseI18nAsset"
+                ]
+            },
+            "query-i18n-spine-asset": {
+                "methods": [
+                    "queryI18nSpineAsset"
+                ]
+            },
+            "query-i18n-dragon-bones-asset": {
+                "methods": [
+                    "queryI18nDragonBonesAsset"
+                ]
+            },
+            "query-i18n-dragon-bones-atlas-asset": {
+                "methods": [
+                    "queryI18nDragonBonesAtlasAsset"
+                ]
+            },
+            "switch-landscape": {
+                "methods": [
+                    "switchLandscape"
+                ]
+            },
+            "switch-portrait": {
+                "methods": [
+                    "switchPortrait"
                 ]
             }
         }

@@ -2,7 +2,7 @@
   "ver": "1.0.27",
   "importer": "image",
   "imported": true,
-  "uuid": "aef84fac-faaf-4052-9b40-397fddace57e",
+  "uuid": "e4b90dde-2de6-44cf-97c6-cb36fbe9a743",
   "files": [
     ".json",
     ".png"
@@ -10,14 +10,14 @@
   "subMetas": {
     "6c48a": {
       "importer": "texture",
-      "uuid": "aef84fac-faaf-4052-9b40-397fddace57e@6c48a",
+      "uuid": "e4b90dde-2de6-44cf-97c6-cb36fbe9a743@6c48a",
       "displayName": "Tongits",
       "id": "6c48a",
       "name": "texture",
       "userData": {
         "wrapModeS": "clamp-to-edge",
         "wrapModeT": "clamp-to-edge",
-        "imageUuidOrDatabaseUri": "aef84fac-faaf-4052-9b40-397fddace57e",
+        "imageUuidOrDatabaseUri": "e4b90dde-2de6-44cf-97c6-cb36fbe9a743",
         "isUuid": true,
         "visible": false,
         "minfilter": "linear",
@@ -34,7 +34,7 @@
     },
     "f9941": {
       "importer": "sprite-frame",
-      "uuid": "aef84fac-faaf-4052-9b40-397fddace57e@f9941",
+      "uuid": "e4b90dde-2de6-44cf-97c6-cb36fbe9a743@f9941",
       "displayName": "Tongits",
       "id": "f9941",
       "name": "spriteFrame",
@@ -113,7 +113,7 @@
           ]
         },
         "isUuid": true,
-        "imageUuidOrDatabaseUri": "aef84fac-faaf-4052-9b40-397fddace57e@6c48a",
+        "imageUuidOrDatabaseUri": "e4b90dde-2de6-44cf-97c6-cb36fbe9a743@6c48a",
         "atlasUuid": "",
         "trimType": "auto"
       },
@@ -127,8 +127,8 @@
   },
   "userData": {
     "type": "sprite-frame",
-    "hasAlpha": true,
     "fixAlphaTransparencyArtifacts": false,
-    "redirect": "aef84fac-faaf-4052-9b40-397fddace57e@6c48a"
+    "hasAlpha": true,
+    "redirect": "e4b90dde-2de6-44cf-97c6-cb36fbe9a743@6c48a"
   }
 }

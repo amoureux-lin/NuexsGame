@@ -168,6 +168,15 @@ export class CardNode extends Component {
             .start();
     }
 
+    /** 立即吸附到目标 X 位置（无动画），重连 / 中途加入时调用 */
+    snapToX(x: number): void {
+        this._moveTween?.stop();
+        this._liftTween?.stop();
+        this._moveTween = null;
+        const y = this._selected ? LIFT_Y : 0;
+        this.node.setPosition(x, y, 0);
+    }
+
     // ── 私有 ──────────────────────────────────────────────
 
     private _onTouchStart(e: EventTouch): void {

@@ -1,0 +1,17 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.onBeforeBuild = exports.unload = exports.load = void 0;
+const i18n_sprite_cleaner_1 = require("./i18n-sprite-cleaner");
+const PACKAGE_NAME = 'nexus-framework';
+const load = function () { };
+exports.load = load;
+const unload = function () { };
+exports.unload = unload;
+const onBeforeBuild = async function () {
+    const changedCount = (0, i18n_sprite_cleaner_1.cleanI18nSpriteSerializedDependencies)(Editor.Project.path);
+    if (changedCount > 0) {
+        console.log(`[${PACKAGE_NAME}] Cleaned i18n sprite preview dependencies before build: ${changedCount}`);
+    }
+};
+exports.onBeforeBuild = onBeforeBuild;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiaG9va3MuanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi9zb3VyY2UvaG9va3MudHMiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6Ijs7O0FBQUEsK0RBQThFO0FBRTlFLE1BQU0sWUFBWSxHQUFHLGlCQUFpQixDQUFDO0FBRWhDLE1BQU0sSUFBSSxHQUFHLGNBQWtCLENBQUMsQ0FBQztBQUEzQixRQUFBLElBQUksUUFBdUI7QUFFakMsTUFBTSxNQUFNLEdBQUcsY0FBa0IsQ0FBQyxDQUFDO0FBQTdCLFFBQUEsTUFBTSxVQUF1QjtBQUVuQyxNQUFNLGFBQWEsR0FBRyxLQUFLO0lBQzlCLE1BQU0sWUFBWSxHQUFHLElBQUEsMkRBQXFDLEVBQUMsTUFBTSxDQUFDLE9BQU8sQ0FBQyxJQUFJLENBQUMsQ0FBQztJQUNoRixJQUFJLFlBQVksR0FBRyxDQUFDLEVBQUUsQ0FBQztRQUNuQixPQUFPLENBQUMsR0FBRyxDQUFDLElBQUksWUFBWSw0REFBNEQsWUFBWSxFQUFFLENBQUMsQ0FBQztJQUM1RyxDQUFDO0FBQ0wsQ0FBQyxDQUFDO0FBTFcsUUFBQSxhQUFhLGlCQUt4QiIsInNvdXJjZXNDb250ZW50IjpbImltcG9ydCB7IGNsZWFuSTE4blNwcml0ZVNlcmlhbGl6ZWREZXBlbmRlbmNpZXMgfSBmcm9tICcuL2kxOG4tc3ByaXRlLWNsZWFuZXInO1xuXG5jb25zdCBQQUNLQUdFX05BTUUgPSAnbmV4dXMtZnJhbWV3b3JrJztcblxuZXhwb3J0IGNvbnN0IGxvYWQgPSBmdW5jdGlvbigpOiB2b2lkIHt9O1xuXG5leHBvcnQgY29uc3QgdW5sb2FkID0gZnVuY3Rpb24oKTogdm9pZCB7fTtcblxuZXhwb3J0IGNvbnN0IG9uQmVmb3JlQnVpbGQgPSBhc3luYyBmdW5jdGlvbigpOiBQcm9taXNlPHZvaWQ+IHtcbiAgICBjb25zdCBjaGFuZ2VkQ291bnQgPSBjbGVhbkkxOG5TcHJpdGVTZXJpYWxpemVkRGVwZW5kZW5jaWVzKEVkaXRvci5Qcm9qZWN0LnBhdGgpO1xuICAgIGlmIChjaGFuZ2VkQ291bnQgPiAwKSB7XG4gICAgICAgIGNvbnNvbGUubG9nKGBbJHtQQUNLQUdFX05BTUV9XSBDbGVhbmVkIGkxOG4gc3ByaXRlIHByZXZpZXcgZGVwZW5kZW5jaWVzIGJlZm9yZSBidWlsZDogJHtjaGFuZ2VkQ291bnR9YCk7XG4gICAgfVxufTtcbiJdfQ==

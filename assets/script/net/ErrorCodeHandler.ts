@@ -1,17 +1,20 @@
 import {logger, Nexus} from 'db://nexus-framework/index';
 import { CommonUI } from '../config/UIConfig';
+import { WebSDKBridge } from '../lib/websdk/WebSDKBridge';
 
 /** CSV 中 type 字段允许的值 */
-type ErrorDisplayType = 'popup' | 'toast' | 'silent';
+type ErrorDisplayType = 'popup' | 'popup_close' | 'recharge' | 'toast' | 'silent';
 
 /**
  * 错误码统一处理器。
  *
  * 数据来源：`Nexus.configs.getCSVRows('errorCodes')`（启动时已加载 error_codes.csv）。
  * 展示规则由 CSV 的 type 列驱动：
- *   popup  — 弹出 Alert 面板（需要用户确认）
- *   toast  — 底部轻提示（自动消失）
- *   silent — 仅打 log，不展示任何 UI（调用方自行 catch 处理）
+ *   toast       — 底部轻提示（自动消失）
+ *   popup       — 弹框提示（不关闭游戏）
+ *   popup_close — 弹框提示（关闭游戏）
+ *   recharge    — 充值专用弹框
+ *   silent      — 仅打 log，不展示任何 UI
  *
  * 调用方（WsDelegate / HTTP 拦截器 / wsRequest catch 块）只需：
  *   ErrorCodeHandler.handle(code);
@@ -36,12 +39,17 @@ export class ErrorCodeHandler {
             case 'popup':
                 Nexus.ui.show(CommonUI.ALERT, { content: msg });
                 break;
+            case 'popup_close':
+                Nexus.ui.show(CommonUI.ALERT, { content: msg, onConfirm: () => { WebSDKBridge.getInstance().requestPlatformExit(); } });
+                break;
+            case 'recharge':
+                WebSDKBridge.getInstance().notifyBankrupt();
+                break;
             case 'toast':
                 Nexus.toast.error(msg);
                 break;
             case 'silent':
             default:
-                // 静默：只记录日志，不展示 UI
                 logger.error(msg);
                 break;
         }
@@ -74,10 +82,13 @@ export class ErrorCodeHandler {
     }
 
     private static _resolveMsg(code: number, entry: Record<string, string> | undefined): string {
-        if (!entry) return `错误码: ${code}`;
-        const key = entry.i18nKey;
-        // i18n 服务接入后可替换为：Nexus.i18n.t(key)
-        // 目前降级展示 i18nKey 本身（便于开发期快速定位）
-        return key || `错误码: ${code}`;
+        const codeStr = String(code);
+        const translated = Nexus.i18n.t(codeStr);
+        // i18n 找到翻译则使用（translated !== codeStr 说明有匹配）
+        if (translated !== codeStr) return translated;
+        // 降级：用 CSV 中的 extra 描述
+        if (entry?.extra) return entry.extra;
+        // 兜底
+        return Nexus.i18n.t('error.unknown', { code });
     }
 }
